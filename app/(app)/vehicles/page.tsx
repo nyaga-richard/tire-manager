@@ -44,9 +44,7 @@ interface Vehicle {
   vehicle_number: string;
   make: string;
   model: string;
-  year: number;
   wheel_config: string;
-  current_odometer: number;
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   created_at: string;
   active_tires_count: number;
@@ -211,9 +209,7 @@ export default function VehiclesPage() {
                     <TableRow>
                       <TableHead>Vehicle Number</TableHead>
                       <TableHead>Make & Model</TableHead>
-                      <TableHead>Year</TableHead>
                       <TableHead>Wheel Config</TableHead>
-                      <TableHead>Odometer</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Tires</TableHead>
                       <TableHead>Added On</TableHead>
@@ -235,11 +231,9 @@ export default function VehiclesPage() {
                             <div className="text-sm text-muted-foreground">{vehicle.model}</div>
                           </div>
                         </TableCell>
-                        <TableCell>{vehicle.year}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{vehicle.wheel_config}</Badge>
                         </TableCell>
-                        <TableCell>{formatOdometer(vehicle.current_odometer)}</TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(vehicle.status)}>
                             {vehicle.status}
@@ -279,7 +273,7 @@ export default function VehiclesPage() {
                                 onClick={() => handleDelete(vehicle.id)}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" />
-                                Delete Vehicle
+                                Retire Vehicle
                               </DropdownMenuItem>
                             </DropdownMenuContent>
                           </DropdownMenu>
