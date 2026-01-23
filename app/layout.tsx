@@ -29,55 +29,13 @@ const navItems = [
 
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
-  const isLoginPage = false; // This should be determined dynamically
-
+}) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen`}
-      >
-        <AuthProvider>
-          {isLoginPage ? (
-            <main>{children}</main>
-          ) : (
-            <>
-              <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-                <div className="container mx-auto px-4">
-                  <nav className="flex items-center justify-between h-16">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center">
-                        <span className="text-primary-foreground font-bold">T</span>
-                      </div>
-                      <span className="text-xl font-bold">TireSys</span>
-                    </div>
-                    <div className="flex items-center space-x-6">
-                      {navItems.map((item) => (
-                        <Link
-                          key={item.name}
-                          href={item.href}
-                          className="text-sm font-medium hover:text-primary transition-colors"
-                        >
-                          {item.name}
-                        </Link>
-                      ))}
-                      <div className="flex items-center gap-4">
-                        <div className="w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                          <span className="text-sm font-medium">JD</span>
-                        </div>
-                      </div>
-                    </div>
-                  </nav>
-                </div>
-              </header>
-              <main className="container mx-auto px-4 py-8">
-                {children}
-              </main>
-            </>
-          )}
-        </AuthProvider>
+      <body className="min-h-screen">
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );
