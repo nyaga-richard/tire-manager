@@ -80,13 +80,14 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/auth/login", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(formData),
-      });
+        const response = await fetch ("http://localhost:5000/api/auth/login", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include", // ✅ REQUIRED
+          body: JSON.stringify(formData),
+        });
 
       const data: ApiResponse = await response.json();
 
@@ -101,7 +102,7 @@ export default function LoginPage() {
         });
 
         // Redirect to dashboard or previous page
-        router.push("/dashboard");
+        router.push("/inventory");
         router.refresh();
       } else {
         toast.error("Login failed", {
