@@ -7,6 +7,14 @@ export interface Position {
   axle_number: number;
 }
 
+interface WheelConfig {
+  id: string;
+  x: number;
+  side: "left" | "right";
+  position: "single" | "inner" | "outer";
+  position_code: string;
+}
+
 interface AxleRowProps {
   axleNumber: number;
   y: number; // vertical position of this axle
@@ -14,7 +22,7 @@ interface AxleRowProps {
   wheelSelections: Record<string, boolean>;
   wheelStatuses: Record<string, string>;
   positions: Position[];
-  onWheelClick: (wheelId: string) => void;
+  onWheelClick: (wheelId: string, x: number, y: number) => void;
   showLabels: boolean;
   selectable: boolean;
   showAxleNumbers: boolean;
@@ -36,7 +44,7 @@ const AxleRow: React.FC<AxleRowProps> = ({
   const offset = 60; // Reduced from 80 for tighter spacing
 
   // Create wheel configurations based on axle number
-  const getWheelsForAxle = () => {
+  const getWheelsForAxle = (): WheelConfig[] => {
     const leftPositions = positions.filter(p => 
       p.position_name.toLowerCase().includes("left")
     );
@@ -44,7 +52,7 @@ const AxleRow: React.FC<AxleRowProps> = ({
       p.position_name.toLowerCase().includes("right")
     );
 
-    const wheels = [];
+    const wheels: WheelConfig[] = [];
 
     // Left side wheels
     if (leftPositions.length === 1) {
@@ -131,16 +139,16 @@ const AxleRow: React.FC<AxleRowProps> = ({
         y1={y}
         y2={y}
         stroke="#333"
-        strokeWidth="1.5" // Slightly thinner line
+        strokeWidth="1.5"
       />
       
       {/* Axle number label */}
       {showAxleNumbers && (
         <text 
           x={centerX} 
-          y={y - 18} // Reduced spacing from axle line
+          y={y - 18}
           textAnchor="middle" 
-          fontSize="10" // Smaller font
+          fontSize="10"
           fontWeight="bold"
         >
           Axle {axleNumber}
@@ -153,13 +161,13 @@ const AxleRow: React.FC<AxleRowProps> = ({
           key={wheel.id}
           id={wheel.id}
           x={wheel.x}
-          y={y}
+          y={y}  // Pass the y prop from AxleRow, not from wheel object
           side={wheel.side}
           position={wheel.position}
           axleNumber={axleNumber}
           isSelected={wheelSelections[wheel.id]}
           status={wheelStatuses[wheel.position_code]}
-          onClick={onWheelClick}
+          onClick={(id) => onWheelClick(id, wheel.x, y)}  // Pass both x and y coordinates
           showLabels={showLabels}
           selectable={selectable}
         />
