@@ -226,7 +226,7 @@ export default function VehicleDetailsPage() {
     <TruckWheelDiagram
       positions={wheelConfigPositions[vehicle.wheel_config]}
       onWheelSelect={(data) => {
-        handlewheelSelect(data);
+        handleWheelSelect(data);
         console.log("Wheel selected:", data);
         // Add your wheel selection logic here
       }}
