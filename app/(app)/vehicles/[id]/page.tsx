@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Car, Settings } from "lucide-react";
+import { ArrowLeft, Car, Edit, Plus, RefreshCw, Settings } from "lucide-react";
 import TruckWheelDiagram from "@/components/truck-wheel-diagram/TruckWheelDiagram";
 
 interface Vehicle {
@@ -128,9 +128,16 @@ export default function VehicleDetailsPage() {
     );
   }
 
+    const handleWheelSelect = (data: { wheelId: string; axle: number; side: string; position: string; }) => {
+        console.log("Wheel selected:", data);
+        // Navigate to tire details or service page for the selected wheel
+        // Example: router.push(`/vehicles/${vehicleId}/wheels/${data.wheelId}`);
+    };
+
   return (
     <div className="space-y-6">
       {/* Header */}
+      <div className="flex items-center justify-between">
       <div className="flex items-center gap-4">
         <Button variant="outline" size="icon" asChild>
           <Link href="/vehicles">
@@ -145,6 +152,26 @@ export default function VehicleDetailsPage() {
           <p className="text-muted-foreground">
             Vehicle overview and configuration information
           </p>
+        </div>
+
+        </div>
+                <div className="flex items-center gap-2">
+          <Button variant="outline" asChild>
+            <Link href={`/vehicles/${vehicle.id}/edit`}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit Vehicle
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href={`/vehicles/${vehicle.id}/tire-service`}>
+              <Plus className="mr-2 h-4 w-4" />
+              Tire Service
+            </Link>
+          </Button>
+          <Button variant="outline" onClick={fetchVehicle}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
         </div>
       </div>
 
@@ -199,6 +226,7 @@ export default function VehicleDetailsPage() {
     <TruckWheelDiagram
       positions={wheelConfigPositions[vehicle.wheel_config]}
       onWheelSelect={(data) => {
+        handlewheelSelect(data);
         console.log("Wheel selected:", data);
         // Add your wheel selection logic here
       }}
