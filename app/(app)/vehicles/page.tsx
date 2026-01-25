@@ -27,7 +27,7 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Search, Car, Edit, Trash2 } from "lucide-react";
+import { PlusCircle, Search, Car, Edit, Trash2, Eye, Filter } from "lucide-react";
 import Link from "next/link";
 import {
   DropdownMenu,
@@ -44,7 +44,7 @@ interface Vehicle {
   vehicle_number: string;
   make: string;
   model: string;
-  wheel_config: string;
+  wheel_config: "4x2" | "6x4" | "8x4" | "6x2" | "4x4";
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
   created_at: string;
   active_tires_count: number;
@@ -57,10 +57,15 @@ interface ApiResponse {
   totalPages: number;
 }
 
+// Available wheel configurations
+const WHEEL_CONFIGS = ["All", "4x2", "6x4", "8x4", "6x2", "4x4"] as const;
+type WheelConfig = typeof WHEEL_CONFIGS[number];
+
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [selectedConfig, setSelectedConfig] = useState<WheelConfig>("All");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalVehicles, setTotalVehicles] = useState(0);
@@ -68,18 +73,34 @@ export default function VehiclesPage() {
 
   useEffect(() => {
     fetchVehicles();
-  }, [currentPage, search]);
+  }, [currentPage, search, selectedConfig]);
 
   const fetchVehicles = async () => {
     try {
       setLoading(true);
+      
+      // Build query parameters
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
-        search: search,
       });
       
-      const response = await fetch(`http://localhost:5000/api/vehicles?`);
+      // Add search term if provided
+      if (search.trim()) {
+        params.append("search", search.trim());
+      }
+      
+      // Add wheel config filter if not "All"
+      if (selectedConfig !== "All") {
+        params.append("wheel_config", selectedConfig);
+      }
+      
+      const response = await fetch(`http://localhost:5000/api/vehicles?${params.toString()}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data: ApiResponse = await response.json();
       
       setVehicles(data.vehicles || []);
@@ -88,6 +109,11 @@ export default function VehiclesPage() {
     } catch (error) {
       console.error("Error fetching vehicles:", error);
       setVehicles([]);
+      setTotalPages(1);
+      setTotalVehicles(0);
+      
+      // Display error to user (optional)
+      // You could add a toast notification here
     } finally {
       setLoading(false);
     }
@@ -98,16 +124,21 @@ export default function VehiclesPage() {
     setCurrentPage(1); // Reset to first page on new search
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+  const handleConfigFilter = (config: WheelConfig) => {
+    setSelectedConfig(config);
+    setCurrentPage(1); // Reset to first page when filter changes
   };
 
-  const formatOdometer = (odometer: number) => {
-    return odometer.toLocaleString() + " km";
+  const formatDate = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch (error) {
+      return "Invalid date";
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -120,6 +151,23 @@ export default function VehiclesPage() {
         return "bg-yellow-500 hover:bg-yellow-600";
       default:
         return "bg-gray-500 hover:bg-gray-600";
+    }
+  };
+
+  const getConfigColor = (config: string) => {
+    switch (config) {
+      case "4x2":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "6x4":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "8x4":
+        return "bg-purple-100 text-purple-800 border-purple-200";
+      case "6x2":
+        return "bg-amber-100 text-amber-800 border-amber-200";
+      case "4x4":
+        return "bg-red-100 text-red-800 border-red-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
@@ -139,13 +187,32 @@ export default function VehiclesPage() {
     }
   };
 
+  // Get filtered vehicle count for display
+  const getFilterDescription = () => {
+    if (selectedConfig === "All" && !search) {
+      return `All vehicles (${totalVehicles} total)`;
+    }
+    
+    let description = "";
+    if (selectedConfig !== "All") {
+      description += `${selectedConfig} vehicles`;
+    }
+    if (search) {
+      if (description) description += " matching ";
+      description += `"${search}"`;
+    }
+    description += ` (${vehicles.length} of ${totalVehicles})`;
+    
+    return description;
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Vehicles</h1>
           <p className="text-muted-foreground">
-            Manage your fleet of vehicles ({totalVehicles} total)
+            {getFilterDescription()}
           </p>
         </div>
         <Button asChild>
@@ -165,19 +232,95 @@ export default function VehiclesPage() {
                 View and manage all vehicles in your fleet
               </CardDescription>
             </div>
-            <div className="relative w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search vehicles..."
-                className="pl-8"
-                value={search}
-                onChange={handleSearch}
-              />
+            <div className="flex gap-4">
+              <div className="flex gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline">
+                      <Filter className="mr-2 h-4 w-4" />
+                      {selectedConfig === "All" ? "Filter by Config" : selectedConfig}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {WHEEL_CONFIGS.map((config) => (
+                      <DropdownMenuItem
+                        key={config}
+                        onClick={() => handleConfigFilter(config)}
+                        className={selectedConfig === config ? "bg-accent" : ""}
+                      >
+                        {config}
+                        {config !== "All" && (
+                          <Badge 
+                            variant="outline" 
+                            className={`ml-2 ${getConfigColor(config).replace("border-", "border-")}`}
+                          >
+                            {config}
+                          </Badge>
+                        )}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+              <div className="relative w-64">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search vehicles..."
+                  className="pl-8"
+                  value={search}
+                  onChange={handleSearch}
+                />
+              </div>
             </div>
           </div>
         </CardHeader>
         <CardContent>
+          {/* Active Filters Display */}
+          {(selectedConfig !== "All" || search) && (
+            <div className="mb-4 flex flex-wrap gap-2">
+              {selectedConfig !== "All" && (
+                <Badge 
+                  variant="secondary" 
+                  className="flex items-center gap-1"
+                >
+                  Config: {selectedConfig}
+                  <button
+                    onClick={() => setSelectedConfig("All")}
+                    className="ml-1 text-muted-foreground hover:text-foreground"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              )}
+              {search && (
+                <Badge 
+                  variant="secondary" 
+                  className="flex items-center gap-1"
+                >
+                  Search: "{search}"
+                  <button
+                    onClick={() => setSearch("")}
+                    className="ml-1 text-muted-foreground hover:text-foreground"
+                  >
+                    ×
+                  </button>
+                </Badge>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setSelectedConfig("All");
+                  setSearch("");
+                }}
+                className="h-6 text-xs"
+              >
+                Clear all filters
+              </Button>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
@@ -190,14 +333,21 @@ export default function VehiclesPage() {
               <Car className="h-12 w-12 text-muted-foreground mb-4" />
               <h3 className="text-lg font-medium">No vehicles found</h3>
               <p className="text-muted-foreground mt-1">
-                {search ? "Try a different search term" : "Get started by adding a new vehicle"}
+                {search || selectedConfig !== "All" 
+                  ? "Try changing your search or filter criteria" 
+                  : "Get started by adding a new vehicle"
+                }
               </p>
-              {!search && (
-                <Button asChild className="mt-4">
-                  <Link href="/vehicles/create">
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Add New Vehicle
-                  </Link>
+              {(search || selectedConfig !== "All") && (
+                <Button
+                  variant="outline"
+                  className="mt-4"
+                  onClick={() => {
+                    setSelectedConfig("All");
+                    setSearch("");
+                  }}
+                >
+                  Clear filters
                 </Button>
               )}
             </div>
@@ -222,7 +372,12 @@ export default function VehiclesPage() {
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <Car className="h-4 w-4 text-muted-foreground" />
-                            {vehicle.vehicle_number}
+                            <Link 
+                              href={`/vehicles/${vehicle.id}`}
+                              className="hover:text-primary hover:underline"
+                            >
+                              {vehicle.vehicle_number}
+                            </Link>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -232,7 +387,12 @@ export default function VehiclesPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{vehicle.wheel_config}</Badge>
+                          <Badge 
+                            variant="outline" 
+                            className={getConfigColor(vehicle.wheel_config)}
+                          >
+                            {vehicle.wheel_config}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(vehicle.status)}>
@@ -257,7 +417,7 @@ export default function VehiclesPage() {
                               <DropdownMenuLabel>Actions</DropdownMenuLabel>
                               <DropdownMenuItem asChild>
                                 <Link href={`/vehicles/${vehicle.id}`}>
-                                  <Edit className="mr-2 h-4 w-4" />
+                                  <Eye className="mr-2 h-4 w-4" />
                                   View Details
                                 </Link>
                               </DropdownMenuItem>
@@ -340,7 +500,7 @@ export default function VehiclesPage() {
                     </PaginationContent>
                   </Pagination>
                   <p className="text-sm text-center text-muted-foreground mt-2">
-                    Page {currentPage} of {totalPages}
+                    Page {currentPage} of {totalPages} • {vehicles.length} vehicles shown
                   </p>
                 </div>
               )}
