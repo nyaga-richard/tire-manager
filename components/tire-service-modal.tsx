@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { 
   X, 
   Check, 
@@ -14,7 +14,9 @@ import {
   ChevronUp,
   Grid,
   Replace,
-  ArrowUpDown
+  ArrowUpDown,
+  Search,
+  Filter
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,6 +29,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 
 interface Tire {
   id: number;
@@ -39,6 +43,7 @@ interface Tire {
 }
 
 interface VehiclePosition {
+  id: number;
   position_code: string;
   position_name: string;
   axle_number: number;
@@ -68,7 +73,7 @@ interface TireServiceModalProps {
   onSuccess?: () => void;
 }
 
-type ServiceType = "single" | "bulk" | "remove";
+type ServiceType = "bulk" | "remove";
 type OperationType = "install" | "remove" | "swap";
 
 interface InstallationItem {
@@ -97,6 +102,11 @@ interface SwapData {
   toTire?: TireInstallation;
 }
 
+interface TireSize {
+  size: string;
+  count: number;
+}
+
 export default function TireServiceModal({
   isOpen,
   onClose,
@@ -107,18 +117,15 @@ export default function TireServiceModal({
   onSuccess
 }: TireServiceModalProps) {
   const [loading, setLoading] = useState(false);
-  const [serviceType, setServiceType] = useState<ServiceType>("single");
+  const [serviceType, setServiceType] = useState<ServiceType>("bulk");
   const [availableTires, setAvailableTires] = useState<Tire[]>([]);
+  const [tireSizes, setTireSizes] = useState<TireSize[]>([]);
   const [currentOdometer, setCurrentOdometer] = useState<number>(0);
   const [reason, setReason] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   
   // Operation type tab
   const [operationType, setOperationType] = useState<OperationType>("install");
-  
-  // Single operation states
-  const [singleSelectedTire, setSingleSelectedTire] = useState<string>("");
-  const [singleSelectedPosition, setSingleSelectedPosition] = useState<string>("");
   
   // Swap operation states
   const [swapData, setSwapData] = useState<SwapData>({
@@ -135,12 +142,19 @@ export default function TireServiceModal({
   const [selectedRemovals, setSelectedRemovals] = useState<Record<string, boolean>>({});
   const [showRemoveList, setShowRemoveList] = useState(false);
 
+  // Search and filter states
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedSize, setSelectedSize] = useState<string>("all");
+  const [searchInputs, setSearchInputs] = useState<Record<string, string>>({});
+  const [loadingSizes, setLoadingSizes] = useState(false);
+
   // Reset form when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       resetForm();
       fetchAvailableTires();
       fetchCurrentOdometer();
+      fetchTireSizes();
     }
   }, [isOpen]);
 
@@ -167,8 +181,6 @@ export default function TireServiceModal({
   }, [swapData.toPosition, currentTires, operationType]);
 
   const resetForm = () => {
-    setSingleSelectedTire("");
-    setSingleSelectedPosition("");
     setSwapData({
       fromPosition: "",
       toPosition: ""
@@ -178,18 +190,46 @@ export default function TireServiceModal({
     setReason("");
     setNotes("");
     setOperationType("install");
-    setServiceType("single");
+    setServiceType("bulk");
+    setSearchQuery("");
+    setSelectedSize("all");
+    setSearchInputs({});
   };
 
   const fetchAvailableTires = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/tires/available");
+      const response = await fetch("http://localhost:5000/api/tires/");
       if (response.ok) {
         const data = await response.json();
         setAvailableTires(data);
       }
     } catch (error) {
       console.error("Error fetching available tires:", error);
+    }
+  };
+
+  const fetchTireSizes = async () => {
+    try {
+      setLoadingSizes(true);
+      const response = await fetch("http://localhost:5000/api/inventory/by-size");
+      if (response.ok) {
+        const data = await response.json();
+        // Assuming the API returns an array of objects with size and count properties
+        setTireSizes(data);
+      } else {
+        // Fallback: extract unique sizes from available tires
+        const sizes = new Set(availableTires.map(tire => tire.size));
+        const sizeArray = Array.from(sizes).map(size => ({ size, count: 0 }));
+        setTireSizes(sizeArray);
+      }
+    } catch (error) {
+      console.error("Error fetching tire sizes:", error);
+      // Fallback: extract unique sizes from available tires
+      const sizes = new Set(availableTires.map(tire => tire.size));
+      const sizeArray = Array.from(sizes).map(size => ({ size, count: 0 }));
+      setTireSizes(sizeArray);
+    } finally {
+      setLoadingSizes(false);
     }
   };
 
@@ -231,19 +271,53 @@ export default function TireServiceModal({
     return availablePositions;
   };
 
+  // Get unique tire sizes from the fetched data
+  const getAvailableSizes = useMemo(() => {
+    return tireSizes.map(item => item.size).sort();
+  }, [tireSizes]);
+
+  // Filter tires based on search query and selected size
+  const getFilteredTires = useMemo(() => {
+    let filtered = availableTires;
+    
+    // Apply size filter
+    if (selectedSize !== "all") {
+      filtered = filtered.filter(tire => tire.size === selectedSize);
+    }
+    
+    // Apply search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(tire => 
+        tire.serial_number.toLowerCase().includes(query) ||
+        tire.brand.toLowerCase().includes(query) ||
+        tire.size.toLowerCase().includes(query)
+      );
+    }
+    
+    return filtered;
+  }, [availableTires, selectedSize, searchQuery]);
+
   const addInstallationItem = () => {
     if (installationItems.length >= getAvailablePositions().length) {
       return; // Cannot add more items than available positions
     }
+    const newId = Date.now().toString();
     setInstallationItems([
       ...installationItems,
-      { id: Date.now().toString(), tireId: "", positionCode: "" }
+      { id: newId, tireId: "", positionCode: "" }
     ]);
+    setSearchInputs(prev => ({ ...prev, [newId]: "" }));
   };
 
   const removeInstallationItem = (id: string) => {
     if (installationItems.length > 1) {
       setInstallationItems(installationItems.filter(item => item.id !== id));
+      setSearchInputs(prev => {
+        const newSearchInputs = { ...prev };
+        delete newSearchInputs[id];
+        return newSearchInputs;
+      });
     }
   };
 
@@ -268,7 +342,13 @@ export default function TireServiceModal({
         type: selectedTire.type
       };
       setInstallationItems(updatedItems);
+      // Clear the search input for this item
+      setSearchInputs(prev => ({ ...prev, [installationItems[index].id]: selectedTire.serial_number }));
     }
+  };
+
+  const handleSearchInputChange = (itemId: string, value: string) => {
+    setSearchInputs(prev => ({ ...prev, [itemId]: value }));
   };
 
   const handleSelectAllRemovals = (checked: boolean) => {
@@ -289,50 +369,101 @@ export default function TireServiceModal({
       });
     }
   };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+ const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
     try {
-      let endpoint = "";
-      let payload: any = {
-        vehicle_id: vehicleId,
-        current_odometer: currentOdometer,
-        reason: reason || "Regular service",
-        notes: notes,
-        performed_by: "user",
-        operation_type: serviceType
+      // Debug: Check what positions we have
+      console.log("Available positions with IDs:", availablePositions);
+      
+      // Helper function to get position_id from position_code
+      const getPositionId = (positionCode: string): number => {
+        const position = availablePositions.find(p => p.position_code === positionCode);
+        if (!position) {
+          throw new Error(`Position code ${positionCode} not found in available positions`);
+        }
+        
+        if (!position.id) {
+          console.error("Position object missing id field:", position);
+          throw new Error(`Position ${positionCode} is missing ID field.`);
+        }
+        
+        return position.id;
       };
 
       if (operationType === "install") {
-        if (serviceType === "single") {
-          endpoint = "install";
-          payload = {
-            ...payload,
-            tire_id: parseInt(singleSelectedTire),
-            position_code: singleSelectedPosition,
-            operation_type: "single_install"
-          };
-        } else if (serviceType === "bulk") {
-          endpoint = "install/bulk";
-          const validItems = installationItems.filter(item => 
-            item.tireId && item.positionCode
-          );
-          
-          if (validItems.length === 0) {
-            throw new Error("No valid installation items");
-          }
-
-          payload = {
-            ...payload,
-            installations: validItems.map(item => ({
-              tire_id: parseInt(item.tireId),
-              position_code: item.positionCode
-            })),
-            operation_type: "bulk_install"
-          };
+        const validItems = installationItems.filter(item => 
+          item.tireId && item.positionCode
+        );
+        
+        if (validItems.length === 0) {
+          throw new Error("No valid installation items");
         }
+
+        // Check for duplicate tire installations
+        const tireIds = validItems.map(item => item.tireId);
+        const uniqueTireIds = [...new Set(tireIds)];
+        
+        if (tireIds.length !== uniqueTireIds.length) {
+          throw new Error("Cannot install the same tire in multiple positions. Each tire can only be installed in one position at a time.");
+        }
+
+        // Check for duplicate position selections
+        const positionCodes = validItems.map(item => item.positionCode);
+        const uniquePositionCodes = [...new Set(positionCodes)];
+        
+        if (positionCodes.length !== uniquePositionCodes.length) {
+          throw new Error("Cannot install multiple tires in the same position. Each position can only have one tire.");
+        }
+
+        const installationPromises = validItems.map(async (item) => {
+          try {
+            const positionId = getPositionId(item.positionCode);
+            
+            const installPayload = {
+              tire_id: parseInt(item.tireId),
+              vehicle_id: vehicleId,
+              position_id: positionId,
+              install_date: new Date().toISOString().split('T')[0],
+              install_odometer: currentOdometer,
+              reason: reason || "Regular service",
+              user_id: 1
+            };
+
+            console.log("Sending install payload:", installPayload);
+
+            const response = await fetch(`http://localhost:5000/api/tires/install`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(installPayload),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              console.error("Install error response:", errorData);
+              
+              // More specific error messages
+              if (errorData.error && errorData.error.includes('Invalid wheel position')) {
+                throw new Error(`Invalid position ${item.positionCode} for this vehicle. Please select a valid position.`);
+              } else if (errorData.error && errorData.error.includes('not available')) {
+                throw new Error(`Tire ${item.serialNumber} is not available for installation. It may already be installed elsewhere.`);
+              } else {
+                throw new Error(`Failed to install tire ${item.serialNumber}: ${errorData.error || errorData.message}`);
+              }
+            }
+
+            return response.json();
+          } catch (error) {
+            console.error(`Error installing tire ${item.serialNumber}:`, error);
+            throw error;
+          }
+        });
+
+        await Promise.all(installationPromises);
+
       } else if (operationType === "remove") {
         const positionsToRemove = Object.keys(selectedRemovals).filter(
           position => selectedRemovals[position]
@@ -342,32 +473,40 @@ export default function TireServiceModal({
           throw new Error("No tires selected for removal");
         }
 
-        if (serviceType === "single") {
-          // Single removal - find the position from selected removals
-          const positionToRemove = positionsToRemove[0];
-          const tireToRemove = currentTires.find(t => t.position_code === positionToRemove);
-          if (!tireToRemove) throw new Error("No tire found at selected position");
+        const removalPromises = positionsToRemove.map(async (positionCode) => {
+          const tire = currentTires.find(t => t.position_code === positionCode);
+          if (!tire) throw new Error(`No tire found at position ${positionCode}`);
           
-          endpoint = "remove";
-          payload = {
-            ...payload,
-            installation_id: tireToRemove.id,
-            operation_type: "single_remove"
+          const removePayload = {
+            assignment_id: tire.id,
+            removal_date: new Date().toISOString().split('T')[0],
+            removal_odometer: currentOdometer,
+            user_id: 1,
+            reason: reason || "Regular service",
+            next_status: "USED_STORE"
           };
-        } else if (serviceType === "bulk") {
-          endpoint = "remove/bulk";
-          const installationsToRemove = positionsToRemove.map(position => {
-            const tire = currentTires.find(t => t.position_code === position);
-            if (!tire) throw new Error(`No tire found at position ${position}`);
-            return tire.id;
+
+          console.log("Sending remove payload:", removePayload);
+
+          const response = await fetch(`http://localhost:5000/api/tires/remove`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(removePayload),
           });
 
-          payload = {
-            ...payload,
-            installation_ids: installationsToRemove,
-            operation_type: "bulk_remove"
-          };
-        }
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error("Remove error response:", errorData);
+            throw new Error(`Failed to remove tire from ${positionCode}: ${errorData.error || errorData.message}`);
+          }
+
+          return response.json();
+        });
+
+        await Promise.all(removalPromises);
+
       } else if (operationType === "swap") {
         if (!swapData.fromPosition) {
           throw new Error("Please select a tire to swap from");
@@ -379,35 +518,121 @@ export default function TireServiceModal({
           throw new Error("Cannot swap to the same position");
         }
 
-        endpoint = "swap";
         const fromTire = currentTires.find(t => t.position_code === swapData.fromPosition);
         if (!fromTire) throw new Error("No tire found at selected 'from' position");
         
         const toTire = currentTires.find(t => t.position_code === swapData.toPosition);
         
-        payload = {
-          ...payload,
-          from_installation_id: fromTire.id,
-          to_position_code: swapData.toPosition,
-          ...(toTire && { to_installation_id: toTire.id }),
-          operation_type: "swap"
-        };
+        // Get position IDs
+        const fromPositionId = getPositionId(swapData.fromPosition);
+        const toPositionId = getPositionId(swapData.toPosition);
+        
+        console.log("Swap details:", {
+          fromTire,
+          toTire,
+          fromPositionId,
+          toPositionId
+        });
+        
+        const swapOperations = [];
+        
+        // Remove from position tire
+        swapOperations.push(
+          fetch(`http://localhost:5000/api/tires/remove`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              assignment_id: fromTire.id,
+              removal_date: new Date().toISOString().split('T')[0],
+              removal_odometer: currentOdometer,
+              user_id: 1,
+              reason: reason || "Position swap",
+              next_status: "IN_STORE"
+            }),
+          })
+        );
+        
+        if (toTire) {
+          swapOperations.push(
+            fetch(`http://localhost:5000/api/tires/remove`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                assignment_id: toTire.id,
+                removal_date: new Date().toISOString().split('T')[0],
+                removal_odometer: currentOdometer,
+                user_id: 1,
+                reason: reason || "Position swap",
+                next_status: "IN_STORE"
+              }),
+            })
+          );
+        }
+        
+        const removeResults = await Promise.all(swapOperations);
+        
+        for (const result of removeResults) {
+          if (!result.ok) {
+            const errorData = await result.json();
+            throw new Error(`Swap failed during removal: ${errorData.error || errorData.message}`);
+          }
+        }
+        
+        const installOperations = [];
+        
+        // Install 'from' tire to 'to' position
+        installOperations.push(
+          fetch(`http://localhost:5000/api/tires/install`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              tire_id: fromTire.tire_id,
+              vehicle_id: vehicleId,
+              position_id: toPositionId,
+              install_date: new Date().toISOString().split('T')[0],
+              install_odometer: currentOdometer,
+              reason: reason || "Position swap",
+              user_id: 1
+            }),
+          })
+        );
+        
+        if (toTire) {
+          installOperations.push(
+            fetch(`http://localhost:5000/api/tires/install`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                tire_id: toTire.tire_id,
+                vehicle_id: vehicleId,
+                position_id: fromPositionId,
+                install_date: new Date().toISOString().split('T')[0],
+                install_odometer: currentOdometer,
+                reason: reason || "Position swap",
+                user_id: 1
+              }),
+            })
+          );
+        }
+        
+        const installResults = await Promise.all(installOperations);
+        
+        for (const result of installResults) {
+          if (!result.ok) {
+            const errorData = await result.json();
+            throw new Error(`Swap failed during installation: ${errorData.error || errorData.message}`);
+          }
+        }
       }
 
-      const response = await fetch(`http://localhost:5000/api/tire-service/${endpoint}`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Service operation failed");
-      }
-
-      // Success
       if (onSuccess) onSuccess();
       onClose();
       resetForm();
@@ -471,49 +696,6 @@ export default function TireServiceModal({
             </Tabs>
           </div>
 
-          {/* Service Type Selection - Only show for install/remove */}
-          {(operationType === "install" || operationType === "remove") && (
-            <div className="space-y-3 mb-6">
-              <Label>Service Type</Label>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                <Button
-                  type="button"
-                  variant={serviceType === "single" ? "default" : "outline"}
-                  onClick={() => setServiceType("single")}
-                  className="h-10"
-                >
-                  Single Operation
-                </Button>
-                <Button
-                  type="button"
-                  variant={serviceType === "bulk" ? "default" : "outline"}
-                  onClick={() => setServiceType("bulk")}
-                  className="h-10"
-                >
-                  Bulk Operation
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowRemoveList(!showRemoveList)}
-                  className="h-10"
-                >
-                  {showRemoveList ? (
-                    <>
-                      <ChevronUp className="mr-2 h-4 w-4" />
-                      Hide Tire List
-                    </>
-                  ) : (
-                    <>
-                      <Grid className="mr-2 h-4 w-4" />
-                      View All Tires
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-          )}
-
           {/* Current Odometer */}
           <div className="space-y-2 mb-6">
             <Label htmlFor="odometer">Current Odometer (km)</Label>
@@ -527,296 +709,307 @@ export default function TireServiceModal({
             />
           </div>
 
-          {/* Dynamic Form Based on Operation and Service Type */}
+          {/* Dynamic Form Based on Operation Type */}
           {operationType === "install" && (
             <div className="space-y-6">
-              {serviceType === "single" ? (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="tire-select">Select Tire</Label>
-                    <Select 
-                      value={singleSelectedTire} 
-                      onValueChange={setSingleSelectedTire} 
-                      required
-                    >
-                      <SelectTrigger id="tire-select">
-                        <SelectValue placeholder="Choose a tire to install" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availableTires.map((tire) => (
-                          <SelectItem key={tire.id} value={tire.id.toString()}>
-                            <div className="flex items-center justify-between">
-                              <div className="flex flex-col">
-                                <span className="font-mono font-medium">{tire.serial_number}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {tire.brand} • {tire.size} • {tire.type}
-                                </span>
-                              </div>
-                              <Badge variant="outline" className="ml-2 capitalize">
-                                {tire.type.toLowerCase()}
-                              </Badge>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="position-select">Install Position</Label>
-                    <Select 
-                      value={singleSelectedPosition} 
-                      onValueChange={setSingleSelectedPosition} 
-                      required
-                    >
-                      <SelectTrigger id="position-select">
-                        <SelectValue placeholder="Select wheel position" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {availablePositionsForInstall.map((position) => (
-                          <SelectItem key={position.position_code} value={position.position_code}>
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="font-mono">
-                                {position.position_code}
-                              </Badge>
-                              <span>{position.position_name}</span>
-                              {position.is_trailer === 1 && (
-                                <Badge variant="secondary" className="text-xs">
-                                  Trailer
-                                </Badge>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <p className="text-xs text-muted-foreground">
-                      {availablePositionsForInstall.length} positions available
-                    </p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <Label>Installation Items</Label>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={addInstallationItem}
-                        disabled={installationItems.length >= availablePositionsForInstall.length}
+              <div className="space-y-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  <Label>Installation Items</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {/* Size Filter */}
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-muted-foreground" />
+                      <Select 
+                        value={selectedSize} 
+                        onValueChange={setSelectedSize}
+                        disabled={loadingSizes}
                       >
-                        <Plus className="mr-2 h-3 w-3" />
-                        Add Another
-                      </Button>
+                        <SelectTrigger className="w-[120px] h-8">
+                          {loadingSizes ? (
+                            <div className="flex items-center gap-2">
+                              <RefreshCw className="h-3 w-3 animate-spin" />
+                              <span>Loading...</span>
+                            </div>
+                          ) : (
+                            <SelectValue placeholder="Size" />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Sizes ({availableTires.length})</SelectItem>
+                          {getAvailableSizes.map((size) => {
+                            const sizeCount = tireSizes.find(s => s.size === size)?.count || 0;
+                            return (
+                              <SelectItem key={size} value={size}>
+                                <div className="flex items-center justify-between w-full">
+                                  <span>{size}</span>
+                                  <Badge variant="outline" className="ml-2 text-xs">
+                                    {sizeCount}
+                                  </Badge>
+                                </div>
+                              </SelectItem>
+                            );
+                          })}
+                        </SelectContent>
+                      </Select>
                     </div>
                     
-                    <ScrollArea className="h-[250px] rounded-md border p-4">
-                      {installationItems.map((item, index) => (
-                        <div key={item.id} className="space-y-3 mb-4 last:mb-0">
-                          <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-medium">Installation #{index + 1}</h4>
-                            {installationItems.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => removeInstallationItem(item.id)}
-                                className="h-6 w-6 p-0"
-                              >
-                                <Minus className="h-3 w-3" />
-                              </Button>
+                    {/* Search Input */}
+                    <div className="relative">
+                      <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search tires..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-8 h-8 w-[200px]"
+                      />
+                    </div>
+                    
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={addInstallationItem}
+                      disabled={installationItems.length >= availablePositionsForInstall.length}
+                      className="h-8"
+                    >
+                      <Plus className="mr-2 h-3 w-3" />
+                      Add Another
+                    </Button>
+                  </div>
+                </div>
+                
+                <ScrollArea className="h-[250px] rounded-md border p-4">
+                  {installationItems.map((item, index) => {
+                    // Filter tires for this specific installation item based on its search input
+                    const itemSearchQuery = searchInputs[item.id] || "";
+                    const filteredTiresForItem = itemSearchQuery 
+                      ? availableTires.filter(tire => 
+                          tire.serial_number.toLowerCase().includes(itemSearchQuery.toLowerCase()) ||
+                          tire.brand.toLowerCase().includes(itemSearchQuery.toLowerCase()) ||
+                          tire.size.toLowerCase().includes(itemSearchQuery.toLowerCase())
+                        )
+                      : getFilteredTires;
+
+                    return (
+                      <div key={item.id} className="space-y-3 mb-4 last:mb-0">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium">Installation #{index + 1}</h4>
+                          {installationItems.length > 1 && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => removeInstallationItem(item.id)}
+                              className="h-6 w-6 p-0"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </Button>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor={`tire-${item.id}`} className="text-xs">
+                              Tire
+                            </Label>
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button
+                                  variant="outline"
+                                  role="combobox"
+                                  className="w-full justify-between h-9"
+                                >
+                                  {item.serialNumber ? (
+                                    <div className="flex items-center gap-2 truncate">
+                                      <span className="font-mono">{item.serialNumber}</span>
+                                      <Badge variant="outline" className="text-xs">
+                                        {item.size}
+                                      </Badge>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground">Select or search tire...</span>
+                                  )}
+                                  <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-[300px] p-0">
+                                <Command>
+                                  <CommandInput 
+                                    placeholder="Search by serial, brand, or size..."
+                                    value={searchInputs[item.id] || ""}
+                                    onValueChange={(value) => handleSearchInputChange(item.id, value)}
+                                  />
+                                  <CommandEmpty>No tires found.</CommandEmpty>
+                                  <CommandGroup className="max-h-[300px] overflow-auto">
+                                    {filteredTiresForItem.map((tire) => (
+                                      <CommandItem
+                                        key={tire.id}
+                                        value={tire.serial_number}
+                                        onSelect={() => handleSelectTire(tire.id.toString(), index)}
+                                      >
+                                        <div className="flex items-center justify-between w-full">
+                                          <div className="flex flex-col">
+                                            <span className="font-mono font-medium">{tire.serial_number}</span>
+                                            <span className="text-xs text-muted-foreground">
+                                              {tire.brand} • {tire.size}
+                                            </span>
+                                          </div>
+                                          <Badge 
+                                            variant={tire.type === "NEW" ? "default" : "secondary"}
+                                            className="text-xs capitalize"
+                                          >
+                                            {tire.type.toLowerCase()}
+                                          </Badge>
+                                        </div>
+                                      </CommandItem>
+                                    ))}
+                                  </CommandGroup>
+                                </Command>
+                              </PopoverContent>
+                            </Popover>
+                            {item.serialNumber && (
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Badge variant="outline" className="capitalize">
+                                  {item.type?.toLowerCase()}
+                                </Badge>
+                                <span>•</span>
+                                <span>{item.brand}</span>
+                              </div>
                             )}
                           </div>
                           
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div className="space-y-2">
-                              <Label htmlFor={`tire-${item.id}`} className="text-xs">
-                                Tire
-                              </Label>
-                              <Select 
-                                value={item.tireId} 
-                                onValueChange={(value) => handleSelectTire(value, index)}
-                                required
-                              >
-                                <SelectTrigger id={`tire-${item.id}`}>
-                                  <SelectValue placeholder="Select tire" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {availableTires.map((tire) => (
-                                    <SelectItem key={tire.id} value={tire.id.toString()}>
-                                      <div className="flex flex-col">
-                                        <span className="font-mono text-sm">{tire.serial_number}</span>
-                                        <span className="text-xs text-muted-foreground">
-                                          {tire.brand} • {tire.size}
-                                        </span>
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                              {item.serialNumber && (
-                                <p className="text-xs text-muted-foreground">
-                                  Selected: {item.serialNumber} • {item.size} • {item.type}
-                                </p>
-                              )}
-                            </div>
-                            
-                            <div className="space-y-2">
-                              <Label htmlFor={`position-${item.id}`} className="text-xs">
-                                Position
-                              </Label>
-                              <Select 
-                                value={item.positionCode} 
-                                onValueChange={(value) => updateInstallationItem(item.id, 'positionCode', value)}
-                                required
-                              >
-                                <SelectTrigger id={`position-${item.id}`}>
-                                  <SelectValue placeholder="Select position" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {availablePositionsForInstall.map((position) => (
-                                    <SelectItem key={position.position_code} value={position.position_code}>
-                                      <div className="flex items-center gap-2">
-                                        <Badge variant="outline" className="font-mono text-xs">
-                                          {position.position_code}
+                          <div className="space-y-2">
+                            <Label htmlFor={`position-${item.id}`} className="text-xs">
+                              Position
+                            </Label>
+                            <Select 
+                              value={item.positionCode} 
+                              onValueChange={(value) => updateInstallationItem(item.id, 'positionCode', value)}
+                              required
+                            >
+                              <SelectTrigger id={`position-${item.id}`}>
+                                <SelectValue placeholder="Select position" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {availablePositionsForInstall.map((position) => (
+                                  <SelectItem key={position.position_code} value={position.position_code}>
+                                    <div className="flex items-center gap-2">
+                                      <Badge variant="outline" className="font-mono text-xs">
+                                        {position.position_code}
+                                      </Badge>
+                                      <span className="text-xs">{position.position_name}</span>
+                                      {position.is_trailer === 1 && (
+                                        <Badge variant="secondary" className="text-xs ml-auto">
+                                          Trailer
                                         </Badge>
-                                        <span className="text-xs">{position.position_name}</span>
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
+                                      )}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           </div>
-                          
-                          {index < installationItems.length - 1 && <Separator className="mt-2" />}
                         </div>
-                      ))}
-                    </ScrollArea>
-                    
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">
-                        {installationItems.filter(item => item.tireId && item.positionCode).length} of {installationItems.length} items complete
-                      </span>
-                      <span className="text-muted-foreground">
-                        {availablePositionsForInstall.length - installationItems.length} positions available
-                      </span>
+                        
+                        {index < installationItems.length - 1 && <Separator className="mt-2" />}
+                      </div>
+                    );
+                  })}
+                </ScrollArea>
+                
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 text-sm">
+                  <div className="space-y-1">
+                    <div className="text-muted-foreground">
+                      {installationItems.filter(item => item.tireId && item.positionCode).length} of {installationItems.length} items complete
+                    </div>
+                    <div className="text-muted-foreground">
+                      Showing {getFilteredTires.length} of {availableTires.length} available tires
+                      {selectedSize !== "all" && ` • Filtered by size: ${selectedSize}`}
                     </div>
                   </div>
-                </>
-              )}
+                  <div className="text-muted-foreground">
+                    {availablePositionsForInstall.length - installationItems.length} positions available
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
           {operationType === "remove" && (
             <div className="space-y-6">
-              {serviceType === "single" ? (
-                <div className="space-y-2">
-                  <Label htmlFor="remove-position">Position to Remove</Label>
-                  <Select 
-                    value={Object.keys(selectedRemovals).find(pos => selectedRemovals[pos]) || ""} 
-                    onValueChange={(value) => setSelectedRemovals({ [value]: true })}
-                    required
-                  >
-                    <SelectTrigger id="remove-position">
-                      <SelectValue placeholder="Select position to remove" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {occupiedPositions.map((tire) => (
-                        <SelectItem key={tire.position_code} value={tire.position_code}>
-                          <div className="flex items-center justify-between">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label>Select Tires to Remove</Label>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSelectAllRemovals(true)}
+                    >
+                      Select All
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleSelectAllRemovals(false)}
+                    >
+                      Clear All
+                    </Button>
+                  </div>
+                </div>
+                
+                <ScrollArea className="h-[250px] rounded-md border">
+                  <div className="p-4 space-y-2">
+                    {occupiedPositions.map((tire) => (
+                      <div 
+                        key={tire.position_code} 
+                        className={`flex items-center justify-between p-3 rounded-md border ${
+                          selectedRemovals[tire.position_code] 
+                            ? 'border-primary bg-primary/5' 
+                            : 'border-border'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <Checkbox
+                            checked={!!selectedRemovals[tire.position_code]}
+                            onCheckedChange={(checked) => 
+                              setSelectedRemovals({
+                                ...selectedRemovals,
+                                [tire.position_code]: !!checked
+                              })
+                            }
+                          />
+                          <div className="flex flex-col">
                             <div className="flex items-center gap-2">
                               <Badge variant="outline" className="font-mono">
                                 {tire.position_code}
                               </Badge>
-                              <span className="font-mono text-sm">{tire.serial_number}</span>
+                              <span className="font-medium">{tire.position_name}</span>
                             </div>
-                            <Badge variant="secondary" className="capitalize">
-                              {tire.type.toLowerCase()}
-                            </Badge>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <Label>Select Tires to Remove</Label>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSelectAllRemovals(true)}
-                      >
-                        Select All
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleSelectAllRemovals(false)}
-                      >
-                        Clear All
-                      </Button>
-                    </div>
-                  </div>
-                  
-                  <ScrollArea className="h-[250px] rounded-md border">
-                    <div className="p-4 space-y-2">
-                      {occupiedPositions.map((tire) => (
-                        <div 
-                          key={tire.position_code} 
-                          className={`flex items-center justify-between p-3 rounded-md border ${
-                            selectedRemovals[tire.position_code] 
-                              ? 'border-primary bg-primary/5' 
-                              : 'border-border'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Checkbox
-                              checked={!!selectedRemovals[tire.position_code]}
-                              onCheckedChange={(checked) => 
-                                setSelectedRemovals({
-                                  ...selectedRemovals,
-                                  [tire.position_code]: !!checked
-                                })
-                              }
-                            />
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-2">
-                                <Badge variant="outline" className="font-mono">
-                                  {tire.position_code}
-                                </Badge>
-                                <span className="font-medium">{tire.position_name}</span>
-                              </div>
-                              <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                                <span className="font-mono">{tire.serial_number}</span>
-                                <span>•</span>
-                                <span>{tire.brand}</span>
-                                <span>•</span>
-                                <span>{tire.size}</span>
-                                <span>•</span>
-                                <Badge variant="outline" className="capitalize text-xs">
-                                  {tire.type.toLowerCase()}
-                                </Badge>
-                              </div>
+                            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
+                              <span className="font-mono">{tire.serial_number}</span>
+                              <span>•</span>
+                              <span>{tire.brand}</span>
+                              <span>•</span>
+                              <span>{tire.size}</span>
+                              <span>•</span>
+                              <Badge variant="outline" className="capitalize text-xs">
+                                {tire.type.toLowerCase()}
+                              </Badge>
                             </div>
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                  
-                  <div className="text-sm text-muted-foreground">
-                    {Object.values(selectedRemovals).filter(Boolean).length} of {occupiedPositions.length} tires selected for removal
+                      </div>
+                    ))}
                   </div>
+                </ScrollArea>
+                
+                <div className="text-sm text-muted-foreground">
+                  {Object.values(selectedRemovals).filter(Boolean).length} of {occupiedPositions.length} tires selected for removal
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1114,10 +1307,8 @@ export default function TireServiceModal({
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-purple-600">
-                  {operationType === "install" && serviceType === "single" ? (singleSelectedTire && singleSelectedPosition ? 1 : 0) :
-                   operationType === "install" && serviceType === "bulk" ? installationItems.filter(item => item.tireId && item.positionCode).length :
-                   operationType === "remove" && serviceType === "single" ? (Object.keys(selectedRemovals).find(pos => selectedRemovals[pos]) ? 1 : 0) :
-                   operationType === "remove" && serviceType === "bulk" ? Object.values(selectedRemovals).filter(Boolean).length :
+                  {operationType === "install" ? installationItems.filter(item => item.tireId && item.positionCode).length :
+                   operationType === "remove" ? Object.values(selectedRemovals).filter(Boolean).length :
                    operationType === "swap" ? (swapData.fromPosition && swapData.toPosition ? 1 : 0) : 0}
                 </div>
                 <div className="text-muted-foreground">
@@ -1126,9 +1317,11 @@ export default function TireServiceModal({
               </div>
               <div className="text-center">
                 <div className="text-2xl font-bold text-gray-600">
-                  {availableTires.length}
+                  {operationType === "install" ? getFilteredTires.length : availableTires.length}
                 </div>
-                <div className="text-muted-foreground">Available Tires</div>
+                <div className="text-muted-foreground">
+                  {operationType === "install" ? "Filtered Tires" : "Available Tires"}
+                </div>
               </div>
             </div>
           </div>
@@ -1146,10 +1339,8 @@ export default function TireServiceModal({
             <Button 
               type="submit" 
               disabled={loading || 
-                (operationType === "install" && serviceType === "single" && (!singleSelectedTire || !singleSelectedPosition)) ||
-                (operationType === "install" && serviceType === "bulk" && installationItems.filter(item => item.tireId && item.positionCode).length === 0) ||
-                (operationType === "remove" && serviceType === "single" && !Object.keys(selectedRemovals).find(pos => selectedRemovals[pos])) ||
-                (operationType === "remove" && serviceType === "bulk" && Object.values(selectedRemovals).filter(Boolean).length === 0) ||
+                (operationType === "install" && installationItems.filter(item => item.tireId && item.positionCode).length === 0) ||
+                (operationType === "remove" && Object.values(selectedRemovals).filter(Boolean).length === 0) ||
                 (operationType === "swap" && (!swapData.fromPosition || !swapData.toPosition))
               }
             >
