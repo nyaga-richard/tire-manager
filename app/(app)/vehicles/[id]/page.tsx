@@ -36,6 +36,7 @@ import {
   Circle
 } from "lucide-react";
 import TruckWheelDiagram from "@/components/truck-wheel-diagram/TruckWheelDiagram";
+import TireServiceModal from "@/components/tire-service-modal";
 
 interface VehiclePosition {
   id: number;
@@ -153,6 +154,8 @@ export default function VehicleDetailsPage() {
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedWheel, setSelectedWheel] = useState<string | null>(null);
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [selectedPositionForService, setSelectedPositionForService] = useState<string | null>(null);
 
   useEffect(() => {
     if (vehicleId) {
@@ -280,6 +283,12 @@ export default function VehicleDetailsPage() {
     setSelectedWheel(null);
   };
 
+  // Handle service button click
+  const handleServiceClick = (positionCode?: string) => {
+    setSelectedPositionForService(positionCode || null);
+    setIsServiceModalOpen(true);
+  };
+
   // Filter table rows based on selected wheel
   const filteredTires = useMemo(() => {
     if (!vehicle) return [];
@@ -339,11 +348,14 @@ export default function VehicleDetailsPage() {
               Edit Vehicle
             </Link>
           </Button>
-          <Button asChild>
-            <Link href={`/vehicles/${vehicle.id}/tire-service`}>
-              <Plus className="mr-2 h-4 w-4" />
-              Tire Service
-            </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => handleServiceClick()}
+            className="h-8 text-xs"
+            >
+            <Plus className="mr-1 h-3 w-3" />
+            Service
           </Button>
           <Button variant="outline" onClick={handleRefreshAll}>
             <RefreshCw className="mr-2 h-4 w-4" />
@@ -437,13 +449,11 @@ export default function VehicleDetailsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    asChild
+                    onClick={() => handleServiceClick()}
                     className="mt-4"
                   >
-                    <Link href={`/vehicles/${vehicle.id}/tire-service`}>
-                      <Plus className="mr-2 h-3 w-3" />
-                      Add Tire Service
-                    </Link>
+                    <Plus className="mr-2 h-3 w-3" />
+                    Add Tire Service
                   </Button>
                 </div>
               ) : (
@@ -599,13 +609,11 @@ export default function VehicleDetailsPage() {
                   <Button
                     variant="outline"
                     size="sm"
-                    asChild
+                    onClick={() => handleServiceClick()}
                     className="mt-4"
                   >
-                    <Link href={`/vehicles/${vehicle.id}/tire-service`}>
-                      <Plus className="mr-2 h-3 w-3" />
-                      Install Tires
-                    </Link>
+                    <Plus className="mr-2 h-3 w-3" />
+                    Install Tires
                   </Button>
                 </div>
               ) : (
@@ -639,12 +647,26 @@ export default function VehicleDetailsPage() {
                                 <TableCell className="py-2">
                                   <div className="flex items-center gap-2">
                                     {getTireTypeIcon(tire.type)}
-                                    <Badge 
-                                      variant="outline" 
-                                      className={`font-mono text-xs px-1.5 py-0 ${isSelected ? 'border-primary bg-primary/10' : ''}`}
-                                    >
-                                      {tire.position_code}
-                                    </Badge>
+                                    <div className="flex items-center gap-1">
+                                      <Badge 
+                                        variant="outline" 
+                                        className={`font-mono text-xs px-1.5 py-0 ${isSelected ? 'border-primary bg-primary/10' : ''}`}
+                                      >
+                                        {tire.position_code}
+                                      </Badge>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-5 w-5 hover:bg-primary/10"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleServiceClick(tire.position_code);
+                                        }}
+                                        title="Service this tire"
+                                      >
+                                        <RefreshCw className="h-3 w-3" />
+                                      </Button>
+                                    </div>
                                   </div>
                                 </TableCell>
                                 <TableCell className="py-2">
@@ -666,7 +688,7 @@ export default function VehicleDetailsPage() {
                                   </div>
                                 </TableCell>
                                 <TableCell className="py-2">
-                                  <div className="font-mono text-xs truncate" tabIndex={tire.install_odometer}>
+                                  <div className="font-mono text-xs truncate" title={tire.install_odometer.toString()}>
                                     {tire.install_odometer}
                                   </div>
                                 </TableCell>
@@ -685,13 +707,11 @@ export default function VehicleDetailsPage() {
                         <Button
                           variant="outline"
                           size="sm"
-                          asChild
+                          onClick={() => handleServiceClick()}
                           className="h-8 text-xs"
                         >
-                          <Link href={`/vehicles/${vehicle.id}/tire-service`}>
-                            <Plus className="mr-1 h-3 w-3" />
-                            Service
-                          </Link>
+                          <Plus className="mr-1 h-3 w-3" />
+                          Service
                         </Button>
                         <div className="text-xs text-muted-foreground">
                           {filteredTires.length} shown
@@ -705,6 +725,35 @@ export default function VehicleDetailsPage() {
           </Card>
         </div>
       </div>
+
+      {vehicle && (
+  <TireServiceModal
+    isOpen={isServiceModalOpen}
+    onClose={() => {
+      setIsServiceModalOpen(false);
+      setSelectedPositionForService(null);
+    }}
+    vehicleId={vehicle.id}
+    vehicleNumber={vehicle.vehicle_number}
+    currentTires={vehicle.current_tires.map(tire => ({
+      id: tire.id,
+      tire_id: tire.tire_id,
+      position_code: tire.position_code,
+      position_name: tire.position_name,
+      serial_number: tire.serial_number,
+      size: tire.size,
+      brand: tire.brand,
+      type: tire.type,
+      install_date: tire.install_date,
+      install_odometer: tire.install_odometer
+    }))}
+    availablePositions={vehicle.positions}
+    onSuccess={() => {
+      fetchVehicle();
+      setSelectedWheel(null);
+    }}
+  />
+)}
     </div>
   );
 }

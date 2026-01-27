@@ -29,7 +29,6 @@ import {
   Trash2,
   History,
   BarChart3,
-  TrendingUp,
   AlertCircle,
   CheckCircle,
   Clock,
@@ -51,6 +50,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import AddTireModal from "@/components/add-tire-modal";
 
 interface InventoryBySize {
   size: string;
@@ -102,6 +102,7 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
   const [search, setSearch] = useState("");
+  const [isAddTireModalOpen, setIsAddTireModalOpen] = useState(false);
 
   useEffect(() => {
     fetchDashboardStats();
@@ -144,6 +145,7 @@ export default function InventoryPage() {
 
   const fetchStoreTires = async (status?: string) => {
     try {
+      setLoading(true);
       const url = status
         ? `http://localhost:5000/api/inventory/store/${status}`
         : "http://localhost:5000/api/inventory/store";
@@ -152,11 +154,14 @@ export default function InventoryPage() {
       setStoreTires(data);
     } catch (error) {
       console.error("Error fetching store tires:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const fetchRetreadCandidates = async () => {
     try {
+      setLoading(true);
       const response = await fetch(
         "http://localhost:5000/api/inventory/retread-candidates"
       );
@@ -164,24 +169,26 @@ export default function InventoryPage() {
       setRetreadCandidates(data);
     } catch (error) {
       console.error("Error fetching retread candidates:", error);
+    } finally {
+      setLoading(false);
     }
   };
 
-    const fetchPendingDisposal = async () => {
+  const fetchPendingDisposal = async () => {
     try {
-        const response = await fetch(
+      setLoading(true);
+      const response = await fetch(
         "http://localhost:5000/api/inventory/pending-disposal"
-        );
-
-        const data = await response.json();
-
-        setPendingDisposal(Array.isArray(data) ? data : []);
+      );
+      const data = await response.json();
+      setPendingDisposal(Array.isArray(data) ? data : []);
     } catch (error) {
-        console.error("Error fetching pending disposal:", error);
-        setPendingDisposal([]);
+      console.error("Error fetching pending disposal:", error);
+      setPendingDisposal([]);
+    } finally {
+      setLoading(false);
     }
-    };
-
+  };
 
   const refreshAll = () => {
     setLoading(true);
@@ -192,6 +199,10 @@ export default function InventoryPage() {
       activeTab === "retread" && fetchRetreadCandidates(),
       activeTab === "disposal" && fetchPendingDisposal(),
     ]).finally(() => setLoading(false));
+  };
+
+  const handleTireAdded = () => {
+    refreshAll();
   };
 
   const getStatusColor = (status: string) => {
@@ -250,6 +261,13 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-6">
+      {/* Add Tire Modal */}
+      <AddTireModal
+        isOpen={isAddTireModalOpen}
+        onClose={() => setIsAddTireModalOpen(false)}
+        onSuccess={handleTireAdded}
+      />
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Inventory</h1>
@@ -264,11 +282,9 @@ export default function InventoryPage() {
             />
             Refresh
           </Button>
-          <Button asChild>
-            <Link href="/inventory/add">
-              <Package className="mr-2 h-4 w-4" />
-              Add Tire
-            </Link>
+          <Button onClick={() => setIsAddTireModalOpen(true)}>
+            <Package className="mr-2 h-4 w-4" />
+            Add Tire
           </Button>
         </div>
       </div>
@@ -534,7 +550,14 @@ export default function InventoryPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {storeTires.length === 0 ? (
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                    <p className="mt-2 text-muted-foreground">Loading tires...</p>
+                  </div>
+                </div>
+              ) : storeTires.length === 0 ? (
                 <div className="text-center py-8">
                   <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium">No tires in store</h3>
@@ -644,7 +667,14 @@ export default function InventoryPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {retreadCandidates.length === 0 ? (
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                    <p className="mt-2 text-muted-foreground">Loading retread candidates...</p>
+                  </div>
+                </div>
+              ) : retreadCandidates.length === 0 ? (
                 <div className="text-center py-8">
                   <RefreshCw className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium">No retread candidates</h3>
@@ -724,7 +754,14 @@ export default function InventoryPage() {
               </div>
             </CardHeader>
             <CardContent>
-              {pendingDisposal.length === 0 ? (
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                    <p className="mt-2 text-muted-foreground">Loading pending disposals...</p>
+                  </div>
+                </div>
+              ) : pendingDisposal.length === 0 ? (
                 <div className="text-center py-8">
                   <Trash2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                   <h3 className="text-lg font-medium">No pending disposals</h3>

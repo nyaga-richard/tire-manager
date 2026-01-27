@@ -27,7 +27,20 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Search, Car, Edit, Trash2, Eye, Filter } from "lucide-react";
+import { 
+  PlusCircle, 
+  Search, 
+  Car, 
+  Edit, 
+  Trash2, 
+  Eye, 
+  Filter,
+  Archive,
+  RotateCcw,
+  AlertCircle,
+  CheckCircle,
+  XCircle
+} from "lucide-react";
 import Link from "next/link";
 import {
   DropdownMenu,
@@ -38,6 +51,17 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { MoreHorizontal } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Vehicle {
   id: number;
@@ -45,9 +69,12 @@ interface Vehicle {
   make: string;
   model: string;
   wheel_config: "4x2" | "6x4" | "8x4" | "6x2" | "4x4";
-  status: "ACTIVE" | "INACTIVE" | "MAINTENANCE";
+  status: "ACTIVE" | "INACTIVE" | "MAINTENANCE" | "RETIRED";
   created_at: string;
   active_tires_count: number;
+  retired_at?: string;
+  retirement_reason?: string;
+  retired_by?: string;
 }
 
 interface ApiResponse {
@@ -57,9 +84,17 @@ interface ApiResponse {
   totalPages: number;
 }
 
+interface RetirementData {
+  reason: string;
+  notes?: string;
+}
+
 // Available wheel configurations
 const WHEEL_CONFIGS = ["All", "4x2", "6x4", "8x4", "6x2", "4x4"] as const;
 type WheelConfig = typeof WHEEL_CONFIGS[number];
+
+// View mode - Active or Retired
+type ViewMode = "active" | "retired";
 
 export default function VehiclesPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -69,11 +104,28 @@ export default function VehiclesPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalVehicles, setTotalVehicles] = useState(0);
+  const [viewMode, setViewMode] = useState<ViewMode>("active");
+  const [retirementDialogOpen, setRetirementDialogOpen] = useState(false);
+  const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [retirementData, setRetirementData] = useState<RetirementData>({
+    reason: "",
+    notes: ""
+  });
+  const [retirementLoading, setRetirementLoading] = useState(false);
+  const [restoreLoading, setRestoreLoading] = useState(false);
+  const [retirementReasons] = useState([
+    "End of Service Life",
+    "Accident Damage",
+    "Mechanical Failure",
+    "Fleet Reduction",
+    "Sold/Transferred",
+    "Other"
+  ]);
   const itemsPerPage = 10;
 
   useEffect(() => {
     fetchVehicles();
-  }, [currentPage, search, selectedConfig]);
+  }, [currentPage, search, selectedConfig, viewMode]);
 
   const fetchVehicles = async () => {
     try {
@@ -83,6 +135,7 @@ export default function VehiclesPage() {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
+        status: viewMode === "active" ? "active" : "retired"
       });
       
       // Add search term if provided
@@ -111,9 +164,6 @@ export default function VehiclesPage() {
       setVehicles([]);
       setTotalPages(1);
       setTotalVehicles(0);
-      
-      // Display error to user (optional)
-      // You could add a toast notification here
     } finally {
       setLoading(false);
     }
@@ -121,12 +171,12 @@ export default function VehiclesPage() {
 
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
-    setCurrentPage(1); // Reset to first page on new search
+    setCurrentPage(1);
   };
 
   const handleConfigFilter = (config: WheelConfig) => {
     setSelectedConfig(config);
-    setCurrentPage(1); // Reset to first page when filter changes
+    setCurrentPage(1);
   };
 
   const formatDate = (dateString: string) => {
@@ -141,6 +191,20 @@ export default function VehiclesPage() {
     }
   };
 
+  const formatDateTime = (dateString: string) => {
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return "Invalid date";
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "ACTIVE":
@@ -149,6 +213,8 @@ export default function VehiclesPage() {
         return "bg-gray-500 hover:bg-gray-600";
       case "MAINTENANCE":
         return "bg-yellow-500 hover:bg-yellow-600";
+      case "RETIRED":
+        return "bg-red-500 hover:bg-red-600";
       default:
         return "bg-gray-500 hover:bg-gray-600";
     }
@@ -171,26 +237,85 @@ export default function VehiclesPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this vehicle?")) return;
+  const handleOpenRetirementDialog = (vehicle: Vehicle) => {
+    setSelectedVehicle(vehicle);
+    setRetirementData({ reason: "", notes: "" });
+    setRetirementDialogOpen(true);
+  };
+
+  const handleCloseRetirementDialog = () => {
+    setRetirementDialogOpen(false);
+    setSelectedVehicle(null);
+    setRetirementData({ reason: "", notes: "" });
+  };
+
+  const handleRetireVehicle = async () => {
+    if (!selectedVehicle || !retirementData.reason.trim()) return;
     
     try {
-      const response = await fetch(`http://localhost:5000/api/vehicles/${id}`, {
-        method: "DELETE",
+      setRetirementLoading(true);
+      
+      const response = await fetch(`http://localhost:5000/api/vehicles/${selectedVehicle.id}/retire`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          reason: retirementData.reason,
+          notes: retirementData.notes,
+          retired_by: "current_user" // Replace with actual user from auth context
+        }),
       });
       
       if (response.ok) {
-        fetchVehicles(); // Refresh the list
+        // Refresh the list
+        fetchVehicles();
+        handleCloseRetirementDialog();
+      } else {
+        throw new Error("Failed to retire vehicle");
       }
     } catch (error) {
-      console.error("Error deleting vehicle:", error);
+      console.error("Error retiring vehicle:", error);
+      alert("Failed to retire vehicle. Please try again.");
+    } finally {
+      setRetirementLoading(false);
+    }
+  };
+
+  const handleRestoreVehicle = async (vehicleId: number) => {
+    if (!confirm("Are you sure you want to restore this vehicle to active status?")) return;
+    
+    try {
+      setRestoreLoading(true);
+      
+      const response = await fetch(`http://localhost:5000/api/vehicles/${vehicleId}/restore`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          restored_by: "current_user" // Replace with actual user from auth context
+        }),
+      });
+      
+      if (response.ok) {
+        // Refresh the list
+        fetchVehicles();
+      } else {
+        throw new Error("Failed to restore vehicle");
+      }
+    } catch (error) {
+      console.error("Error restoring vehicle:", error);
+      alert("Failed to restore vehicle. Please try again.");
+    } finally {
+      setRestoreLoading(false);
     }
   };
 
   // Get filtered vehicle count for display
   const getFilterDescription = () => {
     if (selectedConfig === "All" && !search) {
-      return `All vehicles (${totalVehicles} total)`;
+      return `${viewMode === "active" ? "Active" : "Retired"} vehicles (${totalVehicles} total)`;
     }
     
     let description = "";
@@ -208,6 +333,94 @@ export default function VehiclesPage() {
 
   return (
     <div className="space-y-6">
+      {/* Retirement Dialog */}
+      <Dialog open={retirementDialogOpen} onOpenChange={setRetirementDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-yellow-500" />
+              Retire Vehicle
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to retire {selectedVehicle?.vehicle_number}? 
+              This will move it to the retired vehicles list.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="reason" className="text-right">
+                Reason*
+              </Label>
+              <select
+                id="reason"
+                className="col-span-3 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                value={retirementData.reason}
+                onChange={(e) => setRetirementData({...retirementData, reason: e.target.value})}
+                required
+              >
+                <option value="">Select a reason</option>
+                {retirementReasons.map((reason) => (
+                  <option key={reason} value={reason}>{reason}</option>
+                ))}
+              </select>
+            </div>
+            
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="notes" className="text-right">
+                Notes
+              </Label>
+              <Textarea
+                id="notes"
+                placeholder="Additional notes about the retirement..."
+                className="col-span-3"
+                value={retirementData.notes}
+                onChange={(e) => setRetirementData({...retirementData, notes: e.target.value})}
+                rows={3}
+              />
+            </div>
+            
+            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+              <div className="flex items-center gap-2 text-yellow-800">
+                <AlertCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">Important Note</span>
+              </div>
+              <p className="mt-1 text-sm text-yellow-700">
+                Retired vehicles will be moved to the retired list and will no longer appear 
+                in the active fleet. You can restore them later if needed.
+              </p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCloseRetirementDialog}
+              disabled={retirementLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleRetireVehicle}
+              disabled={!retirementData.reason.trim() || retirementLoading}
+            >
+              {retirementLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Retiring...
+                </>
+              ) : (
+                <>
+                  <Archive className="mr-2 h-4 w-4" />
+                  Retire Vehicle
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Vehicles</h1>
@@ -215,21 +428,46 @@ export default function VehiclesPage() {
             {getFilterDescription()}
           </p>
         </div>
-        <Button asChild>
-          <Link href="/vehicles/create">
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Add New Vehicle
-          </Link>
-        </Button>
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-md border border-input overflow-hidden">
+            <Button
+              variant={viewMode === "active" ? "default" : "ghost"}
+              className="rounded-none border-r border-input"
+              onClick={() => setViewMode("active")}
+            >
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Active ({viewMode === "active" ? totalVehicles : "-"})
+            </Button>
+            <Button
+              variant={viewMode === "retired" ? "default" : "ghost"}
+              className="rounded-none"
+              onClick={() => setViewMode("retired")}
+            >
+              <Archive className="mr-2 h-4 w-4" />
+              Retired ({viewMode === "retired" ? totalVehicles : "-"})
+            </Button>
+          </div>
+          <Button asChild>
+            <Link href="/vehicles/create">
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add New Vehicle
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>Vehicle List</CardTitle>
+              <CardTitle>
+                {viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}
+              </CardTitle>
               <CardDescription>
-                View and manage all vehicles in your fleet
+                {viewMode === "active" 
+                  ? "View and manage all active vehicles in your fleet"
+                  : "View retired vehicles from your fleet"
+                }
               </CardDescription>
             </div>
             <div className="flex gap-4">
@@ -266,7 +504,7 @@ export default function VehiclesPage() {
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="search"
-                  placeholder="Search vehicles..."
+                  placeholder={viewMode === "active" ? "Search active vehicles..." : "Search retired vehicles..."}
                   className="pl-8"
                   value={search}
                   onChange={handleSearch}
@@ -276,6 +514,19 @@ export default function VehiclesPage() {
           </div>
         </CardHeader>
         <CardContent>
+          {/* View Mode Info Banner */}
+          {viewMode === "retired" && (
+            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-center gap-2 text-amber-800">
+                <Archive className="h-4 w-4" />
+                <span className="font-medium">Retired Vehicles</span>
+              </div>
+              <p className="mt-1 text-sm text-amber-700">
+                These vehicles are no longer active in your fleet. You can view their details or restore them to active status.
+              </p>
+            </div>
+          )}
+
           {/* Active Filters Display */}
           {(selectedConfig !== "All" || search) && (
             <div className="mb-4 flex flex-wrap gap-2">
@@ -325,17 +576,23 @@ export default function VehiclesPage() {
             <div className="flex items-center justify-center h-64">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                <p className="mt-2 text-muted-foreground">Loading vehicles...</p>
+                <p className="mt-2 text-muted-foreground">
+                  {viewMode === "active" ? "Loading active vehicles..." : "Loading retired vehicles..."}
+                </p>
               </div>
             </div>
           ) : vehicles.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-center">
               <Car className="h-12 w-12 text-muted-foreground mb-4" />
-              <h3 className="text-lg font-medium">No vehicles found</h3>
+              <h3 className="text-lg font-medium">
+                {viewMode === "active" ? "No active vehicles found" : "No retired vehicles found"}
+              </h3>
               <p className="text-muted-foreground mt-1">
                 {search || selectedConfig !== "All" 
                   ? "Try changing your search or filter criteria" 
-                  : "Get started by adding a new vehicle"
+                  : viewMode === "active" 
+                    ? "Get started by adding a new vehicle"
+                    : "No vehicles have been retired yet"
                 }
               </p>
               {(search || selectedConfig !== "All") && (
@@ -362,6 +619,12 @@ export default function VehiclesPage() {
                       <TableHead>Wheel Config</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Tires</TableHead>
+                      {viewMode === "retired" && (
+                        <>
+                          <TableHead>Retired On</TableHead>
+                          <TableHead>Reason</TableHead>
+                        </>
+                      )}
                       <TableHead>Added On</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
@@ -404,6 +667,18 @@ export default function VehiclesPage() {
                             {vehicle.active_tires_count} tires
                           </Badge>
                         </TableCell>
+                        {viewMode === "retired" && (
+                          <>
+                            <TableCell>
+                              {vehicle.retired_at ? formatDateTime(vehicle.retired_at) : "N/A"}
+                            </TableCell>
+                            <TableCell className="max-w-[200px]">
+                              <div className="truncate" title={vehicle.retirement_reason || "N/A"}>
+                                {vehicle.retirement_reason || "N/A"}
+                              </div>
+                            </TableCell>
+                          </>
+                        )}
                         <TableCell>{formatDate(vehicle.created_at)}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
@@ -421,20 +696,49 @@ export default function VehiclesPage() {
                                   View Details
                                 </Link>
                               </DropdownMenuItem>
-                              <DropdownMenuItem asChild>
-                                <Link href={`/vehicles/${vehicle.id}/edit`}>
-                                  <Edit className="mr-2 h-4 w-4" />
-                                  Edit Vehicle
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem 
-                                className="text-red-600"
-                                onClick={() => handleDelete(vehicle.id)}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" />
-                                Retire Vehicle
-                              </DropdownMenuItem>
+                              
+                              {viewMode === "active" ? (
+                                <>
+                                  <DropdownMenuItem asChild>
+                                    <Link href={`/vehicles/${vehicle.id}/edit`}>
+                                      <Edit className="mr-2 h-4 w-4" />
+                                      Edit Vehicle
+                                    </Link>
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem 
+                                    className="text-amber-600"
+                                    onClick={() => handleOpenRetirementDialog(vehicle)}
+                                  >
+                                    <Archive className="mr-2 h-4 w-4" />
+                                    Retire Vehicle
+                                  </DropdownMenuItem>
+                                </>
+                              ) : (
+                                <>
+                                  <DropdownMenuItem 
+                                    className="text-green-600"
+                                    onClick={() => handleRestoreVehicle(vehicle.id)}
+                                    disabled={restoreLoading}
+                                  >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    {restoreLoading ? "Restoring..." : "Restore to Active"}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem 
+                                    className="text-red-600"
+                                    onClick={() => {
+                                      if (confirm("Are you sure you want to permanently delete this retired vehicle?")) {
+                                        // Implement permanent delete if needed
+                                        console.log("Permanently delete vehicle", vehicle.id);
+                                      }
+                                    }}
+                                  >
+                                    <Trash2 className="mr-2 h-4 w-4" />
+                                    Delete Permanently
+                                  </DropdownMenuItem>
+                                </>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
                         </TableCell>
