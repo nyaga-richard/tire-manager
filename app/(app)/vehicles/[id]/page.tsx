@@ -94,12 +94,12 @@ const positionCodeToWheelId = (positionCode: string): string => {
     "RR1": "A2-R-Inner",
     "RR2": "A2-R-Outer",
     // Add more mappings for other wheel configurations as needed
-    "F1": "A1-L",
-    "F2": "A1-R",
-    "R1": "A2-L",
-    "R2": "A2-R",
-    "R3": "A3-L",
-    "R4": "A3-R",
+    // "F1": "A1-L",
+    // "F2": "A1-R",
+    // "R1": "A2-L",
+    // "R2": "A2-R",
+    // "R3": "A3-L",
+    // "R4": "A3-R",
   };
   
   return positionMap[positionCode] || positionCode;
@@ -156,6 +156,7 @@ export default function VehicleDetailsPage() {
   const [selectedWheel, setSelectedWheel] = useState<string | null>(null);
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
   const [selectedPositionForService, setSelectedPositionForService] = useState<string | null>(null);
+  const [vehiclePositions, setVehiclePositions] = useState<VehiclePosition[]>([]);
 
   useEffect(() => {
     if (vehicleId) {
@@ -172,11 +173,231 @@ export default function VehicleDetailsPage() {
       if (!res.ok) throw new Error("Vehicle not found");
       const data = await res.json();
       setVehicle(data);
+      
+      // Extract positions from vehicle data
+      if (data.positions && Array.isArray(data.positions)) {
+        setVehiclePositions(data.positions);
+      } else {
+        console.warn("No positions array found in vehicle data, fetching separately...");
+        await fetchVehiclePositions();
+      }
     } catch (error) {
       console.error(error);
     } finally {
       setLoading(false);
     }
+  };
+
+  // Fetch vehicle positions separately if not included in vehicle data
+  const fetchVehiclePositions = async () => {
+    try {
+      const res = await fetch(
+        `http://localhost:5000/api/vehicles/${vehicleId}/positions`
+      );
+      if (res.ok) {
+        const positionsData = await res.json();
+        setVehiclePositions(positionsData);
+      } else {
+        // If the endpoint doesn't exist, use default positions based on wheel config
+        console.warn("Positions endpoint not found, using default positions");
+        setVehiclePositions(generateDefaultPositions(vehicle?.wheel_config || "6x4"));
+      }
+    } catch (error) {
+      console.error("Error fetching vehicle positions:", error);
+      setVehiclePositions(generateDefaultPositions(vehicle?.wheel_config || "6x4"));
+    }
+  };
+
+  // Generate default positions based on wheel configuration
+  const generateDefaultPositions = (wheelConfig: string): VehiclePosition[] => {
+    const positions: VehiclePosition[] = [];
+    let idCounter = 1;
+    
+    switch (wheelConfig) {
+      case "4x2":
+        // Front axle (2 wheels)
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FL",
+          position_name: "Front Left",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FR",
+          position_name: "Front Right",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        // Rear axle (2 wheels)
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "RL",
+          position_name: "Rear Left",
+          axle_number: 2,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "RR",
+          position_name: "Rear Right",
+          axle_number: 2,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        break;
+        
+      case "6x4":
+        // Front axle (2 wheels)
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FL",
+          position_name: "Front Left",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FR",
+          position_name: "Front Right",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        // Rear axle 1 (2 wheels)
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "R1L",
+          position_name: "Rear 1 Left",
+          axle_number: 2,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "R1R",
+          position_name: "Rear 1 Right",
+          axle_number: 2,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        // Rear axle 2 (2 wheels)
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "R2L",
+          position_name: "Rear 2 Left",
+          axle_number: 3,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "R2R",
+          position_name: "Rear 2 Right",
+          axle_number: 3,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        break;
+        
+      case "8x4":
+        // Front axle (2 wheels)
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FL",
+          position_name: "Front Left",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FR",
+          position_name: "Front Right",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        // Rear axles (6 wheels)
+        for (let axle = 2; axle <= 4; axle++) {
+          positions.push({
+            id: idCounter++,
+            vehicle_id: Number(vehicleId),
+            position_code: `R${axle-1}L`,
+            position_name: `Rear ${axle-1} Left`,
+            axle_number: axle,
+            is_trailer: 0,
+            created_at: new Date().toISOString()
+          });
+          positions.push({
+            id: idCounter++,
+            vehicle_id: Number(vehicleId),
+            position_code: `R${axle-1}R`,
+            position_name: `Rear ${axle-1} Right`,
+            axle_number: axle,
+            is_trailer: 0,
+            created_at: new Date().toISOString()
+          });
+        }
+        break;
+        
+      default: // 4x2 as fallback
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FL",
+          position_name: "Front Left",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "FR",
+          position_name: "Front Right",
+          axle_number: 1,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "RL",
+          position_name: "Rear Left",
+          axle_number: 2,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+        positions.push({
+          id: idCounter++,
+          vehicle_id: Number(vehicleId),
+          position_code: "RR",
+          position_name: "Rear Right",
+          axle_number: 2,
+          is_trailer: 0,
+          created_at: new Date().toISOString()
+        });
+    }
+    
+    return positions;
   };
 
   // Map tire data for the diagram
@@ -211,14 +432,14 @@ export default function VehicleDetailsPage() {
 
   // Convert positions from API to format expected by TruckWheelDiagram
   const positionsForDiagram = useMemo(() => {
-    if (!vehicle) return [];
+    if (!vehiclePositions.length) return [];
     
-    return vehicle.positions.map(pos => ({
+    return vehiclePositions.map(pos => ({
       position_code: pos.position_code,
       position_name: pos.position_name,
       axle_number: pos.axle_number
     }));
-  }, [vehicle]);
+  }, [vehiclePositions]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -271,8 +492,6 @@ export default function VehicleDetailsPage() {
     
     if (tire) {
       console.log("Tire details:", tire);
-      // You can show a modal or navigate to tire details
-      // Example: router.push(`/tires/${tire.tire_id}`);
     } else {
       console.log("No tire installed at position:", positionCode);
     }
@@ -526,7 +745,7 @@ export default function VehicleDetailsPage() {
                   </CardDescription>
                 </div>
                 <div className="text-sm text-muted-foreground">
-                  {vehicle.current_tires.length}/{vehicle.positions.length}
+                  {vehicle.current_tires.length}/{vehiclePositions.length}
                 </div>
               </div>
             </CardHeader>
@@ -561,9 +780,9 @@ export default function VehicleDetailsPage() {
                         <span>Used: {vehicle.current_tires.filter(t => t.type === "USED").length}</span>
                       </div>
                     </div>
-                    {vehicle.current_tires.length < vehicle.positions.length && (
+                    {vehicle.current_tires.length < vehiclePositions.length && (
                       <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200">
-                        {vehicle.positions.length - vehicle.current_tires.length} empty
+                        {vehiclePositions.length - vehicle.current_tires.length} empty
                       </Badge>
                     )}
                   </div>
@@ -727,33 +946,33 @@ export default function VehicleDetailsPage() {
       </div>
 
       {vehicle && (
-  <TireServiceModal
-    isOpen={isServiceModalOpen}
-    onClose={() => {
-      setIsServiceModalOpen(false);
-      setSelectedPositionForService(null);
-    }}
-    vehicleId={vehicle.id}
-    vehicleNumber={vehicle.vehicle_number}
-    currentTires={vehicle.current_tires.map(tire => ({
-      id: tire.id,
-      tire_id: tire.tire_id,
-      position_code: tire.position_code,
-      position_name: tire.position_name,
-      serial_number: tire.serial_number,
-      size: tire.size,
-      brand: tire.brand,
-      type: tire.type,
-      install_date: tire.install_date,
-      install_odometer: tire.install_odometer
-    }))}
-    availablePositions={vehicle.positions}
-    onSuccess={() => {
-      fetchVehicle();
-      setSelectedWheel(null);
-    }}
-  />
-)}
+        <TireServiceModal
+          isOpen={isServiceModalOpen}
+          onClose={() => {
+            setIsServiceModalOpen(false);
+            setSelectedPositionForService(null);
+          }}
+          vehicleId={vehicle.id}
+          vehicleNumber={vehicle.vehicle_number}
+          currentTires={vehicle.current_tires.map(tire => ({
+            id: tire.id,
+            tire_id: tire.tire_id,
+            position_code: tire.position_code,
+            position_name: tire.position_name,
+            serial_number: tire.serial_number,
+            size: tire.size,
+            brand: tire.brand,
+            type: tire.type,
+            install_date: tire.install_date,
+            install_odometer: tire.install_odometer
+          }))}
+          // No need to pass availablePositions prop since TireServiceModal fetches it internally
+          onSuccess={() => {
+            fetchVehicle();
+            setSelectedWheel(null);
+          }}
+        />
+      )}
     </div>
   );
 }
