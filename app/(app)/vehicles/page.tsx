@@ -39,7 +39,8 @@ import {
   RotateCcw,
   AlertCircle,
   CheckCircle,
-  XCircle
+  XCircle,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -62,19 +63,23 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { toast } from "sonner";
 
 interface Vehicle {
   id: number;
   vehicle_number: string;
   make: string;
   model: string;
+  year?: number;
   wheel_config: "4x2" | "6x4" | "8x4" | "6x2" | "4x4";
   status: "ACTIVE" | "INACTIVE" | "MAINTENANCE" | "RETIRED";
   created_at: string;
   active_tires_count: number;
-  retired_at?: string;
+  retired_date?: string;
   retirement_reason?: string;
-  retired_by?: string;
+  retired_by?: number;
+  current_odometer?: number;
 }
 
 interface ApiResponse {
@@ -86,6 +91,7 @@ interface ApiResponse {
 
 interface RetirementData {
   reason: string;
+  retirement_date?: string;
   notes?: string;
 }
 
@@ -106,9 +112,11 @@ export default function VehiclesPage() {
   const [totalVehicles, setTotalVehicles] = useState(0);
   const [viewMode, setViewMode] = useState<ViewMode>("active");
   const [retirementDialogOpen, setRetirementDialogOpen] = useState(false);
+  const [reactivationDialogOpen, setReactivationDialogOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
   const [retirementData, setRetirementData] = useState<RetirementData>({
     reason: "",
+    retirement_date: new Date().toISOString().split('T')[0],
     notes: ""
   });
   const [retirementLoading, setRetirementLoading] = useState(false);
@@ -131,11 +139,10 @@ export default function VehiclesPage() {
     try {
       setLoading(true);
       
-      // Build query parameters
+      // Build query parameters based on view mode
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
-        status: viewMode === "active" ? "active" : "retired"
       });
       
       // Add search term if provided
@@ -143,12 +150,15 @@ export default function VehiclesPage() {
         params.append("search", search.trim());
       }
       
-      // Add wheel config filter if not "All"
-      if (selectedConfig !== "All") {
-        params.append("wheel_config", selectedConfig);
+      // Determine which API endpoint to use based on view mode
+      let apiUrl;
+      if (viewMode === "active") {
+        apiUrl = `http://localhost:5000/api/vehicles?${params.toString()}`;
+      } else {
+        apiUrl = `http://localhost:5000/api/vehicles/retired/list?${params.toString()}`;
       }
       
-      const response = await fetch(`http://localhost:5000/api/vehicles?${params.toString()}`);
+      const response = await fetch(apiUrl);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -156,11 +166,22 @@ export default function VehiclesPage() {
       
       const data: ApiResponse = await response.json();
       
-      setVehicles(data.vehicles || []);
+      // Filter out retired vehicles on the frontend if we're in active mode
+      let filteredVehicles = data.vehicles || [];
+      if (viewMode === "active") {
+        filteredVehicles = filteredVehicles.filter(vehicle => vehicle.status !== "RETIRED");
+      }
+      
+      setVehicles(filteredVehicles);
       setTotalPages(data.totalPages || 1);
-      setTotalVehicles(data.total || 0);
+      // Adjust total count for active view to exclude retired vehicles
+      const activeTotal = viewMode === "active" 
+        ? data.vehicles?.filter(v => v.status !== "RETIRED").length || 0
+        : data.total || 0;
+      setTotalVehicles(activeTotal);
     } catch (error) {
       console.error("Error fetching vehicles:", error);
+      toast.error("Failed to fetch vehicles");
       setVehicles([]);
       setTotalPages(1);
       setTotalVehicles(0);
@@ -239,14 +260,28 @@ export default function VehiclesPage() {
 
   const handleOpenRetirementDialog = (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
-    setRetirementData({ reason: "", notes: "" });
+    setRetirementData({ 
+      reason: "", 
+      retirement_date: new Date().toISOString().split('T')[0],
+      notes: "" 
+    });
     setRetirementDialogOpen(true);
+  };
+
+  const handleOpenReactivationDialog = (vehicle: Vehicle) => {
+    setSelectedVehicle(vehicle);
+    setReactivationDialogOpen(true);
   };
 
   const handleCloseRetirementDialog = () => {
     setRetirementDialogOpen(false);
     setSelectedVehicle(null);
-    setRetirementData({ reason: "", notes: "" });
+    setRetirementData({ reason: "", retirement_date: "", notes: "" });
+  };
+
+  const handleCloseReactivationDialog = () => {
+    setReactivationDialogOpen(false);
+    setSelectedVehicle(null);
   };
 
   const handleRetireVehicle = async () => {
@@ -262,60 +297,89 @@ export default function VehiclesPage() {
         },
         body: JSON.stringify({
           reason: retirementData.reason,
-          notes: retirementData.notes,
-          retired_by: "current_user" // Replace with actual user from auth context
+          retirement_date: retirementData.retirement_date,
+          retired_by: 1, // Replace with actual user ID from auth context
+          notes: retirementData.notes
         }),
       });
       
       if (response.ok) {
+        toast.success("Vehicle retired successfully");
         // Refresh the list
         fetchVehicles();
         handleCloseRetirementDialog();
       } else {
-        throw new Error("Failed to retire vehicle");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to retire vehicle");
       }
     } catch (error) {
       console.error("Error retiring vehicle:", error);
-      alert("Failed to retire vehicle. Please try again.");
+      toast.error(error instanceof Error ? error.message : "Failed to retire vehicle");
     } finally {
       setRetirementLoading(false);
     }
   };
 
-  const handleRestoreVehicle = async (vehicleId: number) => {
-    if (!confirm("Are you sure you want to restore this vehicle to active status?")) return;
+  const handleRestoreVehicle = async () => {
+    if (!selectedVehicle) return;
     
     try {
       setRestoreLoading(true);
       
-      const response = await fetch(`http://localhost:5000/api/vehicles/${vehicleId}/restore`, {
+      const response = await fetch(`http://localhost:5000/api/vehicles/${selectedVehicle.id}/reactivate`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          restored_by: "current_user" // Replace with actual user from auth context
+          reactivated_by: 1, // Replace with actual user ID from auth context
+          reason: "Vehicle reactivated"
         }),
       });
       
       if (response.ok) {
+        toast.success("Vehicle reactivated successfully");
         // Refresh the list
         fetchVehicles();
+        handleCloseReactivationDialog();
       } else {
-        throw new Error("Failed to restore vehicle");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to restore vehicle");
       }
     } catch (error) {
       console.error("Error restoring vehicle:", error);
-      alert("Failed to restore vehicle. Please try again.");
+      toast.error(error instanceof Error ? error.message : "Failed to restore vehicle");
     } finally {
       setRestoreLoading(false);
+    }
+  };
+
+  const handlePermanentDelete = async (vehicleId: number) => {
+    if (!confirm("Are you sure you want to permanently delete this retired vehicle? This action cannot be undone.")) return;
+    
+    try {
+      const response = await fetch(`http://localhost:5000/api/vehicles/${vehicleId}`, {
+        method: "DELETE",
+      });
+      
+      if (response.ok) {
+        toast.success("Vehicle deleted permanently");
+        // Refresh the list
+        fetchVehicles();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to delete vehicle");
+      }
+    } catch (error) {
+      console.error("Error deleting vehicle:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete vehicle");
     }
   };
 
   // Get filtered vehicle count for display
   const getFilterDescription = () => {
     if (selectedConfig === "All" && !search) {
-      return `${viewMode === "active" ? "Active" : "Retired"} vehicles (${totalVehicles} total)`;
+      return `${viewMode === "active" ? "Active" : "Retired"} vehicles (${vehicles.length} of ${totalVehicles})`;
     }
     
     let description = "";
@@ -343,27 +407,43 @@ export default function VehiclesPage() {
             </DialogTitle>
             <DialogDescription>
               Are you sure you want to retire {selectedVehicle?.vehicle_number}? 
-              This will move it to the retired vehicles list.
+              This will remove all tires from the vehicle and move it to the retired list.
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="retirement_date" className="text-right">
+                Retirement Date*
+              </Label>
+              <Input
+                id="retirement_date"
+                type="date"
+                className="col-span-3"
+                value={retirementData.retirement_date}
+                onChange={(e) => setRetirementData({...retirementData, retirement_date: e.target.value})}
+                required
+              />
+            </div>
+            
+            <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="reason" className="text-right">
                 Reason*
               </Label>
-              <select
-                id="reason"
-                className="col-span-3 flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+              <Select
                 value={retirementData.reason}
-                onChange={(e) => setRetirementData({...retirementData, reason: e.target.value})}
+                onValueChange={(value) => setRetirementData({...retirementData, reason: value})}
                 required
               >
-                <option value="">Select a reason</option>
-                {retirementReasons.map((reason) => (
-                  <option key={reason} value={reason}>{reason}</option>
-                ))}
-              </select>
+                <SelectTrigger className="col-span-3">
+                  <SelectValue placeholder="Select a reason" />
+                </SelectTrigger>
+                <SelectContent>
+                  {retirementReasons.map((reason) => (
+                    <SelectItem key={reason} value={reason}>{reason}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             
             <div className="grid grid-cols-4 items-center gap-4">
@@ -380,16 +460,18 @@ export default function VehiclesPage() {
               />
             </div>
             
-            <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
-              <div className="flex items-center gap-2 text-yellow-800">
-                <AlertCircle className="h-4 w-4" />
-                <span className="text-sm font-medium">Important Note</span>
+            {selectedVehicle && selectedVehicle.active_tires_count > 0 && (
+              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
+                <div className="flex items-center gap-2 text-yellow-800">
+                  <AlertCircle className="h-4 w-4" />
+                  <span className="text-sm font-medium">Important Note</span>
+                </div>
+                <p className="mt-1 text-sm text-yellow-700">
+                  This vehicle has <span className="font-semibold">{selectedVehicle.active_tires_count} tires</span> currently installed. 
+                  All tires will be automatically removed and returned to the store when you retire this vehicle.
+                </p>
               </div>
-              <p className="mt-1 text-sm text-yellow-700">
-                Retired vehicles will be moved to the retired list and will no longer appear 
-                in the active fleet. You can restore them later if needed.
-              </p>
-            </div>
+            )}
           </div>
           
           <DialogFooter>
@@ -403,17 +485,71 @@ export default function VehiclesPage() {
             <Button
               variant="destructive"
               onClick={handleRetireVehicle}
-              disabled={!retirementData.reason.trim() || retirementLoading}
+              disabled={!retirementData.reason.trim() || !retirementData.retirement_date || retirementLoading}
             >
               {retirementLoading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
                   Retiring...
                 </>
               ) : (
                 <>
                   <Archive className="mr-2 h-4 w-4" />
                   Retire Vehicle
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reactivation Dialog */}
+      <Dialog open={reactivationDialogOpen} onOpenChange={setReactivationDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <RotateCcw className="h-5 w-5 text-green-500" />
+              Reactivate Vehicle
+            </DialogTitle>
+            <DialogDescription>
+              Are you sure you want to restore {selectedVehicle?.vehicle_number} to active status?
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="rounded-lg border border-green-200 bg-green-50 p-4">
+              <div className="flex items-center gap-2 text-green-800">
+                <CheckCircle className="h-4 w-4" />
+                <span className="text-sm font-medium">Vehicle will be restored</span>
+              </div>
+              <p className="mt-1 text-sm text-green-700">
+                This vehicle will be moved back to the active fleet. You can then install tires and use it normally.
+              </p>
+            </div>
+          </div>
+          
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={handleCloseReactivationDialog}
+              disabled={restoreLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="default"
+              onClick={handleRestoreVehicle}
+              disabled={restoreLoading}
+            >
+              {restoreLoading ? (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  Restoring...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Restore Vehicle
                 </>
               )}
             </Button>
@@ -433,18 +569,24 @@ export default function VehiclesPage() {
             <Button
               variant={viewMode === "active" ? "default" : "ghost"}
               className="rounded-none border-r border-input"
-              onClick={() => setViewMode("active")}
+              onClick={() => {
+                setViewMode("active");
+                setCurrentPage(1);
+              }}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
-              Active ({viewMode === "active" ? totalVehicles : "-"})
+              Active ({viewMode === "active" ? vehicles.length : "-"})
             </Button>
             <Button
               variant={viewMode === "retired" ? "default" : "ghost"}
               className="rounded-none"
-              onClick={() => setViewMode("retired")}
+              onClick={() => {
+                setViewMode("retired");
+                setCurrentPage(1);
+              }}
             >
               <Archive className="mr-2 h-4 w-4" />
-              Retired ({viewMode === "retired" ? totalVehicles : "-"})
+              Retired ({viewMode === "retired" ? vehicles.length : "-"})
             </Button>
           </div>
           <Button asChild>
@@ -670,7 +812,7 @@ export default function VehiclesPage() {
                         {viewMode === "retired" && (
                           <>
                             <TableCell>
-                              {vehicle.retired_at ? formatDateTime(vehicle.retired_at) : "N/A"}
+                              {vehicle.retired_date ? formatDateTime(vehicle.retired_date) : "N/A"}
                             </TableCell>
                             <TableCell className="max-w-[200px]">
                               <div className="truncate" title={vehicle.retirement_reason || "N/A"}>
@@ -718,21 +860,15 @@ export default function VehiclesPage() {
                                 <>
                                   <DropdownMenuItem 
                                     className="text-green-600"
-                                    onClick={() => handleRestoreVehicle(vehicle.id)}
-                                    disabled={restoreLoading}
+                                    onClick={() => handleOpenReactivationDialog(vehicle)}
                                   >
                                     <RotateCcw className="mr-2 h-4 w-4" />
-                                    {restoreLoading ? "Restoring..." : "Restore to Active"}
+                                    Restore to Active
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
                                     className="text-red-600"
-                                    onClick={() => {
-                                      if (confirm("Are you sure you want to permanently delete this retired vehicle?")) {
-                                        // Implement permanent delete if needed
-                                        console.log("Permanently delete vehicle", vehicle.id);
-                                      }
-                                    }}
+                                    onClick={() => handlePermanentDelete(vehicle.id)}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
                                     Delete Permanently
