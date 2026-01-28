@@ -37,7 +37,7 @@ import {
   Hash,
   AlertCircle,
   CheckCircle,
-  X,
+  RefreshCw,
 } from "lucide-react";
 
 interface TireInstallationHistory {
@@ -81,7 +81,7 @@ export default function TireHistoryModal({
   const [filterPosition, setFilterPosition] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 5; // Changed from 15 to 5
+  const itemsPerPage = 10;
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -286,27 +286,21 @@ export default function TireHistoryModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="min-w-[95vw] w-[95vw] max-h-[85vh] h-[85vh] overflow-hidden flex flex-col p-0">
-        {/* Removed the duplicate DialogHeader and close button from here */}
-        <div className="px-6 pt-6 pb-4 border-b">
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="flex items-center gap-2 text-xl">
-                <Package className="h-6 w-6" />
-                Tire Installation History
-              </DialogTitle>
-              <DialogDescription className="text-base">
-                Complete tire service history for vehicle {vehicleNumber}
-                {historyData.length > 0 && (
-                  <span className="ml-2 text-primary font-medium">
-                    ({historyData.length} total records, {sortedData.length} filtered)
-                  </span>
-                )}
-              </DialogDescription>
-            </div>
-            {/* Only one close button remains */}
-          </div>
-        </div>
+      <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Package className="h-5 w-5" />
+            Tire Installation History
+          </DialogTitle>
+          <DialogDescription>
+            Complete tire service history for vehicle {vehicleNumber}
+            {historyData.length > 0 && (
+              <span className="ml-2 text-primary">
+                ({historyData.length} total records, {filteredData.length} filtered)
+              </span>
+            )}
+          </DialogDescription>
+        </DialogHeader>
 
         {/* Filters and Search */}
         <div className="px-6 py-4 space-y-4 border-b">
@@ -567,8 +561,8 @@ export default function TireHistoryModal({
                         </TableCell>
                         <TableCell className="py-3">
                           {isCurrent ? (
-                            <Badge className="px-3 py-1.5 bg-green-100 text-green-800 hover:bg-green-100">
-                              <CheckCircle className="h-3 w-3 mr-1 inline" />
+                            <Badge className={getStatusColor(record.removal_date)}>
+                              <CheckCircle className="h-3 w-3 mr-1" />
                               Active
                             </Badge>
                           ) : (
