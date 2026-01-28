@@ -38,6 +38,7 @@ import {
   AlertCircle,
   CheckCircle,
   RefreshCw,
+  X,
 } from "lucide-react";
 
 interface TireInstallationHistory {
@@ -279,6 +280,13 @@ export default function TireHistoryModal({
     }
   };
 
+  // Get status badge color for Active / Removed
+  const getStatusColor = (removalDate: string | null) => {
+    return removalDate
+      ? "px-2 py-0.5 bg-gray-100 text-gray-800 text-xs"
+      : "px-2 py-0.5 bg-green-50 text-green-700 border-green-200 text-xs";
+  };
+
   // Clear search
   const clearSearch = () => {
     setSearchTerm("");
@@ -286,32 +294,32 @@ export default function TireHistoryModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-7xl max-h-[90vh] overflow-hidden flex flex-col">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent className="min-w-[95vw] max-h-[95vh] w-[95vw] h-[95vh] p-0 overflow-hidden flex flex-col">
+        <DialogHeader className="px-6 py-4 border-b">
+          <DialogTitle className="flex items-center gap-2 text-lg">
             <Package className="h-5 w-5" />
             Tire Installation History
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="flex items-center gap-2">
             Complete tire service history for vehicle {vehicleNumber}
             {historyData.length > 0 && (
-              <span className="ml-2 text-primary">
-                ({historyData.length} total records, {filteredData.length} filtered)
-              </span>
+              <Badge variant="outline" className="ml-2 text-xs">
+                {historyData.length} total records • {filteredData.length} filtered
+              </Badge>
             )}
           </DialogDescription>
         </DialogHeader>
 
         {/* Filters and Search */}
-        <div className="px-6 py-4 space-y-4 border-b">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="px-6 py-3 space-y-3 border-b bg-muted/30">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
               <Input
                 placeholder="Search serial, position, brand, reason..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-9 pr-9"
+                className="pl-9 pr-8 h-9 text-sm"
               />
               {searchTerm && (
                 <Button
@@ -326,8 +334,8 @@ export default function TireHistoryModal({
             </div>
             
             <Select value={filterType} onValueChange={setFilterType}>
-              <SelectTrigger className="w-full">
-                <Filter className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-full h-9 text-sm">
+                <Filter className="h-3.5 w-3.5 mr-2" />
                 <SelectValue placeholder="Tire Type" />
               </SelectTrigger>
               <SelectContent>
@@ -341,8 +349,8 @@ export default function TireHistoryModal({
             </Select>
             
             <Select value={filterPosition} onValueChange={setFilterPosition}>
-              <SelectTrigger className="w-full">
-                <Hash className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-full h-9 text-sm">
+                <Hash className="h-3.5 w-3.5 mr-2" />
                 <SelectValue placeholder="Position" />
               </SelectTrigger>
               <SelectContent>
@@ -356,8 +364,8 @@ export default function TireHistoryModal({
             </Select>
             
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full">
-                <CheckCircle className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-full h-9 text-sm">
+                <CheckCircle className="h-3.5 w-3.5 mr-2" />
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -369,11 +377,12 @@ export default function TireHistoryModal({
           </div>
 
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <Button
                 variant="outline"
                 onClick={handleResetFilters}
-                className="whitespace-nowrap"
+                className="h-8 text-xs"
+                size="sm"
               >
                 Reset All Filters
               </Button>
@@ -381,22 +390,22 @@ export default function TireHistoryModal({
                 variant="outline"
                 size="sm"
                 onClick={handleExportCSV}
-                className="gap-2"
+                className="h-8 gap-1.5 text-xs"
                 disabled={sortedData.length === 0}
               >
-                <Download className="h-4 w-4" />
+                <Download className="h-3.5 w-3.5" />
                 Export CSV
               </Button>
             </div>
-            <div className="flex items-center gap-2 text-sm">
-              <Badge variant="outline" className="bg-blue-50">
+            <div className="flex items-center gap-1 text-xs">
+              <Badge variant="outline" className="text-xs px-2 py-0.5">
                 Total: {historyData.length}
               </Badge>
-              <Badge variant="outline" className="bg-green-50">
+              <Badge variant="outline" className="text-xs px-2 py-0.5 bg-green-50">
                 Filtered: {sortedData.length}
               </Badge>
               {sortedData.length > 0 && (
-                <Badge variant="outline" className="bg-amber-50">
+                <Badge variant="outline" className="text-xs px-2 py-0.5 bg-amber-50">
                   Page {currentPage}/{totalPages}
                 </Badge>
               )}
@@ -404,205 +413,210 @@ export default function TireHistoryModal({
           </div>
         </div>
 
-        {/* History Table */}
-        <div className="flex-1 overflow-hidden px-6">
+        {/* History Table - Compact with horizontal scrolling */}
+        <div className="flex-1 overflow-hidden relative">
           {historyData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <AlertCircle className="h-16 w-16 mb-4 text-muted-foreground opacity-50" />
-              <h3 className="font-semibold text-xl mb-2">No History Found</h3>
-              <p className="text-muted-foreground max-w-md text-lg">
+            <div className="flex flex-col items-center justify-center h-full text-center p-6">
+              <AlertCircle className="h-12 w-12 mb-3 text-muted-foreground opacity-50" />
+              <h3 className="font-semibold text-lg mb-1">No History Found</h3>
+              <p className="text-muted-foreground text-sm">
                 No tire installation history available for this vehicle.
               </p>
             </div>
           ) : sortedData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center">
-              <AlertCircle className="h-16 w-16 mb-4 text-muted-foreground opacity-50" />
-              <h3 className="font-semibold text-xl mb-2">No Matching Records</h3>
-              <p className="text-muted-foreground max-w-md text-lg">
+            <div className="flex flex-col items-center justify-center h-full text-center p-6">
+              <AlertCircle className="h-12 w-12 mb-3 text-muted-foreground opacity-50" />
+              <h3 className="font-semibold text-lg mb-1">No Matching Records</h3>
+              <p className="text-muted-foreground text-sm mb-4">
                 No records match your filters. Try adjusting your search criteria.
               </p>
               <Button
                 variant="outline"
                 onClick={handleResetFilters}
-                className="mt-6"
-                size="lg"
+                size="sm"
               >
                 Clear All Filters
               </Button>
             </div>
           ) : (
             <div className="h-full overflow-auto">
-              <Table className="min-w-max">
-                <TableHeader className="sticky top-0 bg-background z-10">
-                  <TableRow>
-                    <TableHead className="whitespace-nowrap w-[80px] font-semibold">ID</TableHead>
-                    <TableHead className="whitespace-nowrap w-[140px] font-semibold">Serial No.</TableHead>
-                    <TableHead className="whitespace-nowrap w-[120px] font-semibold">Position</TableHead>
-                    <TableHead className="whitespace-nowrap w-[180px] font-semibold">Tire Details</TableHead>
-                    <TableHead className="whitespace-nowrap w-[160px] font-semibold">Installation</TableHead>
-                    <TableHead className="whitespace-nowrap w-[160px] font-semibold">Removal</TableHead>
-                    <TableHead className="whitespace-nowrap w-[140px] font-semibold">Duration</TableHead>
-                    <TableHead className="whitespace-nowrap w-[140px] font-semibold">Mileage</TableHead>
-                    <TableHead className="whitespace-nowrap w-[200px] font-semibold">Reason & Created By</TableHead>
-                    <TableHead className="whitespace-nowrap w-[120px] font-semibold">Status</TableHead>
-                    <TableHead className="whitespace-nowrap w-[160px] font-semibold">Created Date</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedData.map((record) => {
-                    const isCurrent = !record.removal_date;
-                    const serviceDuration = getServiceDuration(
-                      record.install_date,
-                      record.removal_date
-                    );
-                    const serviceMileage = getServiceMileage(
-                      record.install_odometer,
-                      record.removal_odometer
-                    );
-                    const tireType = getTireType(record);
+              <div className="min-w-[1200px]"> {/* Minimum width to prevent squeezing */}
+                <Table className="min-w-full text-xs">
+                  <TableHeader className="sticky top-0 bg-background z-10 border-b">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="w-16 py-2 px-3 font-semibold text-[11px]">ID</TableHead>
+                      <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Serial</TableHead>
+                      <TableHead className="w-20 py-2 px-3 font-semibold text-[11px]">Position</TableHead>
+                      <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Tire Details</TableHead>
+                      <TableHead className="w-32 py-2 px-3 font-semibold text-[11px]">Installation</TableHead>
+                      <TableHead className="w-32 py-2 px-3 font-semibold text-[11px]">Removal</TableHead>
+                      <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Duration</TableHead>
+                      <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Mileage</TableHead>
+                      <TableHead className="w-48 py-2 px-3 font-semibold text-[11px]">Reason & Created By</TableHead>
+                      <TableHead className="w-20 py-2 px-3 font-semibold text-[11px]">Status</TableHead>
+                      <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Created Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedData.map((record) => {
+                      const isCurrent = !record.removal_date;
+                      const serviceDuration = getServiceDuration(
+                        record.install_date,
+                        record.removal_date
+                      );
+                      const serviceMileage = getServiceMileage(
+                        record.install_odometer,
+                        record.removal_odometer
+                      );
+                      const tireType = getTireType(record);
 
-                    return (
-                      <TableRow key={record.id} className="hover:bg-muted/50 border-b">
-                        <TableCell className="py-3">
-                          <div className="font-mono text-sm font-medium">#{record.id}</div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={`h-3 w-3 rounded-full flex-shrink-0 ${
-                                tireType === "NEW"
-                                  ? "bg-green-500"
-                                  : tireType === "RETREAD"
-                                  ? "bg-yellow-500"
-                                  : "bg-blue-500"
-                              }`}
-                            />
-                            <div className="font-mono text-sm font-medium truncate" title={record.serial_number}>
-                              {record.serial_number}
+                      return (
+                        <TableRow key={record.id} className="hover:bg-muted/30 border-b last:border-0">
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="font-mono text-[11px] font-medium text-muted-foreground">#{record.id}</div>
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="flex items-center gap-1.5">
+                              <div
+                                className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
+                                  tireType === "NEW"
+                                    ? "bg-green-500"
+                                    : tireType === "RETREAD"
+                                    ? "bg-yellow-500"
+                                    : "bg-blue-500"
+                                }`}
+                              />
+                              <div className="font-mono text-xs font-medium truncate" title={record.serial_number}>
+                                {record.serial_number}
+                              </div>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="space-y-1">
-                            <Badge variant="outline" className="font-mono text-sm px-2 py-1">
-                              {record.position_code}
-                            </Badge>
-                            <div className="text-xs text-muted-foreground truncate" title={record.position_name}>
-                              {record.position_name}
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="space-y-0.5">
+                              <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0.5">
+                                {record.position_code}
+                              </Badge>
+                              <div className="text-[10px] text-muted-foreground truncate" title={record.position_name}>
+                                {record.position_name}
+                              </div>
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="space-y-2">
-                            <div className="font-medium text-sm">{record.brand}</div>
-                            <div className="text-sm text-muted-foreground">{record.size}</div>
-                            <Badge
-                              variant="outline"
-                              className={`text-xs px-2 py-1 ${getTireTypeColor(tireType)}`}
-                            >
-                              {tireType}
-                            </Badge>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3 flex-shrink-0" />
-                              <span className="text-sm font-medium">
-                                {formatDate(record.install_date)}
-                              </span>
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="space-y-1">
+                              <div className="text-xs font-medium truncate" title={record.brand}>
+                                {record.brand}
+                              </div>
+                              <div className="text-[11px] text-muted-foreground truncate" title={record.size}>
+                                {record.size}
+                              </div>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0.5 ${getTireTypeColor(tireType)}`}
+                              >
+                                {tireType}
+                              </Badge>
                             </div>
-                            <div className="text-sm text-muted-foreground">
-                              {record.install_odometer.toLocaleString()} km
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          {record.removal_date ? (
-                            <div className="space-y-2">
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="space-y-1">
                               <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3 flex-shrink-0" />
-                                <span className="text-sm font-medium">
-                                  {formatDate(record.removal_date)}
+                                <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                                <span className="text-xs">
+                                  {formatDate(record.install_date)}
                                 </span>
                               </div>
-                              <div className="text-sm text-muted-foreground">
-                                {record.removal_odometer?.toLocaleString()} km
+                              <div className="text-[11px] text-muted-foreground pl-4">
+                                {record.install_odometer.toLocaleString()} km
                               </div>
                             </div>
-                          ) : (
-                            <Badge
-                              variant="outline"
-                              className="bg-blue-50 text-blue-700 border-blue-200 text-sm px-3 py-1.5"
-                            >
-                              Current
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="text-sm font-medium px-2 py-1 bg-muted/50 rounded-md inline-block">
-                            {serviceDuration}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="text-sm font-medium px-2 py-1 bg-muted/50 rounded-md inline-block">
-                            {serviceMileage}
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="space-y-2">
-                            <div className="text-sm line-clamp-3" title={record.reason_for_change}>
-                              {record.reason_for_change}
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            {record.removal_date ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                                  <span className="text-xs">
+                                    {formatDate(record.removal_date)}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-muted-foreground pl-4">
+                                  {record.removal_odometer?.toLocaleString()} km
+                                </div>
+                              </div>
+                            ) : (
+                              <Badge
+                                variant="outline"
+                                className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] px-2 py-0.5"
+                              >
+                                Current
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
+                              {serviceDuration}
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                              By: <span className="font-medium">{record.created_by}</span>
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
+                              {serviceMileage}
                             </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="py-3">
-                          {isCurrent ? (
-                            <Badge className={getStatusColor(record.removal_date)}>
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Active
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="px-3 py-1.5 bg-gray-100 text-gray-800">
-                              Removed
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="py-3">
-                          <div className="text-xs text-muted-foreground" title={formatDateTime(record.created_at)}>
-                            {formatDateTime(record.created_at)}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="space-y-1">
+                              <div className="text-[11px] line-clamp-2 max-h-8 overflow-hidden" title={record.reason_for_change}>
+                                {record.reason_for_change}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                By: <span className="font-medium">{record.created_by}</span>
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            {isCurrent ? (
+                              <Badge className={getStatusColor(record.removal_date)}>
+                                <CheckCircle className="h-2.5 w-2.5 mr-1" />
+                                Active
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs">
+                                Removed
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="py-2 px-3 align-top">
+                            <div className="text-[10px] text-muted-foreground truncate" title={formatDateTime(record.created_at)}>
+                              {formatDateTime(record.created_at)}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </div>
 
         {/* Pagination */}
         {totalPages > 1 && sortedData.length > 0 && (
-          <div className="flex items-center justify-between border-t px-6 py-4">
-            <div className="text-sm text-muted-foreground">
+          <div className="flex items-center justify-between border-t px-4 py-2 bg-background">
+            <div className="text-xs text-muted-foreground">
               Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, sortedData.length)} of {sortedData.length} records
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="h-9 px-3"
+                className="h-7 px-2 text-xs"
               >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Previous
+                <ChevronLeft className="h-3 w-3 mr-1" />
+                Prev
               </Button>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5">
                 {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                   let pageNum;
                   if (totalPages <= 5) {
@@ -620,7 +634,7 @@ export default function TireHistoryModal({
                       key={pageNum}
                       variant={currentPage === pageNum ? "default" : "outline"}
                       size="sm"
-                      className="h-9 w-9"
+                      className="h-7 w-7 min-w-7 text-xs"
                       onClick={() => handlePageChange(pageNum)}
                     >
                       {pageNum}
@@ -633,10 +647,10 @@ export default function TireHistoryModal({
                 size="sm"
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="h-9 px-3"
+                className="h-7 px-2 text-xs"
               >
                 Next
-                <ChevronRight className="h-4 w-4 ml-1" />
+                <ChevronRight className="h-3 w-3 ml-1" />
               </Button>
             </div>
           </div>
