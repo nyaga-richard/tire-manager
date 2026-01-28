@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import TruckWheelDiagram from "@/components/truck-wheel-diagram/TruckWheelDiagram";
 import TireServiceModal from "@/components/tire-service-modal";
+import TireHistoryModal from "@/components/tire-history-modal";
 
 interface VehiclePosition {
   id: number;
@@ -150,6 +151,7 @@ const getTireTypeColor = (type: string) => {
 export default function VehicleDetailsPage() {
   const params = useParams();
   const vehicleId = params.id;
+  
 
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,6 +159,7 @@ export default function VehicleDetailsPage() {
   const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
   const [selectedPositionForService, setSelectedPositionForService] = useState<string | null>(null);
   const [vehiclePositions, setVehiclePositions] = useState<VehiclePosition[]>([]);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   useEffect(() => {
     if (vehicleId) {
@@ -714,11 +717,9 @@ export default function VehicleDetailsPage() {
                         variant="ghost"
                         size="sm"
                         className="w-full text-xs"
-                        asChild
+                        onClick={() => setIsHistoryModalOpen(true)}
                       >
-                        <Link href={`/vehicles/${vehicle.id}/history`}>
-                          View all {vehicle.history.length} records
-                        </Link>
+                        View all {vehicle.history.length} records
                       </Button>
                     </div>
                   )}
@@ -945,7 +946,8 @@ export default function VehicleDetailsPage() {
         </div>
       </div>
 
-      {vehicle && (
+          {vehicle && (
+      <>
         <TireServiceModal
           isOpen={isServiceModalOpen}
           onClose={() => {
@@ -966,13 +968,21 @@ export default function VehicleDetailsPage() {
             install_date: tire.install_date,
             install_odometer: tire.install_odometer
           }))}
-          // No need to pass availablePositions prop since TireServiceModal fetches it internally
           onSuccess={() => {
             fetchVehicle();
             setSelectedWheel(null);
           }}
         />
-      )}
+        
+        <TireHistoryModal
+          isOpen={isHistoryModalOpen}
+          onClose={() => setIsHistoryModalOpen(false)}
+          vehicleId={vehicle.id}
+          vehicleNumber={vehicle.vehicle_number}
+          historyData={vehicle.history}
+        />
+      </>
+    )}
     </div>
   );
 }
