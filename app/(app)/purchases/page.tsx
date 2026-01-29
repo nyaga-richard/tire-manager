@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -29,33 +28,22 @@ import {
   Eye,
   Plus,
   ShoppingCart,
-  Car,
-  Truck,
   Wrench,
-  Trash2,
   Filter,
-  MoreHorizontal,
-  Package,
-  ArrowUpRight,
-  ArrowDownRight,
-  Calendar,
+  Building,
   User,
   DollarSign,
-  Building,
   FileText,
   ChevronDown,
-  CheckCircle,
-  AlertCircle,
-  Clock,
-  BarChart3,
+  TrendingUp,
+  TrendingDown,
+  Calendar,
 } from "lucide-react";
 import Link from "next/link";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
@@ -75,87 +63,63 @@ import { toast } from "sonner";
 
 interface PurchaseTransaction {
   id: number;
-  type: "PURCHASE" | "INSTALL" | "REMOVE" | "RETREAD_SEND" | "RETREAD_RETURN" | "DISPOSE";
+  type: "PURCHASE" | "RETREAD_SEND" | "RETREAD_RETURN";
   date: string;
   description: string;
-  supplier_name?: string;
-  vehicle_number?: string;
+  supplier_name: string;
   tire_serial: string;
   tire_size: string;
   tire_brand: string;
-  amount?: number;
+  amount: number;
   user_name: string;
   reference: string;
-  status: string;
-  details?: any;
+  status: "COMPLETED" | "PENDING" | "CANCELLED";
+  quantity?: number;
+  unit_price?: number;
 }
 
-interface Tire {
-  id: number;
-  serial_number: string;
-  size: string;
-  brand: string;
-  pattern: string;
-  type: "NEW" | "RETREADED" | "USED";
-  status:
-    | "IN_STORE"
-    | "ON_VEHICLE"
-    | "USED_STORE"
-    | "AWAITING_RETREAD"
-    | "AT_RETREAD_SUPPLIER"
-    | "DISPOSED";
-  position?: string;
-  purchase_date: string;
-  purchase_cost: number;
-  purchase_supplier: string;
-  depth_remaining: number;
-  current_odometer?: number;
-  current_vehicle?: string;
-  vehicle_id?: number;
+interface PurchaseAnalytics {
+  totalPurchases: number;
+  totalRetreadingCost: number;
+  monthlySpending: number;
+  purchaseCount: number;
+  retreadCount: number;
+  topSuppliers: Array<{ name: string; total: number }>;
+  monthlyTrend: "up" | "down";
 }
 
-interface Supplier {
-  id: number;
-  name: string;
-  type: string;
-}
-
-interface Vehicle {
-  id: number;
-  vehicle_number: string;
-  make: string;
-  model: string;
-}
+// Default analytics state
+const defaultAnalytics: PurchaseAnalytics = {
+  totalPurchases: 0,
+  totalRetreadingCost: 0,
+  monthlySpending: 0,
+  purchaseCount: 0,
+  retreadCount: 0,
+  topSuppliers: [],
+  monthlyTrend: "up",
+};
 
 export default function PurchasesPage() {
-  const router = useRouter();
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>([]);
-  const [tires, setTires] = useState<Tire[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [analytics, setAnalytics] = useState<PurchaseAnalytics>(defaultAnalytics);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("transactions");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
+  const [timeRange, setTimeRange] = useState<string>("month");
 
   useEffect(() => {
     fetchData();
-  }, [activeTab, filterType, filterStatus]);
+  }, [activeTab, filterType, filterStatus, timeRange]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
-      
-      if (activeTab === "transactions") {
-        await fetchTransactions();
-      } else if (activeTab === "tires") {
-        await fetchTires();
-      }
-      
-      // Always fetch suppliers and vehicles for forms
-      await fetchSuppliers();
-      await fetchVehicles();
+      await Promise.all([
+        fetchTransactions(),
+        fetchAnalytics(),
+      ]);
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Failed to load data");
@@ -169,160 +133,40 @@ export default function PurchasesPage() {
       const params = new URLSearchParams();
       if (filterType !== "all") params.append("type", filterType);
       if (filterStatus !== "all") params.append("status", filterStatus);
+      params.append("timeRange", timeRange);
 
       const response = await fetch(
-         `http://localhost:5000/api/tires/transactions?${params}`
+        `http://localhost:5000/api/purchases/transactions?${params}`
       );
-
       const data = await response.json();
-
-      // ✅ Normalize response
-      const transactionsArray = Array.isArray(data)
-        ? data
-        : Array.isArray(data.transactions)
-        ? data.transactions
-        : [];
-
-      setTransactions(transactionsArray);
+      setTransactions(Array.isArray(data) ? data : data.transactions || []);
     } catch (error) {
       console.error("Error fetching transactions:", error);
       setTransactions([]);
     }
   };
 
-
-  const fetchTires = async () => {
+  const fetchAnalytics = async () => {
     try {
-      const params = new URLSearchParams();
-      if (filterType !== "all") {
-        if (filterType === "IN_STORE") params.append("status", "IN_STORE");
-        else if (filterType === "ON_VEHICLE") params.append("status", "ON_VEHICLE");
-        else if (filterType === "RETREAD") params.append("status", "AWAITING_RETREAD,AT_RETREAD_SUPPLIER");
-      }
-      
-      const response = await fetch(`http://localhost:5000/api/tires?${params}`);
+      const response = await fetch(
+        `http://localhost:5000/api/purchases/analytics?timeRange=${timeRange}`
+      );
       const data = await response.json();
-      setTires(data);
+      setAnalytics(data);
     } catch (error) {
-      console.error("Error fetching tires:", error);
-      setTires([]);
-    }
-  };
-
-  const fetchSuppliers = async () => {
-    try {
-      const response = await fetch("http://localhost:5000/api/suppliers");
-      const data = await response.json();
-      setSuppliers(data);
-    } catch (error) {
-      console.error("Error fetching suppliers:", error);
-      setSuppliers([]);
-    }
-  };
-
-  const fetchVehicles = async () => {
-    try {
-      const response = await fetch("http://localhost:5000/api/vehicles");
-      const data = await response.json();
-      setVehicles(data.vehicles || data);
-    } catch (error) {
-      console.error("Error fetching vehicles:", error);
-      setVehicles([]);
-    }
-  };
-
-  const handlePurchaseTires = async (tireData: any) => {
-    try {
-      const response = await fetch("http://localhost:5000/api/tires/purchase", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(tireData),
-      });
-
-      if (response.ok) {
-        toast.success("Tires purchased successfully");
-        fetchData();
-        return true;
-      } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to purchase tires");
-        return false;
-      }
-    } catch (error) {
-      console.error("Error purchasing tires:", error);
-      toast.error("Failed to purchase tires");
-      return false;
-    }
-  };
-
-  const handleInstallTire = async (installData: any) => {
-    try {
-      const response = await fetch("http://localhost:5000/api/tires/install", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(installData),
-      });
-
-      if (response.ok) {
-        toast.success("Tire installed successfully");
-        fetchData();
-        return true;
-      } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to install tire");
-        return false;
-      }
-    } catch (error) {
-      console.error("Error installing tire:", error);
-      toast.error("Failed to install tire");
-      return false;
-    }
-  };
-
-  const handleRemoveTire = async (removeData: any) => {
-    try {
-      const response = await fetch("http://localhost:5000/api/tires/remove", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(removeData),
-      });
-
-      if (response.ok) {
-        toast.success("Tire removed successfully");
-        fetchData();
-        return true;
-      } else {
-        const error = await response.json();
-        toast.error(error.error || "Failed to remove tire");
-        return false;
-      }
-    } catch (error) {
-      console.error("Error removing tire:", error);
-      toast.error("Failed to remove tire");
-      return false;
+      console.error("Error fetching analytics:", error);
+      setAnalytics(defaultAnalytics);
     }
   };
 
   const getTransactionTypeLabel = (type: string) => {
     switch (type) {
       case "PURCHASE":
-        return "Purchase";
-      case "INSTALL":
-        return "Install on Vehicle";
-      case "REMOVE":
-        return "Remove from Vehicle";
+        return "New Purchase";
       case "RETREAD_SEND":
         return "Send for Retreading";
       case "RETREAD_RETURN":
         return "Return from Retreading";
-      case "DISPOSE":
-        return "Disposal";
       default:
         return type;
     }
@@ -332,16 +176,10 @@ export default function PurchasesPage() {
     switch (type) {
       case "PURCHASE":
         return "bg-blue-100 text-blue-800 border-blue-200";
-      case "INSTALL":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "REMOVE":
-        return "bg-amber-100 text-amber-800 border-amber-200";
       case "RETREAD_SEND":
         return "bg-purple-100 text-purple-800 border-purple-200";
       case "RETREAD_RETURN":
         return "bg-indigo-100 text-indigo-800 border-indigo-200";
-      case "DISPOSE":
-        return "bg-gray-100 text-gray-800 border-gray-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
@@ -351,73 +189,28 @@ export default function PurchasesPage() {
     switch (type) {
       case "PURCHASE":
         return <ShoppingCart className="h-4 w-4" />;
-      case "INSTALL":
-        return <Car className="h-4 w-4" />;
-      case "REMOVE":
-        return <Truck className="h-4 w-4" />;
       case "RETREAD_SEND":
       case "RETREAD_RETURN":
         return <Wrench className="h-4 w-4" />;
-      case "DISPOSE":
-        return <Trash2 className="h-4 w-4" />;
       default:
-        return <Package className="h-4 w-4" />;
+        return <FileText className="h-4 w-4" />;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "COMPLETED":
-      case "ACTIVE":
         return "bg-green-100 text-green-800 border-green-200";
       case "PENDING":
-      case "AWAITING_RETREAD":
         return "bg-yellow-100 text-yellow-800 border-yellow-200";
       case "CANCELLED":
-      case "DISPOSED":
         return "bg-red-100 text-red-800 border-red-200";
-      case "IN_PROGRESS":
-      case "AT_RETREAD_SUPPLIER":
-        return "bg-blue-100 text-blue-800 border-blue-200";
       default:
         return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
-  const getTireStatusColor = (status: string) => {
-    switch (status) {
-      case "IN_STORE":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "ON_VEHICLE":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "USED_STORE":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "AWAITING_RETREAD":
-        return "bg-orange-100 text-orange-800 border-orange-200";
-      case "AT_RETREAD_SUPPLIER":
-        return "bg-purple-100 text-purple-800 border-purple-200";
-      case "DISPOSED":
-        return "bg-gray-100 text-gray-800 border-gray-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const getTireTypeColor = (type: string) => {
-    switch (type) {
-      case "NEW":
-        return "bg-emerald-100 text-emerald-800 border-emerald-200";
-      case "RETREADED":
-        return "bg-cyan-100 text-cyan-800 border-cyan-200";
-      case "USED":
-        return "bg-amber-100 text-amber-800 border-amber-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const formatCurrency = (amount?: number) => {
-    if (!amount) return "";
+  const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
@@ -435,46 +228,61 @@ export default function PurchasesPage() {
     });
   };
 
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
   const filteredTransactions = transactions.filter(
     (transaction) =>
       transaction.tire_serial.toLowerCase().includes(search.toLowerCase()) ||
       transaction.tire_brand.toLowerCase().includes(search.toLowerCase()) ||
-      transaction.tire_size.toLowerCase().includes(search.toLowerCase()) ||
-      transaction.description.toLowerCase().includes(search.toLowerCase()) ||
-      transaction.user_name.toLowerCase().includes(search.toLowerCase())
+      transaction.supplier_name.toLowerCase().includes(search.toLowerCase()) ||
+      transaction.reference.toLowerCase().includes(search.toLowerCase())
   );
 
-  const filteredTires = tires.filter(
-    (tire) =>
-      tire.serial_number.toLowerCase().includes(search.toLowerCase()) ||
-      tire.brand.toLowerCase().includes(search.toLowerCase()) ||
-      tire.size.toLowerCase().includes(search.toLowerCase()) ||
-      tire.pattern?.toLowerCase().includes(search.toLowerCase()) ||
-      tire.purchase_supplier?.toLowerCase().includes(search.toLowerCase())
-  );
+  // Safe function to check if analytics has data
+  const hasTopSuppliers = analytics?.topSuppliers && analytics.topSuppliers.length > 0;
+
+  const exportReport = async (type: string) => {
+    try {
+      toast.info(`Preparing ${type} report...`);
+      // For now, simulate export - you'll need to implement actual API endpoint
+      const csvContent = "data:text/csv;charset=utf-8,";
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `${type}-report-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      toast.success(`${type} report download started`);
+    } catch (error) {
+      console.error("Error exporting report:", error);
+      toast.error("Failed to export report");
+    }
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Purchases & Transactions</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Purchases & Retreading</h1>
           <p className="text-muted-foreground">
-            Manage tire purchases, installations, retreading, and disposals
+            Manage tire purchases and retreading transactions
           </p>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={timeRange} onValueChange={setTimeRange}>
+            <SelectTrigger className="w-[130px]">
+              <Calendar className="mr-2 h-4 w-4" />
+              <SelectValue placeholder="Time Range" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="week">This Week</SelectItem>
+              <SelectItem value="month">This Month</SelectItem>
+              <SelectItem value="quarter">This Quarter</SelectItem>
+              <SelectItem value="year">This Year</SelectItem>
+              <SelectItem value="all">All Time</SelectItem>
+            </SelectContent>
+          </Select>
+          
           <Button variant="outline" onClick={fetchData} disabled={loading}>
             <RefreshCw
               className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -497,28 +305,9 @@ export default function PurchasesPage() {
                 </Link>
               </DropdownMenuItem>
               <DropdownMenuItem asChild>
-                <Link href="/purchases/install">
-                  <Car className="mr-2 h-4 w-4" />
-                  Install on Vehicle
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/purchases/remove">
-                  <Truck className="mr-2 h-4 w-4" />
-                  Remove from Vehicle
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
                 <Link href="/purchases/retread">
                   <Wrench className="mr-2 h-4 w-4" />
                   Send for Retreading
-                </Link>
-              </DropdownMenuItem>
-              <DropdownMenuItem asChild>
-                <Link href="/purchases/dispose">
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Dispose Tire
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -526,70 +315,110 @@ export default function PurchasesPage() {
         </div>
       </div>
 
-      {/* Stats Cards */}
+      {/* Analytics Cards */}
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{transactions.length}</div>
-            <p className="text-xs text-muted-foreground">
-              All transaction types
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Tires in Store</CardTitle>
-            <Package className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">Total Purchases</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {tires.filter(t => t.status === "IN_STORE").length}
+              {formatCurrency(analytics?.totalPurchases || 0)}
             </div>
-            <p className="text-xs text-muted-foreground">
-              Available for installation
-            </p>
+            <div className="flex items-center text-xs">
+              {analytics?.monthlyTrend === "up" ? (
+                <TrendingUp className="mr-1 h-3 w-3 text-green-500" />
+              ) : (
+                <TrendingDown className="mr-1 h-3 w-3 text-red-500" />
+              )}
+              <span className="text-muted-foreground">
+                {analytics?.monthlyTrend === "up" ? "+" : "-"}12% from last month
+              </span>
+            </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">On Vehicles</CardTitle>
-            <Car className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">
-              {tires.filter(t => t.status === "ON_VEHICLE").length}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Currently in use
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Retread Queue</CardTitle>
+            <CardTitle className="text-sm font-medium">Retreading Cost</CardTitle>
             <Wrench className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {tires.filter(t => t.status === "AWAITING_RETREAD" || t.status === "AT_RETREAD_SUPPLIER").length}
+              {formatCurrency(analytics?.totalRetreadingCost || 0)}
             </div>
             <p className="text-xs text-muted-foreground">
-              Awaiting or at retreader
+              Total spent on retreading
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Monthly Spending</CardTitle>
+            <ShoppingCart className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {formatCurrency(analytics?.monthlySpending || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              This {timeRange === "week" ? "week" : "month"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Transaction Count</CardTitle>
+            <FileText className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">
+              {(analytics?.purchaseCount || 0) + (analytics?.retreadCount || 0)}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {analytics?.purchaseCount || 0} purchases, {analytics?.retreadCount || 0} retreads
             </p>
           </CardContent>
         </Card>
       </div>
 
+      {/* Top Suppliers - Only show if we have data */}
+      {hasTopSuppliers && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Top Suppliers</CardTitle>
+            <CardDescription>Highest spending suppliers</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {analytics.topSuppliers.map((supplier, index) => (
+                <div key={supplier.name} className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
+                      <Building className="h-4 w-4 text-primary" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{supplier.name}</p>
+                      <p className="text-xs text-muted-foreground">Supplier #{index + 1}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-medium">{formatCurrency(supplier.total)}</p>
+                    <p className="text-xs text-muted-foreground">Total spent</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         <div className="flex items-center justify-between">
           <TabsList>
-            <TabsTrigger value="transactions">Transactions</TabsTrigger>
-            <TabsTrigger value="tires">Tire Inventory</TabsTrigger>
-            <TabsTrigger value="reports">Reports</TabsTrigger>
+            <TabsTrigger value="transactions">All Transactions</TabsTrigger>
+            <TabsTrigger value="purchases">Purchases Only</TabsTrigger>
+            <TabsTrigger value="retreading">Retreading Only</TabsTrigger>
           </TabsList>
           
           <div className="flex items-center gap-2">
@@ -600,24 +429,9 @@ export default function PurchasesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
-                {activeTab === "transactions" ? (
-                  <>
-                    <SelectItem value="PURCHASE">Purchases</SelectItem>
-                    <SelectItem value="INSTALL">Installations</SelectItem>
-                    <SelectItem value="REMOVE">Removals</SelectItem>
-                    <SelectItem value="RETREAD_SEND">Retread Sends</SelectItem>
-                    <SelectItem value="RETREAD_RETURN">Retread Returns</SelectItem>
-                    <SelectItem value="DISPOSE">Disposals</SelectItem>
-                  </>
-                ) : (
-                  <>
-                    <SelectItem value="IN_STORE">In Store</SelectItem>
-                    <SelectItem value="ON_VEHICLE">On Vehicle</SelectItem>
-                    <SelectItem value="RETREAD">Retread Queue</SelectItem>
-                    <SelectItem value="NEW">New Tires</SelectItem>
-                    <SelectItem value="RETREADED">Retreaded Tires</SelectItem>
-                  </>
-                )}
+                <SelectItem value="PURCHASE">Purchases</SelectItem>
+                <SelectItem value="RETREAD_SEND">Retread Sends</SelectItem>
+                <SelectItem value="RETREAD_RETURN">Retread Returns</SelectItem>
               </SelectContent>
             </Select>
             
@@ -625,11 +439,7 @@ export default function PurchasesPage() {
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 type="search"
-                placeholder={
-                  activeTab === "transactions" 
-                    ? "Search transactions..." 
-                    : "Search tires..."
-                }
+                placeholder="Search transactions..."
                 className="pl-8"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -638,7 +448,7 @@ export default function PurchasesPage() {
           </div>
         </div>
 
-        {/* Transactions Tab */}
+        {/* All Transactions Tab */}
         <TabsContent value="transactions" className="space-y-4">
           <Card>
             <CardContent className="p-0">
@@ -664,11 +474,12 @@ export default function PurchasesPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Date & Time</TableHead>
-                        <TableHead>Transaction Type</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
                         <TableHead>Tire Details</TableHead>
-                        <TableHead>Supplier/Vehicle</TableHead>
+                        <TableHead>Supplier</TableHead>
                         <TableHead>Amount</TableHead>
+                        <TableHead>Reference</TableHead>
                         <TableHead>User</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead className="text-right">Actions</TableHead>
@@ -679,7 +490,7 @@ export default function PurchasesPage() {
                         <TableRow key={transaction.id} className="hover:bg-accent/50">
                           <TableCell>
                             <div className="font-medium">
-                              {formatDateTime(transaction.date)}
+                              {formatDate(transaction.date)}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -704,28 +515,23 @@ export default function PurchasesPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {transaction.supplier_name ? (
-                              <div className="flex items-center gap-2">
-                                <Building className="h-3 w-3 text-muted-foreground" />
-                                <span>{transaction.supplier_name}</span>
-                              </div>
-                            ) : transaction.vehicle_number ? (
-                              <div className="flex items-center gap-2">
-                                <Car className="h-3 w-3 text-muted-foreground" />
-                                <span>{transaction.vehicle_number}</span>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">N/A</span>
-                            )}
+                            <div className="flex items-center gap-2">
+                              <Building className="h-3 w-3 text-muted-foreground" />
+                              <span>{transaction.supplier_name}</span>
+                            </div>
                           </TableCell>
                           <TableCell>
-                            {transaction.amount ? (
-                              <div className="font-medium">
-                                {formatCurrency(transaction.amount)}
+                            <div className="font-medium">
+                              {formatCurrency(transaction.amount)}
+                            </div>
+                            {transaction.quantity && transaction.unit_price && (
+                              <div className="text-xs text-muted-foreground">
+                                {transaction.quantity} × {formatCurrency(transaction.unit_price)}
                               </div>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
                             )}
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">
+                            {transaction.reference}
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
@@ -747,7 +553,7 @@ export default function PurchasesPage() {
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="outline" size="sm" asChild>
-                                      <Link href={`/inventory/${transaction.id}`}>
+                                      <Link href={`/purchases/${transaction.id}`}>
                                         <Eye className="h-4 w-4" />
                                       </Link>
                                     </Button>
@@ -757,34 +563,6 @@ export default function PurchasesPage() {
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/inventory/movement?tire=${transaction.id}`}>
-                                      <Clock className="mr-2 h-4 w-4" />
-                                      View History
-                                    </Link>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    className="text-red-600"
-                                    onClick={() => {
-                                      if (confirm("Are you sure you want to cancel this transaction?")) {
-                                        // Handle cancellation
-                                      }
-                                    }}
-                                  >
-                                    <AlertCircle className="mr-2 h-4 w-4" />
-                                    Cancel Transaction
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -796,33 +574,47 @@ export default function PurchasesPage() {
             </CardContent>
             {filteredTransactions.length > 0 && (
               <CardFooter className="border-t px-6 py-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {filteredTransactions.length} of {transactions.length} transactions
+                <div className="flex items-center justify-between w-full">
+                  <div className="text-sm text-muted-foreground">
+                    Showing {filteredTransactions.length} transactions
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => exportReport("transactions")}
+                  >
+                    <Download className="mr-2 h-4 w-4" />
+                    Export CSV
+                  </Button>
                 </div>
               </CardFooter>
             )}
           </Card>
         </TabsContent>
 
-        {/* Tires Tab */}
-        <TabsContent value="tires" className="space-y-4">
+        {/* Purchases Only Tab */}
+        <TabsContent value="purchases" className="space-y-4">
           <Card>
-            <CardContent className="p-0">
+            <CardHeader>
+              <CardTitle>Purchase Transactions</CardTitle>
+              <CardDescription>
+                New tire purchases and procurement records
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
               {loading ? (
                 <div className="flex items-center justify-center h-64">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                    <p className="mt-2 text-muted-foreground">Loading tires...</p>
+                    <p className="mt-2 text-muted-foreground">Loading purchases...</p>
                   </div>
                 </div>
-              ) : filteredTires.length === 0 ? (
+              ) : filteredTransactions.filter(t => t.type === "PURCHASE").length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <Package className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">No tires found</h3>
+                  <ShoppingCart className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium">No purchase transactions found</h3>
                   <p className="text-muted-foreground mt-1">
-                    {search
-                      ? "Try a different search term"
-                      : "Get started by purchasing your first tires"}
+                    Start by creating a purchase transaction
                   </p>
                 </div>
               ) : (
@@ -830,272 +622,153 @@ export default function PurchasesPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Serial Number</TableHead>
-                        <TableHead>Size & Brand</TableHead>
-                        <TableHead>Type</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Tire Details</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Quantity</TableHead>
+                        <TableHead>Unit Price</TableHead>
+                        <TableHead>Total</TableHead>
                         <TableHead>Status</TableHead>
-                        <TableHead>Position/Vehicle</TableHead>
-                        <TableHead>Purchase Date</TableHead>
-                        <TableHead>Cost</TableHead>
-                        <TableHead>Depth</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredTires.map((tire) => (
-                        <TableRow key={tire.id} className="hover:bg-accent/50">
-                          <TableCell className="font-mono font-medium">
-                            {tire.serial_number}
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{tire.size}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {tire.brand} {tire.pattern && `• ${tire.pattern}`}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={getTireTypeColor(tire.type)}
-                            >
-                              {tire.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={getTireStatusColor(tire.status)}
-                            >
-                              {tire.status.replace("_", " ")}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {tire.status === "ON_VEHICLE" ? (
+                      {filteredTransactions
+                        .filter(t => t.type === "PURCHASE")
+                        .map((transaction) => (
+                          <TableRow key={transaction.id}>
+                            <TableCell>{formatDate(transaction.date)}</TableCell>
+                            <TableCell>
                               <div>
-                                <div className="font-medium">
-                                  {tire.position || "N/A"}
-                                </div>
+                                <div className="font-medium">{transaction.tire_serial}</div>
                                 <div className="text-sm text-muted-foreground">
-                                  {tire.current_vehicle || "Unknown"}
+                                  {transaction.tire_size} • {transaction.tire_brand}
                                 </div>
                               </div>
-                            ) : (
-                              <span className="text-muted-foreground">
-                                {tire.position || "N/A"}
-                              </span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {formatDate(tire.purchase_date)}
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-medium">
-                              {formatCurrency(tire.purchase_cost)}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {tire.purchase_supplier}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div
-                                className="h-2 rounded-full bg-gray-200 flex-1"
-                                style={{ minWidth: "40px" }}
-                              >
-                                <div
-                                  className="h-full rounded-full bg-green-500"
-                                  style={{
-                                    width: `${Math.min(100, (tire.depth_remaining / 15) * 100)}%`,
-                                  }}
-                                />
-                              </div>
-                              <span className="text-sm font-medium">
-                                {tire.depth_remaining}mm
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              <TooltipProvider>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="outline" size="sm" asChild>
-                                      <Link href={`/inventory/${tire.id}`}>
-                                        <Eye className="h-4 w-4" />
-                                      </Link>
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>View details</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </TooltipProvider>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Quick Actions</DropdownMenuLabel>
-                                  {tire.status === "IN_STORE" && (
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/purchases/install?tire=${tire.id}`}>
-                                        <Car className="mr-2 h-4 w-4" />
-                                        Install on Vehicle
-                                      </Link>
-                                    </DropdownMenuItem>
-                                  )}
-                                  {tire.status === "ON_VEHICLE" && (
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/purchases/remove?tire=${tire.id}`}>
-                                        <Truck className="mr-2 h-4 w-4" />
-                                        Remove from Vehicle
-                                      </Link>
-                                    </DropdownMenuItem>
-                                  )}
-                                  {(tire.status === "USED_STORE" || tire.status === "ON_VEHICLE") && (
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/purchases/retread?tire=${tire.id}`}>
-                                        <Wrench className="mr-2 h-4 w-4" />
-                                        Send for Retreading
-                                      </Link>
-                                    </DropdownMenuItem>
-                                  )}
-                                  {tire.status !== "DISPOSED" && (
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/purchases/dispose?tire=${tire.id}`}>
-                                        <Trash2 className="mr-2 h-4 w-4" />
-                                        Dispose Tire
-                                      </Link>
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/inventory/movement?tire=${tire.id}`}>
-                                      <Clock className="mr-2 h-4 w-4" />
-                                      View Movement History
-                                    </Link>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
+                            </TableCell>
+                            <TableCell>{transaction.supplier_name}</TableCell>
+                            <TableCell>{transaction.quantity || 1}</TableCell>
+                            <TableCell>{formatCurrency(transaction.unit_price || transaction.amount)}</TableCell>
+                            <TableCell className="font-medium">
+                              {formatCurrency(transaction.amount)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={getStatusColor(transaction.status)}>
+                                {transaction.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
                     </TableBody>
                   </Table>
                 </div>
               )}
             </CardContent>
-            {filteredTires.length > 0 && (
-              <CardFooter className="border-t px-6 py-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {filteredTires.length} of {tires.length} tires
-                </div>
-              </CardFooter>
-            )}
+            <CardFooter>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => exportReport("purchases")}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Purchase Report
+              </Button>
+            </CardFooter>
           </Card>
         </TabsContent>
 
-        {/* Reports Tab */}
-        <TabsContent value="reports" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">Purchase Summary</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {formatCurrency(
-                    transactions
-                      .filter(t => t.type === "PURCHASE")
-                      .reduce((sum, t) => sum + (t.amount || 0), 0)
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Total spent on tire purchases
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">Retreading Costs</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {formatCurrency(
-                    transactions
-                      .filter(t => t.type === "RETREAD_SEND")
-                      .reduce((sum, t) => sum + (t.amount || 0), 0)
-                  )}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Total retreading expenses
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">Active Installations</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">
-                  {transactions.filter(t => t.type === "INSTALL").length}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Tires installed on vehicles
-                </p>
-              </CardContent>
-            </Card>
-          </div>
-
+        {/* Retreading Only Tab */}
+        <TabsContent value="retreading" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Monthly Activity</CardTitle>
+              <CardTitle>Retreading Transactions</CardTitle>
               <CardDescription>
-                Transaction activity over the past 6 months
+                Tire retreading send and return records
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="h-[200px] flex items-center justify-center">
-                <div className="text-center text-muted-foreground">
-                  <BarChart3 className="h-12 w-12 mx-auto mb-4" />
-                  <p>Monthly reports coming soon</p>
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <div className="text-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                    <p className="mt-2 text-muted-foreground">Loading retreading transactions...</p>
+                  </div>
                 </div>
-              </div>
+              ) : filteredTransactions.filter(t => t.type === "RETREAD_SEND" || t.type === "RETREAD_RETURN").length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-64 text-center">
+                  <Wrench className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium">No retreading transactions found</h3>
+                  <p className="text-muted-foreground mt-1">
+                    Send tires for retreading to see records here
+                  </p>
+                </div>
+              ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Tire Details</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Cost</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredTransactions
+                        .filter(t => t.type === "RETREAD_SEND" || t.type === "RETREAD_RETURN")
+                        .map((transaction) => (
+                          <TableRow key={transaction.id}>
+                            <TableCell>{formatDate(transaction.date)}</TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={getTransactionTypeColor(transaction.type)}
+                              >
+                                {getTransactionTypeLabel(transaction.type)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{transaction.tire_serial}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {transaction.tire_size} • {transaction.tire_brand}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{transaction.supplier_name}</TableCell>
+                            <TableCell className="font-medium">
+                              {formatCurrency(transaction.amount)}
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={getStatusColor(transaction.status)}>
+                                {transaction.status}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
             </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Quick Reports</CardTitle>
-              <CardDescription>
-                Generate and download reports
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-                <Button variant="outline" className="justify-start">
-                  <Download className="mr-2 h-4 w-4" />
-                  Purchase History
-                </Button>
-                <Button variant="outline" className="justify-start">
-                  <Download className="mr-2 h-4 w-4" />
-                  Installation Report
-                </Button>
-                <Button variant="outline" className="justify-start">
-                  <Download className="mr-2 h-4 w-4" />
-                  Retreading Summary
-                </Button>
-                <Button variant="outline" className="justify-start">
-                  <Download className="mr-2 h-4 w-4" />
-                  Disposal Log
-                </Button>
+            <CardFooter className="flex justify-between">
+              <div className="text-sm">
+                <p className="font-medium">
+                  Total retreading cost: {formatCurrency(analytics?.totalRetreadingCost || 0)}
+                </p>
+                <p className="text-muted-foreground">
+                  {analytics?.retreadCount || 0} retreading transactions
+                </p>
               </div>
-            </CardContent>
+              <Button
+                variant="outline"
+                onClick={() => exportReport("retreading")}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Retreading Report
+              </Button>
+            </CardFooter>
           </Card>
         </TabsContent>
       </Tabs>
