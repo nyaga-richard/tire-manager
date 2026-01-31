@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -44,21 +44,10 @@ import {
   XCircle,
   Truck,
   AlertCircle,
-  Layers,
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   BarChart3,
   ShoppingBag,
-  Printer,
-  X,
-  PackageOpen,
-  CreditCard,
-  CalendarDays,
-  Truck as TruckIcon,
-  FileText as FileTextIcon,
-  Printer as PrinterIcon,
-  Download as DownloadIcon,
-  ShoppingBag as ShoppingBagIcon,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -81,7 +70,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useReactToPrint } from "react-to-print";
+import PurchaseOrderDetails from "@/components/purchase-order-details";
 
 interface PurchaseTransaction {
   id: number;
@@ -178,432 +167,6 @@ const defaultOrderAnalytics: PurchaseOrderAnalytics = {
   averageDeliveryTime: null,
 };
 
-// Purchase Order Modal Component
-interface PurchaseOrderModalProps {
-  order: PurchaseOrder | null;
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps) => {
-  const printRef = useRef<HTMLDivElement>(null);
-  
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: `PO-${order?.po_number || 'Order'}`,
-    pageStyle: `
-      @media print {
-        @page {
-          size: A4;
-          margin: 20mm;
-        }
-        body {
-          -webkit-print-color-adjust: exact;
-        }
-        .no-print {
-          display: none !important;
-        }
-        .print-only {
-          display: block !important;
-        }
-      }
-      @page {
-        margin: 20mm;
-      }
-    `,
-    onAfterPrint: () => toast.success("Purchase order printed successfully"),
-    onPrintError: () => toast.error("Failed to print purchase order"),
-  });
-
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const formatDateTime = (dateString: string | null) => {
-    if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-      case "RECEIVED":
-      case "CLOSED":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "PENDING":
-      case "DRAFT":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "APPROVED":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "ORDERED":
-        return "bg-indigo-100 text-indigo-800 border-indigo-200";
-      case "PARTIALLY_RECEIVED":
-        return "bg-orange-100 text-orange-800 border-orange-200";
-      case "CANCELLED":
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-      case "RECEIVED":
-      case "CLOSED":
-        return <CheckCircle className="h-4 w-4" />;
-      case "PENDING":
-      case "DRAFT":
-        return <Clock className="h-4 w-4" />;
-      case "APPROVED":
-        return <CheckCircle className="h-4 w-4" />;
-      case "ORDERED":
-        return <Package className="h-4 w-4" />;
-      case "PARTIALLY_RECEIVED":
-        return <Truck className="h-4 w-4" />;
-      case "CANCELLED":
-        return <XCircle className="h-4 w-4" />;
-      default:
-        return <AlertCircle className="h-4 w-4" />;
-    }
-  };
-
-  const calculateTax = (total: number) => {
-    return total * 0.10; // 10% tax
-  };
-
-  const calculateShipping = () => {
-    return order?.shipping_amount || 0;
-  };
-
-  const calculateFinalAmount = () => {
-    const total = order?.total_amount || 0;
-    const tax = calculateTax(total);
-    const shipping = calculateShipping();
-    return total + tax + shipping;
-  };
-
-  if (!order || !isOpen) return null;
-
-  return (
-    <>
-      {/* Modal Backdrop */}
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b no-print">
-              <div>
-                <h2 className="text-2xl font-bold">Purchase Order Details</h2>
-                <p className="text-muted-foreground">PO: {order.po_number}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrint}>
-                  <PrinterIcon className="mr-2 h-4 w-4" />
-                  Print/PDF
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => {
-                  // Export as JSON
-                  const dataStr = JSON.stringify(order, null, 2);
-                  const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-                  const link = document.createElement('a');
-                  link.setAttribute('href', dataUri);
-                  link.setAttribute('download', `PO-${order.po_number}.json`);
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  toast.success("Order data exported as JSON");
-                }}>
-                  <DownloadIcon className="mr-2 h-4 w-4" />
-                  Export
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onClose}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Modal Content - Printable Area */}
-            <div className="flex-1 overflow-auto p-6">
-              <div ref={printRef} className="space-y-8">
-                {/* Printable Header */}
-                <div className="border-b pb-6">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h1 className="text-3xl font-bold">PURCHASE ORDER</h1>
-                      <div className="mt-2 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <FileTextIcon className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-semibold">Order #:</span>
-                          <span className="font-mono text-lg font-bold">{order.po_number}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-semibold">Date:</span>
-                          <span>{formatDate(order.po_date)}</span>
-                        </div>
-                        <div className="mt-2">
-                          <Badge className={`${getStatusColor(order.status)}`}>
-                            <div className="flex items-center gap-1">
-                              {getStatusIcon(order.status)}
-                              {order.status.replace("_", " ")}
-                            </div>
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold mb-2">Fleet Management System</div>
-                      <div className="text-sm text-muted-foreground">
-                        123 Fleet Street<br />
-                        Industrial Area<br />
-                        City, State 12345<br />
-                        Phone: (555) 123-4567<br />
-                        Email: info@fleetmanagement.com
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Supplier and Delivery Information */}
-                <div className="grid grid-cols-2 gap-8">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                      <Building className="h-4 w-4" />
-                      Supplier Information
-                    </h3>
-                    <div className="space-y-2">
-                      <p className="font-bold text-lg">{order.supplier_name}</p>
-                      <p className="text-sm text-muted-foreground">Type: {order.supplier_type}</p>
-                      {order.shipping_address && (
-                        <div className="mt-4">
-                          <p className="text-sm font-medium">Shipping Address:</p>
-                          <p className="text-sm text-muted-foreground whitespace-pre-line">
-                            {order.shipping_address}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                      <TruckIcon className="h-4 w-4" />
-                      Delivery Information
-                    </h3>
-                    <div className="space-y-3">
-                      <div>
-                        <p className="font-medium">Expected Delivery:</p>
-                        <p className="text-muted-foreground">
-                          {order.expected_delivery_date ? formatDate(order.expected_delivery_date) : "Not specified"}
-                        </p>
-                      </div>
-                      {order.delivery_date && (
-                        <div>
-                          <p className="font-medium text-green-600">Actual Delivery:</p>
-                          <p className="text-muted-foreground">
-                            {formatDate(order.delivery_date)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {order.terms && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-medium flex items-center gap-2">
-                          <CreditCard className="h-4 w-4" />
-                          Payment Terms
-                        </h4>
-                        <p className="text-sm font-medium">{order.terms}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Order Items */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <PackageOpen className="h-4 w-4" />
-                    Order Items
-                  </h3>
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader className="bg-gray-50">
-                        <TableRow>
-                          <TableHead className="font-semibold">#</TableHead>
-                          <TableHead className="font-semibold">Tire Size</TableHead>
-                          <TableHead className="font-semibold text-right">Quantity</TableHead>
-                          <TableHead className="font-semibold text-right">Unit Price</TableHead>
-                          <TableHead className="font-semibold text-right">Line Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {/* Sample Items - In real app, fetch from API */}
-                        {Array.from({ length: order.item_count }).map((_, index) => {
-                          const unitPrice = 450 + (index * 70);
-                          const quantity = 4;
-                          const lineTotal = unitPrice * quantity;
-                          return (
-                            <TableRow key={index}>
-                              <TableCell className="font-medium">{index + 1}</TableCell>
-                              <TableCell>295/80R22.5</TableCell>
-                              <TableCell className="text-right">{quantity}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(unitPrice)}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(lineTotal)}</TableCell>
-                            </TableRow>
-                          );
-                        })}
-                        
-                        {/* Summary Rows */}
-                        <TableRow className="bg-gray-50">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-semibold">Subtotal:</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(order.total_amount)}</TableCell>
-                        </TableRow>
-                        <TableRow className="bg-gray-50">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-semibold">Tax (10%):</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(order.tax_amount)}</TableCell>
-                        </TableRow>
-                        <TableRow className="bg-gray-50">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-semibold">Shipping:</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(order.shipping_amount)}</TableCell>
-                        </TableRow>
-                        <TableRow className="bg-primary/10 border-t-2 border-primary">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-bold text-lg">GRAND TOTAL:</TableCell>
-                          <TableCell className="text-right font-bold text-lg">{formatCurrency(order.final_amount)}</TableCell>
-                        </TableRow>
-                      </TableBody>
-                    </Table>
-                  </div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    Total Items: {order.item_count} • Received: {order.total_received || 0} • 
-                    Progress: {order.total_received && order.item_count ? 
-                      Math.round((order.total_received / order.item_count) * 100) : 0}%
-                  </div>
-                </div>
-
-                {/* Notes and Additional Information */}
-                {(order.notes || order.billing_address) && (
-                  <div className="grid grid-cols-2 gap-8">
-                    {order.notes && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-3">Special Instructions</h3>
-                        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                          <p className="text-sm whitespace-pre-line">{order.notes}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {order.billing_address && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-3">Billing Address</h3>
-                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-sm whitespace-pre-line">{order.billing_address}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Footer for Print */}
-                <div className="border-t pt-6">
-                  <div className="grid grid-cols-3 gap-8">
-                    <div>
-                      <p className="font-semibold">Prepared By:</p>
-                      <p className="text-sm text-muted-foreground">User #{order.created_by}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.created_at)}</p>
-                    </div>
-                    
-                    {order.approved_by && (
-                      <div>
-                        <p className="font-semibold">Approved By:</p>
-                        <p className="text-sm text-muted-foreground">User #{order.approved_by}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.approved_date)}</p>
-                      </div>
-                    )}
-
-                    <div className="text-right">
-                      <p className="font-semibold">Delivery Status:</p>
-                      <Badge className={`mt-1 ${getStatusColor(order.status)}`}>
-                        {order.status.replace("_", " ")}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-6 text-center text-sm text-muted-foreground">
-                    <p>Thank you for your business!</p>
-                    <p className="mt-1">This is an automatically generated purchase order from Fleet Management System</p>
-                    <p className="mt-4 text-xs">
-                      Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer - Non Printable */}
-            <div className="border-t p-6 flex justify-between no-print">
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  <span>Created by: User #{order.created_by}</span>
-                </div>
-                {order.approved_by && (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Approved by: User #{order.approved_by}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={onClose}>
-                  Close
-                </Button>
-                {["ORDERED", "PARTIALLY_RECEIVED", "DRAFT", "PENDING", "APPROVED"].includes(order.status) && (
-                  <Button asChild>
-                    <Link href={`/purchases/orders/${order.id}/receive`}>
-                      <Truck className="mr-2 h-4 w-4" />
-                      Receive Goods
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
 export default function PurchasesPage() {
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
@@ -618,7 +181,7 @@ export default function PurchasesPage() {
   const [timeRange, setTimeRange] = useState<string>("month");
   const [orderFilterStatus, setOrderFilterStatus] = useState<string>("all");
   const [timeRangeOrders, setTimeRangeOrders] = useState<string>("month");
-  const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
@@ -982,13 +545,13 @@ export default function PurchasesPage() {
   };
 
   const openOrderDetails = (order: PurchaseOrder) => {
-    setSelectedOrder(order);
+    setSelectedOrderId(order.id);
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setSelectedOrder(null);
+    setSelectedOrderId(null);
   };
 
   const filteredTransactions = transactions.filter(
@@ -1106,7 +669,7 @@ export default function PurchasesPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
-                <ShoppingBagIcon className="h-4 w-4 text-muted-foreground" />
+                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -1919,9 +1482,9 @@ export default function PurchasesPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Purchase Order Modal */}
-      <PurchaseOrderModal 
-        order={selectedOrder}
+      {/* Purchase Order Details Modal */}
+      <PurchaseOrderDetails 
+        orderId={selectedOrderId}
         isOpen={isModalOpen}
         onClose={closeModal}
       />
