@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import {
   Card,
   CardContent,
@@ -44,21 +44,10 @@ import {
   XCircle,
   Truck,
   AlertCircle,
-  Layers,
   TrendingUp as TrendingUpIcon,
   TrendingDown as TrendingDownIcon,
   BarChart3,
   ShoppingBag,
-  Printer,
-  X,
-  PackageOpen,
-  CreditCard,
-  CalendarDays,
-  Truck as TruckIcon,
-  FileText as FileTextIcon,
-  Printer as PrinterIcon,
-  Download as DownloadIcon,
-  ShoppingBag as ShoppingBagIcon,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -81,7 +70,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { useReactToPrint } from "react-to-print";
+import PurchaseOrderDetails from "@/components/purchase-order-details";
 
 interface PurchaseTransaction {
   id: number;
@@ -204,501 +193,6 @@ const defaultOrderAnalytics: PurchaseOrderAnalytics = {
   averageDeliveryTime: null,
 };
 
-// Purchase Order Modal Component
-interface PurchaseOrderModalProps {
-  order: PurchaseOrder | null;
-  isOpen: boolean;
-  onClose: () => void;
-}
-
-const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps) => {
-  const printRef = useRef<HTMLDivElement>(null);
-  
-  const handlePrint = useReactToPrint({
-    contentRef: printRef,
-    documentTitle: `PO-${order?.po_number || 'Order'}`,
-    pageStyle: `
-      @media print {
-        @page {
-          size: A4;
-          margin: 20mm;
-        }
-        body {
-          -webkit-print-color-adjust: exact;
-        }
-        .no-print {
-          display: none !important;
-        }
-        .print-only {
-          display: block !important;
-        }
-      }
-      @page {
-        margin: 20mm;
-      }
-    `,
-    onAfterPrint: () => toast.success("Purchase order printed successfully"),
-    onPrintError: () => toast.error("Failed to print purchase order"),
-  });
-
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    });
-  };
-
-  const formatDateTime = (dateString: string | null) => {
-    if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    }).format(amount);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-      case "RECEIVED":
-      case "CLOSED":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "PENDING":
-      case "DRAFT":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
-      case "APPROVED":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "ORDERED":
-        return "bg-indigo-100 text-indigo-800 border-indigo-200";
-      case "PARTIALLY_RECEIVED":
-        return "bg-orange-100 text-orange-800 border-orange-200";
-      case "CANCELLED":
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-      case "RECEIVED":
-      case "CLOSED":
-        return <CheckCircle className="h-4 w-4" />;
-      case "PENDING":
-      case "DRAFT":
-        return <Clock className="h-4 w-4" />;
-      case "APPROVED":
-        return <CheckCircle className="h-4 w-4" />;
-      case "ORDERED":
-        return <Package className="h-4 w-4" />;
-      case "PARTIALLY_RECEIVED":
-        return <Truck className="h-4 w-4" />;
-      case "CANCELLED":
-        return <XCircle className="h-4 w-4" />;
-      default:
-        return <AlertCircle className="h-4 w-4" />;
-    }
-  };
-
-  const calculateTotalReceived = () => {
-    if (!order?.items) return 0;
-    return order.items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
-  };
-
-  const calculateProgress = () => {
-    if (!order?.items || order.items.length === 0) return 0;
-    const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-    const totalReceived = calculateTotalReceived();
-    return totalQuantity > 0 ? Math.round((totalReceived / totalQuantity) * 100) : 0;
-  };
-
-  if (!order || !isOpen) return null;
-
-  return (
-    <>
-      {/* Modal Backdrop */}
-      <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      
-      {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden">
-          <div className="bg-white dark:bg-gray-900 rounded-lg shadow-xl flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between p-6 border-b no-print">
-              <div>
-                <h2 className="text-2xl font-bold">Purchase Order Details</h2>
-                <p className="text-muted-foreground">PO: {order.po_number}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={handlePrint}>
-                  <PrinterIcon className="mr-2 h-4 w-4" />
-                  Print/PDF
-                </Button>
-                <Button variant="outline" size="sm" onClick={() => {
-                  // Export as JSON
-                  const dataStr = JSON.stringify(order, null, 2);
-                  const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-                  const link = document.createElement('a');
-                  link.setAttribute('href', dataUri);
-                  link.setAttribute('download', `PO-${order.po_number}.json`);
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                  toast.success("Order data exported as JSON");
-                }}>
-                  <DownloadIcon className="mr-2 h-4 w-4" />
-                  Export
-                </Button>
-                <Button variant="ghost" size="sm" onClick={onClose}>
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-
-            {/* Modal Content - Printable Area */}
-            <div className="flex-1 overflow-auto p-6">
-              <div ref={printRef} className="space-y-8">
-                {/* Printable Header */}
-                <div className="border-b pb-6">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h1 className="text-3xl font-bold">PURCHASE ORDER</h1>
-                      <div className="mt-2 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <FileTextIcon className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-semibold">Order #:</span>
-                          <span className="font-mono text-lg font-bold">{order.po_number}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-semibold">Date:</span>
-                          <span>{formatDate(order.po_date)}</span>
-                        </div>
-                        <div className="mt-2">
-                          <Badge className={`${getStatusColor(order.status)}`}>
-                            <div className="flex items-center gap-1">
-                              {getStatusIcon(order.status)}
-                              {order.status.replace("_", " ")}
-                            </div>
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-lg font-bold mb-2">Fleet Management System</div>
-                      <div className="text-sm text-muted-foreground">
-                        123 Fleet Street<br />
-                        Industrial Area<br />
-                        City, State 12345<br />
-                        Phone: (555) 123-4567<br />
-                        Email: info@fleetmanagement.com
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Supplier and Delivery Information */}
-                <div className="grid grid-cols-2 gap-8">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                      <Building className="h-4 w-4" />
-                      Supplier Information
-                    </h3>
-                    <div className="space-y-2">
-                      <p className="font-bold text-lg">{order.supplier_name}</p>
-                      <p className="text-sm">
-                        <span className="font-medium">Contact:</span> {order.supplier_contact || "N/A"}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-medium">Phone:</span> {order.supplier_phone || "N/A"}
-                      </p>
-                      <p className="text-sm">
-                        <span className="font-medium">Email:</span> {order.supplier_email || "N/A"}
-                      </p>
-                      {order.supplier_address && (
-                        <div className="mt-2">
-                          <p className="text-sm font-medium">Address:</p>
-                          <p className="text-sm text-muted-foreground">
-                            {order.supplier_address}
-                          </p>
-                        </div>
-                      )}
-                      {order.shipping_address && (
-                        <div className="mt-4 border-t pt-4">
-                          <p className="text-sm font-medium">Shipping Address:</p>
-                          <p className="text-sm text-muted-foreground whitespace-pre-line">
-                            {order.shipping_address}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                      <TruckIcon className="h-4 w-4" />
-                      Delivery Information
-                    </h3>
-                    <div className="space-y-3">
-                      <div>
-                        <p className="font-medium">Expected Delivery:</p>
-                        <p className="text-muted-foreground">
-                          {order.expected_delivery_date ? formatDate(order.expected_delivery_date) : "Not specified"}
-                        </p>
-                      </div>
-                      {order.delivery_date && (
-                        <div>
-                          <p className="font-medium text-green-600">Actual Delivery:</p>
-                          <p className="text-muted-foreground">
-                            {formatDate(order.delivery_date)}
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {order.terms && (
-                      <div className="mt-4">
-                        <h4 className="text-sm font-medium flex items-center gap-2">
-                          <CreditCard className="h-4 w-4" />
-                          Payment Terms
-                        </h4>
-                        <p className="text-sm font-medium">{order.terms}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Order Items */}
-                <div>
-                  <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                    <PackageOpen className="h-4 w-4" />
-                    Order Items
-                  </h3>
-                  <div className="border rounded-lg overflow-hidden">
-                    <Table>
-                      <TableHeader className="bg-gray-50">
-                        <TableRow>
-                          <TableHead className="font-semibold">#</TableHead>
-                          <TableHead className="font-semibold">Size</TableHead>
-                          <TableHead className="font-semibold">Brand/Model</TableHead>
-                          <TableHead className="font-semibold">Type</TableHead>
-                          <TableHead className="font-semibold text-right">Quantity</TableHead>
-                          <TableHead className="font-semibold text-right">Unit Price</TableHead>
-                          <TableHead className="font-semibold text-right">Line Total</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {order.items && order.items.length > 0 ? (
-                          order.items.map((item, index) => (
-                            <TableRow key={item.id}>
-                              <TableCell className="font-medium">{index + 1}</TableCell>
-                              <TableCell>{item.size}</TableCell>
-                              <TableCell>
-                                {item.brand || "N/A"}
-                                {item.model && ` / ${item.model}`}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline" className="text-xs">
-                                  {item.type || "NEW"}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div>
-                                  <div className="font-medium">{item.quantity}</div>
-                                  {item.received_quantity > 0 && (
-                                    <div className="text-xs text-green-600">
-                                      Received: {item.received_quantity}
-                                    </div>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(item.line_total)}</TableCell>
-                            </TableRow>
-                          ))
-                        ) : (
-                          <TableRow>
-                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                              No items in this purchase order
-                            </TableCell>
-                          </TableRow>
-                        )}
-                        
-                        {/* Summary Rows */}
-                        {order.items && order.items.length > 0 && (
-                          <>
-                            <TableRow className="bg-gray-50">
-                              <TableCell colSpan={4}></TableCell>
-                              <TableCell className="text-right font-semibold" colSpan={2}>Subtotal:</TableCell>
-                              <TableCell className="text-right font-semibold">{formatCurrency(order.total_amount)}</TableCell>
-                            </TableRow>
-                            <TableRow className="bg-gray-50">
-                              <TableCell colSpan={4}></TableCell>
-                              <TableCell className="text-right font-semibold" colSpan={2}>Tax (10%):</TableCell>
-                              <TableCell className="text-right font-semibold">{formatCurrency(order.tax_amount)}</TableCell>
-                            </TableRow>
-                            <TableRow className="bg-gray-50">
-                              <TableCell colSpan={4}></TableCell>
-                              <TableCell className="text-right font-semibold" colSpan={2}>Shipping:</TableCell>
-                              <TableCell className="text-right font-semibold">{formatCurrency(order.shipping_amount)}</TableCell>
-                            </TableRow>
-                            <TableRow className="bg-primary/10 border-t-2 border-primary">
-                              <TableCell colSpan={4}></TableCell>
-                              <TableCell className="text-right font-bold text-lg" colSpan={2}>GRAND TOTAL:</TableCell>
-                              <TableCell className="text-right font-bold text-lg">{formatCurrency(order.final_amount)}</TableCell>
-                            </TableRow>
-                          </>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </div>
-                  {order.items && order.items.length > 0 && (
-                    <div className="mt-2 text-sm text-muted-foreground">
-                      Total Items: {order.items.length} • 
-                      Total Quantity: {order.items.reduce((sum, item) => sum + item.quantity, 0)} • 
-                      Received: {calculateTotalReceived()} • 
-                      Progress: {calculateProgress()}%
-                    </div>
-                  )}
-                </div>
-
-                {/* Notes and Additional Information */}
-                {(order.notes || order.billing_address) && (
-                  <div className="grid grid-cols-2 gap-8">
-                    {order.notes && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-3">Special Instructions</h3>
-                        <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                          <p className="text-sm whitespace-pre-line">{order.notes}</p>
-                        </div>
-                      </div>
-                    )}
-                    
-                    {order.billing_address && (
-                      <div>
-                        <h3 className="text-lg font-semibold mb-3">Billing Address</h3>
-                        <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                          <p className="text-sm whitespace-pre-line">{order.billing_address}</p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Tires Generation Information */}
-                {order.items && order.items.some(item => item.tires_generated > 0) && (
-                  <div className="border rounded-lg p-4 bg-green-50 border-green-200">
-                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-green-800">
-                      <Package className="h-4 w-4" />
-                      Tire Generation Status
-                    </h3>
-                    <div className="space-y-2">
-                      {order.items.map((item, index) => (
-                        item.tires_generated > 0 && (
-                          <div key={item.id} className="flex items-center justify-between">
-                            <div>
-                              <span className="font-medium">Item {index + 1} ({item.size}):</span>
-                              <span className="text-sm text-green-700 ml-2">
-                                {item.tires_generated} of {item.quantity} tires generated
-                              </span>
-                            </div>
-                            <Badge className="bg-green-100 text-green-800 border-green-200">
-                              {Math.round((item.tires_generated / item.quantity) * 100)}% Complete
-                            </Badge>
-                          </div>
-                        )
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Footer for Print */}
-                <div className="border-t pt-6">
-                  <div className="grid grid-cols-3 gap-8">
-                    <div>
-                      <p className="font-semibold">Prepared By:</p>
-                      <p className="text-sm">{order.created_by_name || `User #${order.created_by}`}</p>
-                      <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.created_at)}</p>
-                    </div>
-                    
-                    {order.approved_by && (
-                      <div>
-                        <p className="font-semibold">Approved By:</p>
-                        <p className="text-sm">{order.approved_by_name || `User #${order.approved_by}`}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.approved_date)}</p>
-                      </div>
-                    )}
-
-                    <div className="text-right">
-                      <p className="font-semibold">Delivery Status:</p>
-                      <Badge className={`mt-1 ${getStatusColor(order.status)}`}>
-                        {order.status.replace("_", " ")}
-                      </Badge>
-                    </div>
-                  </div>
-                  
-                  <div className="mt-6 text-center text-sm text-muted-foreground">
-                    <p>Thank you for your business!</p>
-                    <p className="mt-1">This is an automatically generated purchase order from Fleet Management System</p>
-                    <p className="mt-4 text-xs">
-                      Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer - Non Printable */}
-            <div className="border-t p-6 flex justify-between no-print">
-              <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <User className="h-4 w-4" />
-                  <span>Created by: {order.created_by_name || `User #${order.created_by}`}</span>
-                </div>
-                {order.approved_by && (
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Approved by: {order.approved_by_name || `User #${order.approved_by}`}</span>
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-2">
-                <Button variant="outline" onClick={onClose}>
-                  Close
-                </Button>
-                {["ORDERED", "PARTIALLY_RECEIVED", "DRAFT", "PENDING", "APPROVED"].includes(order.status) && (
-                  <Button asChild>
-                    <Link href={`/purchases/orders/${order.id}/receive`}>
-                      <Truck className="mr-2 h-4 w-4" />
-                      Receive Goods
-                    </Link>
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-};
-
 export default function PurchasesPage() {
   const [transactions, setTransactions] = useState<PurchaseTransaction[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
@@ -713,7 +207,7 @@ export default function PurchasesPage() {
   const [timeRange, setTimeRange] = useState<string>("month");
   const [orderFilterStatus, setOrderFilterStatus] = useState<string>("all");
   const [timeRangeOrders, setTimeRangeOrders] = useState<string>("month");
-  const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
@@ -1079,13 +573,13 @@ export default function PurchasesPage() {
   };
 
   const openOrderDetails = (order: PurchaseOrder) => {
-    setSelectedOrder(order);
+    setSelectedOrderId(order.id);
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
-    setSelectedOrder(null);
+    setSelectedOrderId(null);
   };
 
   const filteredTransactions = transactions.filter(
@@ -1203,7 +697,7 @@ export default function PurchasesPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
-                <ShoppingBagIcon className="h-4 w-4 text-muted-foreground" />
+                <ShoppingBag className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
@@ -2016,9 +1510,9 @@ export default function PurchasesPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Purchase Order Modal */}
-      <PurchaseOrderModal 
-        order={selectedOrder}
+      {/* Purchase Order Details Modal */}
+      <PurchaseOrderDetails 
+        orderId={selectedOrderId}
         isOpen={isModalOpen}
         onClose={closeModal}
       />
