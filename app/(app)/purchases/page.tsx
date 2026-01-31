@@ -89,12 +89,35 @@ interface PurchaseTransaction {
   unit_price?: number;
 }
 
+interface PurchaseOrderItem {
+  id: number;
+  po_id: number;
+  size: string;
+  brand: string | null;
+  model: string | null;
+  type: string;
+  quantity: number;
+  received_quantity: number;
+  unit_price: number;
+  line_total: number;
+  received_total: number;
+  remaining_quantity: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  tires_generated: number;
+}
+
 interface PurchaseOrder {
   id: number;
   po_number: string;
   supplier_id: number;
   supplier_name: string;
   supplier_type: string;
+  supplier_contact?: string;
+  supplier_phone?: string;
+  supplier_email?: string;
+  supplier_address?: string;
   po_date: string;
   expected_delivery_date: string | null;
   delivery_date: string | null;
@@ -114,6 +137,9 @@ interface PurchaseOrder {
   updated_at: string;
   item_count: number;
   total_received: number | null;
+  items: PurchaseOrderItem[];
+  created_by_name?: string;
+  approved_by_name?: string | null;
 }
 
 interface PurchaseAnalytics {
@@ -540,8 +566,10 @@ export default function PurchasesPage() {
   };
 
   const getOrderProgress = (order: PurchaseOrder) => {
-    if (order.total_received === null || order.item_count === 0) return 0;
-    return Math.round((order.total_received / order.item_count) * 100);
+    if (!order.items || order.items.length === 0) return 0;
+    const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalReceived = order.items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
+    return totalQuantity > 0 ? Math.round((totalReceived / totalQuantity) * 100) : 0;
   };
 
   const openOrderDetails = (order: PurchaseOrder) => {
@@ -1048,9 +1076,9 @@ export default function PurchasesPage() {
                             </TableCell>
                             <TableCell>
                               <div>
-                                <div className="font-medium">{order.item_count} items</div>
+                                <div className="font-medium">{order.items?.length || 0} items</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {order.total_received !== null ? `${order.total_received} received` : '0 received'}
+                                  {order.items?.reduce((sum, item) => sum + (item.received_quantity || 0), 0) || 0} received
                                 </div>
                               </div>
                             </TableCell>
