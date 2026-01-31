@@ -111,47 +111,50 @@ export default function NewPurchasePage() {
     }
   };
 
-  const fetchTireSizes = async () => {
+    const fetchTireSizes = async () => {
     try {
       setSizesLoading(true);
-      const response = await fetch("http://localhost:5000/api/tires/sizes");
-      
+
+      const response = await fetch("http://localhost:5000/api/tires/meta/sizes");
+
       if (!response.ok) {
-        // If endpoint doesn't exist, use some common sizes
-        const commonSizes: TireSize[] = [
-          { size: "295/80R22.5", description: "Steer axle" },
-          { size: "11R22.5", description: "Drive axle" },
-          { size: "285/75R24.5", description: "Large truck" },
-          { size: "275/70R22.5", description: "Medium truck" },
-          { size: "245/70R19.5", description: "Light truck" },
-        ];
-        setSizes(commonSizes);
-        return;
+        throw new Error("Tire sizes endpoint unavailable");
       }
-      
-      const data = await response.json();
-      const sizesArray = Array.isArray(data) 
-        ? data 
-        : Array.isArray(data.sizes) 
-          ? data.sizes 
-          : [];
-          
-      setSizes(sizesArray);
+
+      const result = await response.json();
+
+      // Backend returns: { success: true, data: string[] }
+      if (!result?.success || !Array.isArray(result.data)) {
+        throw new Error("Invalid tire sizes response");
+      }
+
+      // Normalize to TireSize[]
+      const normalizedSizes: TireSize[] = result.data.map((size: string) => ({
+        size,
+        description: "" // optional – can enrich later
+      }));
+
+      setSizes(normalizedSizes);
+
     } catch (error) {
       console.error("Error fetching tire sizes:", error);
-      // Fallback to common sizes
-      const commonSizes: TireSize[] = [
+
+      // 🔁 Fallback sizes (offline / API down)
+      const fallbackSizes: TireSize[] = [
         { size: "295/80R22.5", description: "Steer axle" },
         { size: "11R22.5", description: "Drive axle" },
         { size: "285/75R24.5", description: "Large truck" },
         { size: "275/70R22.5", description: "Medium truck" },
-        { size: "245/70R19.5", description: "Light truck" },
+        { size: "245/70R19.5", description: "Light truck" }
       ];
-      setSizes(commonSizes);
+
+      setSizes(fallbackSizes);
+
     } finally {
       setSizesLoading(false);
     }
   };
+
 
   const handleItemChange = (index: number, field: keyof PurchaseOrderItem, value: any) => {
     const newItems = [...formData.items];

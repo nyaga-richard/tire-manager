@@ -100,12 +100,35 @@ interface PurchaseTransaction {
   unit_price?: number;
 }
 
+interface PurchaseOrderItem {
+  id: number;
+  po_id: number;
+  size: string;
+  brand: string | null;
+  model: string | null;
+  type: string;
+  quantity: number;
+  received_quantity: number;
+  unit_price: number;
+  line_total: number;
+  received_total: number;
+  remaining_quantity: number;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  tires_generated: number;
+}
+
 interface PurchaseOrder {
   id: number;
   po_number: string;
   supplier_id: number;
   supplier_name: string;
   supplier_type: string;
+  supplier_contact?: string;
+  supplier_phone?: string;
+  supplier_email?: string;
+  supplier_address?: string;
   po_date: string;
   expected_delivery_date: string | null;
   delivery_date: string | null;
@@ -125,6 +148,9 @@ interface PurchaseOrder {
   updated_at: string;
   item_count: number;
   total_received: number | null;
+  items: PurchaseOrderItem[];
+  created_by_name?: string;
+  approved_by_name?: string | null;
 }
 
 interface PurchaseAnalytics {
@@ -290,19 +316,16 @@ const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps)
     }
   };
 
-  const calculateTax = (total: number) => {
-    return total * 0.10; // 10% tax
+  const calculateTotalReceived = () => {
+    if (!order?.items) return 0;
+    return order.items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
   };
 
-  const calculateShipping = () => {
-    return order?.shipping_amount || 0;
-  };
-
-  const calculateFinalAmount = () => {
-    const total = order?.total_amount || 0;
-    const tax = calculateTax(total);
-    const shipping = calculateShipping();
-    return total + tax + shipping;
+  const calculateProgress = () => {
+    if (!order?.items || order.items.length === 0) return 0;
+    const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalReceived = calculateTotalReceived();
+    return totalQuantity > 0 ? Math.round((totalReceived / totalQuantity) * 100) : 0;
   };
 
   if (!order || !isOpen) return null;
@@ -399,9 +422,25 @@ const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps)
                     </h3>
                     <div className="space-y-2">
                       <p className="font-bold text-lg">{order.supplier_name}</p>
-                      <p className="text-sm text-muted-foreground">Type: {order.supplier_type}</p>
+                      <p className="text-sm">
+                        <span className="font-medium">Contact:</span> {order.supplier_contact || "N/A"}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Phone:</span> {order.supplier_phone || "N/A"}
+                      </p>
+                      <p className="text-sm">
+                        <span className="font-medium">Email:</span> {order.supplier_email || "N/A"}
+                      </p>
+                      {order.supplier_address && (
+                        <div className="mt-2">
+                          <p className="text-sm font-medium">Address:</p>
+                          <p className="text-sm text-muted-foreground">
+                            {order.supplier_address}
+                          </p>
+                        </div>
+                      )}
                       {order.shipping_address && (
-                        <div className="mt-4">
+                        <div className="mt-4 border-t pt-4">
                           <p className="text-sm font-medium">Shipping Address:</p>
                           <p className="text-sm text-muted-foreground whitespace-pre-line">
                             {order.shipping_address}
@@ -456,58 +495,87 @@ const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps)
                       <TableHeader className="bg-gray-50">
                         <TableRow>
                           <TableHead className="font-semibold">#</TableHead>
-                          <TableHead className="font-semibold">Tire Size</TableHead>
+                          <TableHead className="font-semibold">Size</TableHead>
+                          <TableHead className="font-semibold">Brand/Model</TableHead>
+                          <TableHead className="font-semibold">Type</TableHead>
                           <TableHead className="font-semibold text-right">Quantity</TableHead>
                           <TableHead className="font-semibold text-right">Unit Price</TableHead>
                           <TableHead className="font-semibold text-right">Line Total</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {/* Sample Items - In real app, fetch from API */}
-                        {Array.from({ length: order.item_count }).map((_, index) => {
-                          const unitPrice = 450 + (index * 70);
-                          const quantity = 4;
-                          const lineTotal = unitPrice * quantity;
-                          return (
-                            <TableRow key={index}>
+                        {order.items && order.items.length > 0 ? (
+                          order.items.map((item, index) => (
+                            <TableRow key={item.id}>
                               <TableCell className="font-medium">{index + 1}</TableCell>
-                              <TableCell>295/80R22.5</TableCell>
-                              <TableCell className="text-right">{quantity}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(unitPrice)}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(lineTotal)}</TableCell>
+                              <TableCell>{item.size}</TableCell>
+                              <TableCell>
+                                {item.brand || "N/A"}
+                                {item.model && ` / ${item.model}`}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline" className="text-xs">
+                                  {item.type || "NEW"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div>
+                                  <div className="font-medium">{item.quantity}</div>
+                                  {item.received_quantity > 0 && (
+                                    <div className="text-xs text-green-600">
+                                      Received: {item.received_quantity}
+                                    </div>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
+                              <TableCell className="text-right font-medium">{formatCurrency(item.line_total)}</TableCell>
                             </TableRow>
-                          );
-                        })}
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                              No items in this purchase order
+                            </TableCell>
+                          </TableRow>
+                        )}
                         
                         {/* Summary Rows */}
-                        <TableRow className="bg-gray-50">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-semibold">Subtotal:</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(order.total_amount)}</TableCell>
-                        </TableRow>
-                        <TableRow className="bg-gray-50">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-semibold">Tax (10%):</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(order.tax_amount)}</TableCell>
-                        </TableRow>
-                        <TableRow className="bg-gray-50">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-semibold">Shipping:</TableCell>
-                          <TableCell className="text-right font-semibold">{formatCurrency(order.shipping_amount)}</TableCell>
-                        </TableRow>
-                        <TableRow className="bg-primary/10 border-t-2 border-primary">
-                          <TableCell colSpan={3}></TableCell>
-                          <TableCell className="text-right font-bold text-lg">GRAND TOTAL:</TableCell>
-                          <TableCell className="text-right font-bold text-lg">{formatCurrency(order.final_amount)}</TableCell>
-                        </TableRow>
+                        {order.items && order.items.length > 0 && (
+                          <>
+                            <TableRow className="bg-gray-50">
+                              <TableCell colSpan={4}></TableCell>
+                              <TableCell className="text-right font-semibold" colSpan={2}>Subtotal:</TableCell>
+                              <TableCell className="text-right font-semibold">{formatCurrency(order.total_amount)}</TableCell>
+                            </TableRow>
+                            <TableRow className="bg-gray-50">
+                              <TableCell colSpan={4}></TableCell>
+                              <TableCell className="text-right font-semibold" colSpan={2}>Tax (10%):</TableCell>
+                              <TableCell className="text-right font-semibold">{formatCurrency(order.tax_amount)}</TableCell>
+                            </TableRow>
+                            <TableRow className="bg-gray-50">
+                              <TableCell colSpan={4}></TableCell>
+                              <TableCell className="text-right font-semibold" colSpan={2}>Shipping:</TableCell>
+                              <TableCell className="text-right font-semibold">{formatCurrency(order.shipping_amount)}</TableCell>
+                            </TableRow>
+                            <TableRow className="bg-primary/10 border-t-2 border-primary">
+                              <TableCell colSpan={4}></TableCell>
+                              <TableCell className="text-right font-bold text-lg" colSpan={2}>GRAND TOTAL:</TableCell>
+                              <TableCell className="text-right font-bold text-lg">{formatCurrency(order.final_amount)}</TableCell>
+                            </TableRow>
+                          </>
+                        )}
                       </TableBody>
                     </Table>
                   </div>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    Total Items: {order.item_count} • Received: {order.total_received || 0} • 
-                    Progress: {order.total_received && order.item_count ? 
-                      Math.round((order.total_received / order.item_count) * 100) : 0}%
-                  </div>
+                  {order.items && order.items.length > 0 && (
+                    <div className="mt-2 text-sm text-muted-foreground">
+                      Total Items: {order.items.length} • 
+                      Total Quantity: {order.items.reduce((sum, item) => sum + item.quantity, 0)} • 
+                      Received: {calculateTotalReceived()} • 
+                      Progress: {calculateProgress()}%
+                    </div>
+                  )}
                 </div>
 
                 {/* Notes and Additional Information */}
@@ -533,19 +601,46 @@ const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps)
                   </div>
                 )}
 
+                {/* Tires Generation Information */}
+                {order.items && order.items.some(item => item.tires_generated > 0) && (
+                  <div className="border rounded-lg p-4 bg-green-50 border-green-200">
+                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-green-800">
+                      <Package className="h-4 w-4" />
+                      Tire Generation Status
+                    </h3>
+                    <div className="space-y-2">
+                      {order.items.map((item, index) => (
+                        item.tires_generated > 0 && (
+                          <div key={item.id} className="flex items-center justify-between">
+                            <div>
+                              <span className="font-medium">Item {index + 1} ({item.size}):</span>
+                              <span className="text-sm text-green-700 ml-2">
+                                {item.tires_generated} of {item.quantity} tires generated
+                              </span>
+                            </div>
+                            <Badge className="bg-green-100 text-green-800 border-green-200">
+                              {Math.round((item.tires_generated / item.quantity) * 100)}% Complete
+                            </Badge>
+                          </div>
+                        )
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Footer for Print */}
                 <div className="border-t pt-6">
                   <div className="grid grid-cols-3 gap-8">
                     <div>
                       <p className="font-semibold">Prepared By:</p>
-                      <p className="text-sm text-muted-foreground">User #{order.created_by}</p>
+                      <p className="text-sm">{order.created_by_name || `User #${order.created_by}`}</p>
                       <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.created_at)}</p>
                     </div>
                     
                     {order.approved_by && (
                       <div>
                         <p className="font-semibold">Approved By:</p>
-                        <p className="text-sm text-muted-foreground">User #{order.approved_by}</p>
+                        <p className="text-sm">{order.approved_by_name || `User #${order.approved_by}`}</p>
                         <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.approved_date)}</p>
                       </div>
                     )}
@@ -574,12 +669,12 @@ const PurchaseOrderModal = ({ order, isOpen, onClose }: PurchaseOrderModalProps)
               <div className="flex items-center gap-4 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
                   <User className="h-4 w-4" />
-                  <span>Created by: User #{order.created_by}</span>
+                  <span>Created by: {order.created_by_name || `User #${order.created_by}`}</span>
                 </div>
                 {order.approved_by && (
                   <div className="flex items-center gap-2">
                     <CheckCircle className="h-4 w-4 text-green-600" />
-                    <span>Approved by: User #{order.approved_by}</span>
+                    <span>Approved by: {order.approved_by_name || `User #${order.approved_by}`}</span>
                   </div>
                 )}
               </div>
@@ -977,8 +1072,10 @@ export default function PurchasesPage() {
   };
 
   const getOrderProgress = (order: PurchaseOrder) => {
-    if (order.total_received === null || order.item_count === 0) return 0;
-    return Math.round((order.total_received / order.item_count) * 100);
+    if (!order.items || order.items.length === 0) return 0;
+    const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalReceived = order.items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
+    return totalQuantity > 0 ? Math.round((totalReceived / totalQuantity) * 100) : 0;
   };
 
   const openOrderDetails = (order: PurchaseOrder) => {
@@ -1485,9 +1582,9 @@ export default function PurchasesPage() {
                             </TableCell>
                             <TableCell>
                               <div>
-                                <div className="font-medium">{order.item_count} items</div>
+                                <div className="font-medium">{order.items?.length || 0} items</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {order.total_received !== null ? `${order.total_received} received` : '0 received'}
+                                  {order.items?.reduce((sum, item) => sum + (item.received_quantity || 0), 0) || 0} received
                                 </div>
                               </div>
                             </TableCell>
