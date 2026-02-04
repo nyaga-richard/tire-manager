@@ -33,6 +33,7 @@ import {
   CheckCircle,
   Clock,
   Filter,
+  FileText,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -51,6 +52,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import AddTireModal from "@/components/add-tire-modal";
+import { toast } from "sonner";
 
 interface InventoryBySize {
   size: string;
@@ -241,11 +243,15 @@ export default function InventoryPage() {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     }).format(amount);
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "Not set";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
       day: "numeric",
@@ -281,6 +287,12 @@ export default function InventoryPage() {
               className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
             />
             Refresh
+          </Button>
+          <Button variant="outline" asChild>
+            <Link href="/grns">
+              <FileText className="mr-2 h-4 w-4" />
+              View GRNs
+            </Link>
           </Button>
           <Button onClick={() => setIsAddTireModalOpen(true)}>
             <Package className="mr-2 h-4 w-4" />
@@ -351,6 +363,7 @@ export default function InventoryPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        {/* Updated TabsList - Removed "goods-received" tab */}
         <TabsList className="grid grid-cols-4 lg:w-[400px]">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="store">Store</TabsTrigger>
@@ -834,6 +847,8 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        {/* Removed Goods Received Tab */}
       </Tabs>
     </div>
   );

@@ -135,9 +135,10 @@ interface PurchaseOrder {
   approved_date: string | null;
   created_at: string;
   updated_at: string;
-  item_count: number;
-  total_received: number | null;
-  items: PurchaseOrderItem[];
+  item_count?: number;
+  total_received?: number | null;
+  total_pending?: number | null;
+  items?: PurchaseOrderItem[];
   created_by_name?: string;
   approved_by_name?: string | null;
 }
@@ -321,26 +322,136 @@ export default function PurchasesPage() {
       if (search) params.append("search", search);
       params.append("timeRange", timeRangeOrders);
 
-      const response = await fetch(
+      // Fetch the list of purchase orders
+      const listResponse = await fetch(
         `http://localhost:5000/api/purchase-orders?${params}`
       );
       
-      if (!response.ok) {
-        throw new Error(`Failed to fetch purchase orders: ${response.status} ${response.statusText}`);
+      if (!listResponse.ok) {
+        throw new Error(`Failed to fetch purchase orders list: ${listResponse.status} ${listResponse.statusText}`);
       }
       
-      const data = await response.json();
+      const listData = await listResponse.json();
       
-      if (data.success && Array.isArray(data.data)) {
-        setPurchaseOrders(data.data);
-      } else if (Array.isArray(data)) {
-        setPurchaseOrders(data);
+      let ordersList = [];
+      if (listData.success && Array.isArray(listData.data)) {
+        ordersList = listData.data;
+      } else if (Array.isArray(listData)) {
+        ordersList = listData;
       } else {
+        console.warn("Unexpected data format for purchase orders list:", listData);
         setPurchaseOrders([]);
-        console.warn("Unexpected data format for purchase orders:", data);
+        return;
       }
+      
+      // For each order, fetch its detailed information to get accurate item counts
+      const ordersWithDetails = [];
+      
+      for (const order of ordersList) {
+        try {
+          // Fetch detailed order information
+          const detailResponse = await fetch(`http://localhost:5000/api/purchase-orders/${order.id}`);
+          
+          if (detailResponse.ok) {
+            const detailData = await detailResponse.json();
+            
+            if (detailData.success && detailData.data) {
+              const detailedOrder = detailData.data;
+              
+              // Extract item information from the detailed order
+              const items = detailedOrder.items || [];
+              const itemCount = items.length;
+              
+              // Calculate total received quantity from items
+              const totalReceived = items.reduce((sum: number, item: any) => {
+                return sum + (parseInt(item.received_quantity) || 0);
+              }, 0);
+              
+              // Calculate total ordered quantity from items
+              const totalOrdered = items.reduce((sum: number, item: any) => {
+                return sum + (parseInt(item.quantity) || 0);
+              }, 0);
+              
+              // Calculate pending items (ordered - received)
+              const totalPending = Math.max(0, totalOrdered - totalReceived);
+              
+              ordersWithDetails.push({
+                // Basic order info from list
+                id: order.id,
+                po_number: order.po_number || detailedOrder.po_number,
+                supplier_id: order.supplier_id || detailedOrder.supplier_id,
+                supplier_name: order.supplier_name || detailedOrder.supplier_name,
+                supplier_type: order.supplier_type || detailedOrder.supplier_type,
+                supplier_contact: detailedOrder.supplier_contact,
+                supplier_phone: detailedOrder.supplier_phone,
+                supplier_email: detailedOrder.supplier_email,
+                supplier_address: detailedOrder.supplier_address,
+                po_date: order.po_date || detailedOrder.po_date,
+                expected_delivery_date: order.expected_delivery_date || detailedOrder.expected_delivery_date,
+                delivery_date: order.delivery_date || detailedOrder.delivery_date,
+                status: order.status || detailedOrder.status,
+                total_amount: order.total_amount || detailedOrder.total_amount,
+                tax_amount: order.tax_amount || detailedOrder.tax_amount,
+                shipping_amount: order.shipping_amount || detailedOrder.shipping_amount,
+                final_amount: order.final_amount || detailedOrder.final_amount,
+                notes: order.notes || detailedOrder.notes,
+                terms: order.terms || detailedOrder.terms,
+                shipping_address: order.shipping_address || detailedOrder.shipping_address,
+                billing_address: order.billing_address || detailedOrder.billing_address,
+                created_by: order.created_by || detailedOrder.created_by,
+                approved_by: order.approved_by || detailedOrder.approved_by,
+                approved_date: order.approved_date || detailedOrder.approved_date,
+                created_at: order.created_at || detailedOrder.created_at,
+                updated_at: order.updated_at || detailedOrder.updated_at,
+                
+                // Item information from detailed order
+                items: items,
+                item_count: itemCount,
+                total_received: totalReceived,
+                total_pending: totalPending,
+                
+                // Additional info from detailed order
+                created_by_name: detailedOrder.created_by_name,
+                approved_by_name: detailedOrder.approved_by_name
+              });
+            } else {
+              // Fallback if detailed data doesn't have success or data
+              ordersWithDetails.push({
+                ...order,
+                items: [],
+                item_count: order.item_count || 0,
+                total_received: order.total_received || 0,
+                total_pending: (order.item_count || 0) - (order.total_received || 0)
+              });
+            }
+          } else {
+            // Fallback if detail fetch fails
+            console.warn(`Failed to fetch details for order ${order.id}: ${detailResponse.status}`);
+            ordersWithDetails.push({
+              ...order,
+              items: [],
+              item_count: order.item_count || 0,
+              total_received: order.total_received || 0,
+              total_pending: (order.item_count || 0) - (order.total_received || 0)
+            });
+          }
+        } catch (error) {
+          console.error(`Error fetching details for order ${order.id}:`, error);
+          // Fallback to list data
+          ordersWithDetails.push({
+            ...order,
+            items: [],
+            item_count: order.item_count || 0,
+            total_received: order.total_received || 0,
+            total_pending: (order.item_count || 0) - (order.total_received || 0)
+          });
+        }
+      }
+      
+      setPurchaseOrders(ordersWithDetails);
+      
     } catch (error) {
-      console.error("Error fetching purchase orders:", error);
+      console.error("Error in fetchPurchaseOrders:", error);
       setPurchaseOrders([]);
       toast.error(`Failed to load purchase orders: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
@@ -566,10 +677,61 @@ export default function PurchasesPage() {
   };
 
   const getOrderProgress = (order: PurchaseOrder) => {
-    if (!order.items || order.items.length === 0) return 0;
-    const totalQuantity = order.items.reduce((sum, item) => sum + item.quantity, 0);
-    const totalReceived = order.items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
-    return totalQuantity > 0 ? Math.round((totalReceived / totalQuantity) * 100) : 0;
+    // If we have the items array, calculate based on total ordered vs received
+    if (order.items && order.items.length > 0) {
+      const totalOrdered = order.items.reduce((sum, item) => sum + item.quantity, 0);
+      const totalReceived = order.items.reduce((sum, item) => sum + (item.received_quantity || 0), 0);
+      
+      if (totalOrdered === 0) return 0;
+      
+      // Ensure 100% when fully received
+      const progress = Math.round((totalReceived / totalOrdered) * 100);
+      return Math.min(100, progress); // Cap at 100%
+    }
+    
+    // Fallback to item_count and total_received
+    const itemsCount = order.item_count || 0;
+    const receivedCount = order.total_received || 0;
+    
+    if (itemsCount === 0) return 0;
+    
+    // Ensure 100% when fully received
+    const progress = Math.round((receivedCount / itemsCount) * 100);
+    return Math.min(100, progress); // Cap at 100%
+  };
+
+  const getOrderItemsCount = (order: PurchaseOrder) => {
+    // Use the item_count from the API (which is now accurate)
+    return order.item_count || 0;
+  };
+
+  const getOrderReceivedCount = (order: PurchaseOrder) => {
+    // Use the total_received from the API (which is now accurate)
+    return order.total_received || 0;
+  };
+
+  const getOrderPendingCount = (order: PurchaseOrder) => {
+    // If we have total_pending calculated from API, use that
+    if (order.total_pending !== undefined && order.total_pending !== null) {
+      return order.total_pending;
+    }
+    
+    // Otherwise calculate it
+    const itemsCount = getOrderItemsCount(order);
+    const receivedCount = getOrderReceivedCount(order);
+    
+    // Ensure pending is never negative
+    return Math.max(0, itemsCount - receivedCount);
+  };
+
+  const getTotalOrderedQuantity = (order: PurchaseOrder) => {
+    // If we have items array, sum up all quantities
+    if (order.items && order.items.length > 0) {
+      return order.items.reduce((sum, item) => sum + item.quantity, 0);
+    }
+    
+    // Otherwise return item_count (which represents number of line items, not total quantity)
+    return order.item_count || 0;
   };
 
   const openOrderDetails = (order: PurchaseOrder) => {
@@ -1047,7 +1209,11 @@ export default function PurchasesPage() {
                     </TableHeader>
                     <TableBody>
                       {filteredOrders.map((order) => {
+                        const itemsCount = getOrderItemsCount(order);
+                        const receivedCount = getOrderReceivedCount(order);
+                        const pendingCount = getOrderPendingCount(order);
                         const progress = getOrderProgress(order);
+                        
                         return (
                           <TableRow key={order.id} className="hover:bg-accent/50">
                             <TableCell>
@@ -1076,9 +1242,9 @@ export default function PurchasesPage() {
                             </TableCell>
                             <TableCell>
                               <div>
-                                <div className="font-medium">{order.items?.length || 0} items</div>
+                                <div className="font-medium">{itemsCount} items</div>
                                 <div className="text-xs text-muted-foreground">
-                                  {order.items?.reduce((sum, item) => sum + (item.received_quantity || 0), 0) || 0} received
+                                  {receivedCount} received • {pendingCount} pending
                                 </div>
                               </div>
                             </TableCell>
