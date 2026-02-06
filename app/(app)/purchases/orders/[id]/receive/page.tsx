@@ -16,6 +16,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { GRNDetails } from "@/components/grn-details";
+
 import {
   Table,
   TableBody,
@@ -158,6 +160,10 @@ export default function ReceiveGoodsPage() {
   const params = useParams();
   const router = useRouter();
   const orderId = params.id as string;
+
+  const [grnDetailsOpen, setGrnDetailsOpen] = useState(false);
+  const [selectedGrnId, setSelectedGrnId] = useState<number | null>(null);
+
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
@@ -498,9 +504,11 @@ export default function ReceiveGoodsPage() {
 
   const navigateToGRN = () => {
     if (generatedGRN) {
-      router.push(`/grn/${generatedGRN.grnId}`);
+      setSelectedGrnId(generatedGRN.grnId);
+      setGrnDetailsOpen(true);
     }
   };
+
 
   if (loading) {
     return (
@@ -1127,7 +1135,21 @@ export default function ReceiveGoodsPage() {
               GRN has been created successfully. The tires have been added to inventory.
             </DialogDescription>
           </DialogHeader>
-          
+
+          {selectedGrnId && (
+          <GRNDetails
+            grnId={selectedGrnId}
+            open={grnDetailsOpen}
+            onOpenChange={(open: boolean | ((prevState: boolean) => boolean)) => {
+              setGrnDetailsOpen(open);
+              if (!open) {
+                setSelectedGrnId(null);
+              }
+            }}
+          />
+        )}
+
+                  
           {generatedGRN && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -1221,5 +1243,8 @@ export default function ReceiveGoodsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    
   );
+
+  
 }
