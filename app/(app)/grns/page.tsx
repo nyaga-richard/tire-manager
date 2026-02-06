@@ -58,6 +58,7 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 import { GRNDetails } from "@/components/grn-details";
 import { SupplierInvoiceModal } from "@/components/supplier-invoice-modal"; // Updated import
+import PurchaseOrderDetails from "@/components/purchase-order-details";
 
 interface GRN {
   id: number;
@@ -104,6 +105,11 @@ export default function GRNsPage() {
   const [limit, setLimit] = useState(20);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+
+
+  const [poModalOpen, setPoModalOpen] = useState(false);
+  const [selectedPoId, setSelectedPoId] = useState<number | null>(null);
+
 
   useEffect(() => {
     fetchGRNs();
@@ -534,12 +540,16 @@ export default function GRNsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Link
-                          href={`/purchases/orders/${grn.po_id}`}
-                          className="text-blue-600 hover:underline truncate block"
+                        <button
+                          onClick={() => {
+                            setSelectedPoId(grn.po_id);
+                            setPoModalOpen(true);
+                          }}
+                          className="text-blue-600 hover:underline truncate block text-left"
                         >
                           {grn.po_number}
-                        </Link>
+                        </button>
+
                       </TableCell>
                       <TableCell>{formatDate(grn.receipt_date)}</TableCell>
                       <TableCell>
@@ -683,6 +693,18 @@ export default function GRNsPage() {
           </CardFooter>
         )}
       </Card>
+
+      {selectedPoId && (
+        <PurchaseOrderDetails
+          orderId={selectedPoId}
+          isOpen={poModalOpen}
+          onClose={() => {
+            setPoModalOpen(false);
+            setSelectedPoId(null);
+          }}
+        />
+      )}
+
     </div>
   );
 }
