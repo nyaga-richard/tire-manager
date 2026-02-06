@@ -36,7 +36,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
-import html2pdf from 'html2pdf.js';
 
 interface GRNItem {
   id: number;
