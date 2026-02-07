@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   Card,
@@ -31,9 +31,35 @@ import {
   FileText,
   CreditCard,
   RefreshCw,
+  Download,
+  Search,
+  Filter,
+  ChevronUp,
+  ChevronDown,
+  Printer,
+  ChevronFirst,
+  ChevronLast,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { format, parseISO, isValid, compareAsc } from "date-fns";
 
 interface SupplierLedgerEntry {
   id: number;
@@ -45,6 +71,7 @@ interface SupplierLedgerEntry {
   reference_number: string;
   created_by: string;
   created_at: string;
+  running_balance?: number; // From backend, but we'll recalculate
 }
 
 interface Supplier {
@@ -60,12 +87,69 @@ interface Supplier {
   ledger: SupplierLedgerEntry[];
 }
 
+interface FilterOptions {
+  startDate?: Date;
+  endDate?: Date;
+  transactionType?: string;
+  searchQuery: string;
+}
+
+interface ProcessedLedgerEntry extends SupplierLedgerEntry {
+  running_balance: number;
+  dateTime: Date; // Date object for reliable operations
+  displayDate: string; // Formatted date for display
+}
+
+// Helper function to safely parse dates with SQLite datetime format
+const safeParseDate = (dateString: string, timeString?: string): Date => {
+  try {
+    // Handle SQLite datetime format "YYYY-MM-DD HH:MM:SS"
+    if (timeString && timeString.includes(' ')) {
+      // Replace space with T for ISO format
+      const isoString = timeString.replace(' ', 'T');
+      const date = parseISO(isoString);
+      if (isValid(date)) return date;
+    }
+    
+    // If we have just a date string, add default time
+    if (dateString) {
+      const date = parseISO(`${dateString}T00:00:00`);
+      if (isValid(date)) return date;
+    }
+    
+    // Fallback
+    console.warn(`Invalid date string: ${dateString}`, timeString);
+    return new Date();
+  } catch (error) {
+    console.warn(`Error parsing date: ${dateString}`, error);
+    return new Date();
+  }
+};
+
+// Helper to create a consistent sort key from date and time
+const createSortKey = (dateString: string, timeString?: string): string => {
+  try {
+    const date = safeParseDate(dateString, timeString);
+    return date.toISOString();
+  } catch (error) {
+    return new Date().toISOString();
+  }
+};
+
 export default function SupplierLedgerPage() {
   const params = useParams();
   const router = useRouter();
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [loading, setLoading] = useState(true);
-
+  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [filters, setFilters] = useState<FilterOptions>({
+    searchQuery: "",
+  });
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  
   const supplierId = params.id;
 
   useEffect(() => {
@@ -74,18 +158,177 @@ export default function SupplierLedgerPage() {
     }
   }, [supplierId]);
 
+  // Process ledger with proper running balance calculation
+  const processedLedger = useMemo(() => {
+    if (!supplier?.ledger || !Array.isArray(supplier.ledger)) return [];
+
+    // Create entries with proper date objects and sort keys
+    const entriesWithDates = supplier.ledger
+      .map(entry => {
+        const dateTime = safeParseDate(entry.date, entry.created_at);
+        const sortKey = createSortKey(entry.date, entry.created_at);
+        
+        return {
+          ...entry,
+          dateTime,
+          sortKey,
+          displayDate: isValid(dateTime) ? format(dateTime, "MMM d, yyyy HH:mm") : "Invalid Date"
+        };
+      })
+      .filter(entry => isValid(entry.dateTime));
+
+    // Sort chronologically by sort key (oldest first)
+    const sortedByDate = [...entriesWithDates].sort((a, b) => {
+      return a.sortKey.localeCompare(b.sortKey);
+    });
+
+    // Calculate running balance chronologically from OLDEST to NEWEST
+    let runningBalance = 0;
+    const withRunningBalance = sortedByDate.map(entry => {
+      // Update running balance based on transaction type
+      if (entry.transaction_type === "PURCHASE" || entry.transaction_type === "RETREAD_SERVICE") {
+        // These increase what we owe (debit to us, credit to supplier)
+        runningBalance += entry.amount;
+      } else if (entry.transaction_type === "PAYMENT") {
+        // Payments decrease what we owe (credit to us, debit to supplier)
+        runningBalance -= entry.amount;
+      }
+      
+      return {
+        ...entry,
+        running_balance: runningBalance,
+      };
+    });
+
+    return withRunningBalance;
+  }, [supplier?.ledger]);
+
+  // Apply filters and final sorting for display
+  const filteredLedger = useMemo(() => {
+    let result = [...processedLedger];
+
+    // Apply search filter
+    if (filters.searchQuery) {
+      const query = filters.searchQuery.toLowerCase();
+      result = result.filter(entry =>
+        entry.description.toLowerCase().includes(query) ||
+        entry.reference_number?.toLowerCase().includes(query) ||
+        entry.created_by.toLowerCase().includes(query) ||
+        entry.transaction_type.toLowerCase().includes(query)
+      );
+    }
+
+    // Apply date filter
+    if (filters.startDate) {
+      const startDate = new Date(filters.startDate);
+      startDate.setHours(0, 0, 0, 0);
+      result = result.filter(entry => {
+        const entryDate = new Date(entry.dateTime);
+        entryDate.setHours(0, 0, 0, 0);
+        return entryDate >= startDate;
+      });
+    }
+
+    if (filters.endDate) {
+      const endDate = new Date(filters.endDate);
+      endDate.setHours(23, 59, 59, 999);
+      result = result.filter(entry => {
+        return entry.dateTime <= endDate;
+      });
+    }
+
+    // Apply transaction type filter
+    if (filters.transactionType && filters.transactionType !== "ALL") {
+      result = result.filter(entry =>
+        entry.transaction_type === filters.transactionType
+      );
+    }
+
+    // Apply final display sorting
+    result.sort((a, b) => {
+      if (sortOrder === "newest") {
+        return b.sortKey.localeCompare(a.sortKey); // Newest first
+      } else {
+        return a.sortKey.localeCompare(b.sortKey); // Oldest first
+      }
+    });
+
+    return result;
+  }, [processedLedger, sortOrder, filters]);
+
+  // Paginated ledger
+  const paginatedLedger = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    return filteredLedger.slice(startIndex, endIndex);
+  }, [filteredLedger, currentPage, pageSize]);
+
+  // Calculate total pages
+  const totalPages = useMemo(() => {
+    return Math.ceil(filteredLedger.length / pageSize);
+  }, [filteredLedger.length, pageSize]);
+
+  // Reset to first page when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, sortOrder]);
+
   const fetchSupplierDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/suppliers/${supplierId}`);
+      const response = await fetch(`http://localhost:5000/api/accounting/suppliers/${supplierId}/ledger`);
+      
       if (!response.ok) {
-        throw new Error("Failed to fetch supplier details");
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+      
       const data = await response.json();
-      setSupplier(data);
+      
+      if (data.success) {
+        // Also fetch supplier details
+        const supplierResponse = await fetch(`http://localhost:5000/api/suppliers/${supplierId}`);
+        let supplierData = { name: "Unknown Supplier", type: "OTHER", contact_person: "", phone: "", email: "", address: "", created_at: new Date().toISOString() };
+        
+        if (supplierResponse.ok) {
+          const supplierJson = await supplierResponse.json();
+          supplierData = supplierJson;
+        }
+        
+        const validType = (type: string): type is Supplier["type"] => {
+          return ["TIRE_SUPPLIER", "RETREAD_SUPPLIER", "SERVICE_PROVIDER", "OTHER"].includes(type);
+        };
+
+        setSupplier({
+          id: Number(supplierId),
+          name: supplierData.name || "Unknown Supplier",
+          type: validType(supplierData.type) ? supplierData.type : "OTHER",
+          contact_person: supplierData.contact_person || "",
+          phone: supplierData.phone || "",
+          email: supplierData.email || "",
+          address: supplierData.address || "",
+          balance: data.current_balance || 0,
+          created_at: supplierData.created_at || new Date().toISOString(),
+          ledger: data.data || []
+        });
+      } else {
+        throw new Error(data.message || "Failed to fetch ledger");
+      }
     } catch (error) {
-      console.error("Error fetching supplier details:", error);
-      toast.error("Failed to load supplier details");
+      console.error("Error fetching supplier ledger:", error);
+      toast.error("Failed to load supplier ledger");
+      // Set empty supplier to prevent breaking
+      setSupplier({
+        id: Number(supplierId),
+        name: "Unknown Supplier",
+        type: "OTHER",
+        contact_person: "",
+        phone: "",
+        email: "",
+        address: "",
+        balance: 0,
+        created_at: new Date().toISOString(),
+        ledger: []
+      });
     } finally {
       setLoading(false);
     }
@@ -150,37 +393,200 @@ export default function SupplierLedgerPage() {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
       currency: "USD",
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
-
-  const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(Math.abs(amount));
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
+    const date = safeParseDate(dateString);
+    return isValid(date) ? format(date, "MMM d, yyyy") : "Invalid Date";
+  };
+
+  const exportToCSV = () => {
+    if (!filteredLedger.length) return;
+
+    const headers = [
+      "Date",
+      "Time",
+      "Description",
+      "Type",
+      "Reference",
+      "Debit",
+      "Credit",
+      "Balance",
+      "Created By",
+    ];
+
+    const csvContent = [
+      headers.join(","),
+      ...filteredLedger.map(entry => {
+        const datePart = format(entry.dateTime, "yyyy-MM-dd");
+        const timePart = format(entry.dateTime, "HH:mm:ss");
+        
+        const row = [
+          datePart,
+          `"${timePart}"`,
+          `"${entry.description.replace(/"/g, '""')}"`,
+          entry.transaction_type,
+          `"${entry.reference_number || ""}"`,
+          entry.transaction_type === "PAYMENT" ? "" : entry.amount.toFixed(2),
+          entry.transaction_type === "PAYMENT" ? entry.amount.toFixed(2) : "",
+          entry.running_balance.toFixed(2),
+          `"${entry.created_by}"`,
+        ];
+        return row.join(",");
+      }),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${supplier?.name.replace(/[^a-z0-9]/gi, '_')}_Ledger_${format(new Date(), "yyyy-MM-dd")}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    toast.success("Ledger exported to CSV");
+  };
+
+  const printLedger = () => {
+    const printWindow = window.open('', '_blank');
+    
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>${supplier?.name} - Ledger Report</title>
+            <style>
+              body { font-family: Arial, sans-serif; margin: 20px; }
+              .header { text-align: center; margin-bottom: 30px; border-bottom: 2px solid #333; padding-bottom: 20px; }
+              .supplier-info { margin-bottom: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px; }
+              table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+              th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+              th { background-color: #f5f5f5; font-weight: bold; }
+              .debit { color: #d32f2f; }
+              .credit { color: #388e3c; }
+              .positive { color: #d32f2f; }
+              .negative { color: #388e3c; }
+              .footer { margin-top: 30px; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 20px; }
+              .page-info { float: right; font-size: 12px; color: #666; }
+              @media print {
+                @page { margin: 0.5in; }
+                body { font-size: 12px; }
+                table { font-size: 11px; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>${supplier?.name} - Transaction Ledger</h1>
+              <p>Report generated on ${format(new Date(), "MMM d, yyyy HH:mm")}</p>
+            </div>
+            
+            <div class="supplier-info">
+              <p><strong>Supplier Type:</strong> ${getSupplierTypeLabel(supplier?.type || "")}</p>
+              ${supplier?.contact_person ? `<p><strong>Contact:</strong> ${supplier.contact_person}</p>` : ""}
+              <p><strong>Current Balance:</strong> 
+                <span class="${supplier?.balance && supplier.balance > 0 ? 'positive' : 'negative'}">
+                  ${supplier?.balance && supplier.balance > 0 ? '+' : ''}$${Math.abs(supplier?.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                </span>
+              </p>
+              <p><strong>Showing:</strong> ${filteredLedger.length} transactions (Page ${currentPage} of ${totalPages})</p>
+              ${filters.searchQuery ? `<p><strong>Search:</strong> "${filters.searchQuery}"</p>` : ''}
+              ${filters.startDate ? `<p><strong>From:</strong> ${format(filters.startDate, "MMM d, yyyy")}</p>` : ''}
+              ${filters.endDate ? `<p><strong>To:</strong> ${format(filters.endDate, "MMM d, yyyy")}</p>` : ''}
+              <p><strong>Sort Order:</strong> ${sortOrder === 'newest' ? 'Newest First' : 'Oldest First'}</p>
+            </div>
+            
+            <table>
+              <thead>
+                <tr>
+                  <th>Date & Time</th>
+                  <th>Description</th>
+                  <th>Type</th>
+                  <th>Reference</th>
+                  <th style="text-align: right;">Debit</th>
+                  <th style="text-align: right;">Credit</th>
+                  <th style="text-align: right;">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${paginatedLedger.map(entry => {
+                  const dateTime = format(entry.dateTime, "MMM d, yyyy HH:mm");
+                  const debitAmount = entry.transaction_type !== "PAYMENT" ? entry.amount : 0;
+                  const creditAmount = entry.transaction_type === "PAYMENT" ? entry.amount : 0;
+                  
+                  return `
+                    <tr>
+                      <td>${dateTime}</td>
+                      <td>${entry.description}</td>
+                      <td>${getTransactionTypeLabel(entry.transaction_type)}</td>
+                      <td>${entry.reference_number || "N/A"}</td>
+                      <td style="text-align: right;" class="debit">
+                        ${debitAmount > 0 ? `$${debitAmount.toFixed(2)}` : ""}
+                      </td>
+                      <td style="text-align: right;" class="credit">
+                        ${creditAmount > 0 ? `$${creditAmount.toFixed(2)}` : ""}
+                      </td>
+                      <td style="text-align: right;" class="${entry.running_balance > 0 ? 'positive' : 'negative'}">
+                        $${Math.abs(entry.running_balance).toFixed(2)}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+            
+            <div class="footer">
+              <p>Total Transactions: ${filteredLedger.length} | Current Page: ${currentPage} of ${totalPages}</p>
+              <p>Print Date: ${format(new Date(), "MMM d, yyyy HH:mm:ss")}</p>
+            </div>
+          </body>
+        </html>
+      `);
+      
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 500);
+    }
+  };
+
+  const handleSearch = (query: string) => {
+    setFilters(prev => ({ ...prev, searchQuery: query }));
+  };
+
+  const handleDateFilter = (startDate?: Date, endDate?: Date) => {
+    setFilters(prev => ({ ...prev, startDate, endDate }));
+  };
+
+  const handleTransactionTypeFilter = (type: string) => {
+    setFilters(prev => ({ ...prev, transactionType: type }));
+  };
+
+  const clearFilters = () => {
+    setFilters({
+      searchQuery: "",
     });
   };
+
+  // Pagination handlers
+  const goToFirstPage = () => setCurrentPage(1);
+  const goToLastPage = () => setCurrentPage(totalPages);
+  const goToNextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
+  const goToPrevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
 
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-muted-foreground">Loading supplier details...</p>
+          <p className="mt-2 text-muted-foreground">Loading supplier ledger...</p>
         </div>
       </div>
     );
@@ -217,11 +623,19 @@ export default function SupplierLedgerPage() {
               {supplier.name} - Transaction Ledger
             </h1>
             <p className="text-muted-foreground">
-              Complete transaction history and current balance
+              Complete transaction history with running balance
             </p>
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={printLedger}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
+          <Button variant="outline" onClick={exportToCSV}>
+            <Download className="mr-2 h-4 w-4" />
+            Export CSV
+          </Button>
           <Button variant="outline" asChild>
             <Link href={`/suppliers/${supplier.id}/payment`}>
               <CreditCard className="mr-2 h-4 w-4" />
@@ -234,6 +648,107 @@ export default function SupplierLedgerPage() {
           </Button>
         </div>
       </div>
+
+      {/* Filters */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">Filters & Search</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search transactions..."
+                className="pl-9"
+                value={filters.searchQuery}
+                onChange={(e) => handleSearch(e.target.value)}
+              />
+            </div>
+            
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="justify-start text-left">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  {filters.startDate && filters.endDate
+                    ? `${format(filters.startDate, "MMM d, yyyy")} - ${format(filters.endDate, "MMM d, yyyy")}`
+                    : "Date Range"}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <div className="p-4">
+                  <div className="space-y-2">
+                    <div>
+                      <Label>From Date</Label>
+                      <CalendarComponent
+                        mode="single"
+                        selected={filters.startDate}
+                        onSelect={(date) => handleDateFilter(date, filters.endDate)}
+                        className="rounded-md border"
+                        disabled={(date) => date > new Date()}
+                      />
+                    </div>
+                    <div>
+                      <Label>To Date</Label>
+                      <CalendarComponent
+                        mode="single"
+                        selected={filters.endDate}
+                        onSelect={(date) => handleDateFilter(filters.startDate, date)}
+                        className="rounded-md border"
+                        disabled={(date) => date > new Date()}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            <Select
+              value={filters.transactionType || "ALL"}
+              onValueChange={handleTransactionTypeFilter}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Transaction Type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="ALL">All Types</SelectItem>
+                <SelectItem value="PURCHASE">Purchases</SelectItem>
+                <SelectItem value="RETREAD_SERVICE">Retread Services</SelectItem>
+                <SelectItem value="PAYMENT">Payments</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center gap-2">
+              <Select
+                value={sortOrder}
+                onValueChange={(value: "newest" | "oldest") => setSortOrder(value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Sort Order" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">
+                    <div className="flex items-center gap-2">
+                      <ChevronDown className="h-4 w-4" />
+                      Newest First
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="oldest">
+                    <div className="flex items-center gap-2">
+                      <ChevronUp className="h-4 w-4" />
+                      Oldest First
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Button variant="outline" onClick={clearFilters}>
+                Clear
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Supplier Info Card */}
@@ -314,8 +829,8 @@ export default function SupplierLedgerPage() {
             </div>
             
             <div className="pt-4 border-t">
-              <div className="text-sm">
-                <div className="flex justify-between mb-1">
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between">
                   <span className="text-muted-foreground">Added On:</span>
                   <span>{formatDate(supplier.created_at)}</span>
                 </div>
@@ -323,6 +838,20 @@ export default function SupplierLedgerPage() {
                   <span className="text-muted-foreground">Total Transactions:</span>
                   <span>{supplier.ledger.length}</span>
                 </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Showing:</span>
+                  <span>
+                    {filteredLedger.length} of {supplier.ledger.length} transactions
+                  </span>
+                </div>
+                {filteredLedger.length > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Page:</span>
+                    <span>
+                      {currentPage} of {totalPages}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -330,73 +859,200 @@ export default function SupplierLedgerPage() {
 
         {/* Transaction Ledger Card */}
         <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle>Transaction History</CardTitle>
-            <CardDescription>
-              All transactions with this supplier
-            </CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle>Transaction History</CardTitle>
+              <CardDescription>
+                {filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType
+                  ? `Filtered results (${filteredLedger.length} transactions)`
+                  : `All transactions (${supplier.ledger.length} total)`}
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Show:</span>
+                <Select
+                  value={pageSize.toString()}
+                  onValueChange={(value) => {
+                    setPageSize(parseInt(value));
+                    setCurrentPage(1);
+                  }}
+                >
+                  <SelectTrigger className="w-20">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
           </CardHeader>
-          <CardContent>
-            {supplier.ledger.length === 0 ? (
+          <CardContent id="ledger-content">
+            {filteredLedger.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h4 className="font-medium">No transactions yet</h4>
+                <h4 className="font-medium">No transactions found</h4>
                 <p className="text-sm text-muted-foreground">
-                  Start by making a purchase or recording a payment
+                  {supplier.ledger.length === 0
+                    ? "Start by making a purchase or recording a payment"
+                    : "Try adjusting your filters or search terms"}
                 </p>
+                {(filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType) && (
+                  <Button variant="outline" onClick={clearFilters} className="mt-4">
+                    Clear filters
+                  </Button>
+                )}
               </div>
             ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {supplier.ledger.map((entry) => (
-                      <TableRow key={entry.id}>
-                        <TableCell>
-                          <div className="font-medium">
-                            {formatDateTime(entry.date)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>{entry.description}</div>
-                          <div className="text-xs text-muted-foreground">
-                            By: {entry.created_by}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={getTransactionTypeColor(entry.transaction_type)}
-                          >
-                            {getTransactionTypeLabel(entry.transaction_type)}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          {entry.reference_number || "N/A"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className={`font-mono font-medium ${
-                            entry.transaction_type === "PAYMENT"
-                              ? "text-green-600"
-                              : "text-red-600"
-                          }`}>
-                            {entry.transaction_type === "PAYMENT" ? "-" : "+"}
-                            {formatCurrency(entry.amount)}
-                          </div>
-                        </TableCell>
+              <>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date & Time</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead className="text-right">Debit</TableHead>
+                        <TableHead className="text-right">Credit</TableHead>
+                        <TableHead className="text-right">Balance</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedLedger.map((entry) => (
+                        <TableRow key={entry.id}>
+                          <TableCell>
+                            <div className="font-medium">
+                              {entry.displayDate}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div>{entry.description}</div>
+                            <div className="text-xs text-muted-foreground">
+                              By: {entry.created_by}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={getTransactionTypeColor(entry.transaction_type)}
+                            >
+                              {getTransactionTypeLabel(entry.transaction_type)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {entry.reference_number || "N/A"}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {entry.transaction_type !== "PAYMENT" ? (
+                              <div className="text-red-600 font-medium">
+                                {formatCurrency(entry.amount)}
+                              </div>
+                            ) : (
+                              <div className="text-muted-foreground">-</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right font-mono">
+                            {entry.transaction_type === "PAYMENT" ? (
+                              <div className="text-green-600 font-medium">
+                                {formatCurrency(entry.amount)}
+                              </div>
+                            ) : (
+                              <div className="text-muted-foreground">-</div>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className={`font-mono font-medium ${
+                              entry.running_balance > 0
+                                ? "text-red-600"
+                                : "text-green-600"
+                            }`}>
+                              {formatCurrency(entry.running_balance)}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+                
+                {/* Pagination */}
+                {filteredLedger.length > 0 && (
+                  <div className="flex items-center justify-between mt-6">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {(currentPage - 1) * pageSize + 1} to{" "}
+                      {Math.min(currentPage * pageSize, filteredLedger.length)} of{" "}
+                      {filteredLedger.length} entries
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={goToFirstPage}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronFirst className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={goToPrevPage}
+                        disabled={currentPage === 1}
+                      >
+                        <ChevronLeft className="h-4 w-4" />
+                      </Button>
+                      
+                      <div className="flex items-center gap-1">
+                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 5) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 2) {
+                            pageNum = totalPages - 4 + i;
+                          } else {
+                            pageNum = currentPage - 2 + i;
+                          }
+                          
+                          return (
+                            <Button
+                              key={pageNum}
+                              variant={currentPage === pageNum ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => setCurrentPage(pageNum)}
+                              className="w-8 h-8 p-0"
+                            >
+                              {pageNum}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={goToNextPage}
+                        disabled={currentPage === totalPages}
+                      >
+                        <ChevronRight className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={goToLastPage}
+                        disabled={currentPage === totalPages}
+                      >
+                        <ChevronLast className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </CardContent>
         </Card>
