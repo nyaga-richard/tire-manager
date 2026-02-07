@@ -492,16 +492,6 @@ export default function ReceiveGoodsPage() {
     toast.success("Serial numbers copied to clipboard");
   };
 
-  const printGRN = () => {
-    // TODO: Implement GRN printing
-    toast.info("GRN printing coming soon");
-  };
-
-  const downloadGRN = () => {
-    // TODO: Implement GRN download
-    toast.info("GRN download coming soon");
-  };
-
   const navigateToGRN = () => {
     if (generatedGRN) {
       setSelectedGrnId(generatedGRN.grnId);
@@ -1219,20 +1209,6 @@ export default function ReceiveGoodsPage() {
               Close
             </Button>
             <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={printGRN}
-              >
-                <Printer className="mr-2 h-4 w-4" />
-                Print GRN
-              </Button>
-              <Button
-                variant="outline"
-                onClick={downloadGRN}
-              >
-                <Download className="mr-2 h-4 w-4" />
-                Download PDF
-              </Button>
               <Button
                 onClick={navigateToGRN}
               >
