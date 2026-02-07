@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -33,7 +33,9 @@ import {
   Package,
   Calendar,
   Hash,
-  Circle
+  Circle,
+  Printer,
+  FileText
 } from "lucide-react";
 import TruckWheelDiagram from "@/components/truck-wheel-diagram/TruckWheelDiagram";
 import TireServiceModal from "@/components/tire-service-modal";
@@ -94,13 +96,6 @@ const positionCodeToWheelId = (positionCode: string): string => {
     "RL2": "A2-L-Outer",
     "RR1": "A2-R-Inner",
     "RR2": "A2-R-Outer",
-    // Add more mappings for other wheel configurations as needed
-    // "F1": "A1-L",
-    // "F2": "A1-R",
-    // "R1": "A2-L",
-    // "R2": "A2-R",
-    // "R3": "A3-L",
-    // "R4": "A3-R",
   };
   
   return positionMap[positionCode] || positionCode;
@@ -152,7 +147,6 @@ export default function VehicleDetailsPage() {
   const params = useParams();
   const vehicleId = params.id;
   
-
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedWheel, setSelectedWheel] = useState<string | null>(null);
@@ -160,6 +154,7 @@ export default function VehicleDetailsPage() {
   const [selectedPositionForService, setSelectedPositionForService] = useState<string | null>(null);
   const [vehiclePositions, setVehiclePositions] = useState<VehiclePosition[]>([]);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (vehicleId) {
@@ -177,7 +172,6 @@ export default function VehicleDetailsPage() {
       const data = await res.json();
       setVehicle(data);
       
-      // Extract positions from vehicle data
       if (data.positions && Array.isArray(data.positions)) {
         setVehiclePositions(data.positions);
       } else {
@@ -191,7 +185,6 @@ export default function VehicleDetailsPage() {
     }
   };
 
-  // Fetch vehicle positions separately if not included in vehicle data
   const fetchVehiclePositions = async () => {
     try {
       const res = await fetch(
@@ -201,8 +194,6 @@ export default function VehicleDetailsPage() {
         const positionsData = await res.json();
         setVehiclePositions(positionsData);
       } else {
-        // If the endpoint doesn't exist, use default positions based on wheel config
-        console.warn("Positions endpoint not found, using default positions");
         setVehiclePositions(generateDefaultPositions(vehicle?.wheel_config || "6x4"));
       }
     } catch (error) {
@@ -211,14 +202,12 @@ export default function VehicleDetailsPage() {
     }
   };
 
-  // Generate default positions based on wheel configuration
   const generateDefaultPositions = (wheelConfig: string): VehiclePosition[] => {
     const positions: VehiclePosition[] = [];
     let idCounter = 1;
     
     switch (wheelConfig) {
       case "4x2":
-        // Front axle (2 wheels)
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -237,7 +226,6 @@ export default function VehicleDetailsPage() {
           is_trailer: 0,
           created_at: new Date().toISOString()
         });
-        // Rear axle (2 wheels)
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -259,7 +247,6 @@ export default function VehicleDetailsPage() {
         break;
         
       case "6x4":
-        // Front axle (2 wheels)
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -278,7 +265,6 @@ export default function VehicleDetailsPage() {
           is_trailer: 0,
           created_at: new Date().toISOString()
         });
-        // Rear axle 1 (2 wheels)
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -297,7 +283,6 @@ export default function VehicleDetailsPage() {
           is_trailer: 0,
           created_at: new Date().toISOString()
         });
-        // Rear axle 2 (2 wheels)
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -319,7 +304,6 @@ export default function VehicleDetailsPage() {
         break;
         
       case "8x4":
-        // Front axle (2 wheels)
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -338,7 +322,6 @@ export default function VehicleDetailsPage() {
           is_trailer: 0,
           created_at: new Date().toISOString()
         });
-        // Rear axles (6 wheels)
         for (let axle = 2; axle <= 4; axle++) {
           positions.push({
             id: idCounter++,
@@ -361,7 +344,7 @@ export default function VehicleDetailsPage() {
         }
         break;
         
-      default: // 4x2 as fallback
+      default:
         positions.push({
           id: idCounter++,
           vehicle_id: Number(vehicleId),
@@ -403,7 +386,6 @@ export default function VehicleDetailsPage() {
     return positions;
   };
 
-  // Map tire data for the diagram
   const tireDataForDiagram = useMemo(() => {
     if (!vehicle) return {};
     
@@ -433,7 +415,6 @@ export default function VehicleDetailsPage() {
     return data;
   }, [vehicle]);
 
-  // Convert positions from API to format expected by TruckWheelDiagram
   const positionsForDiagram = useMemo(() => {
     if (!vehiclePositions.length) return [];
     
@@ -473,7 +454,6 @@ export default function VehicleDetailsPage() {
     return odometer.toLocaleString() + " km";
   };
 
-  // Calculate tire age in days
   const getTireAge = (installDate: string) => {
     const install = new Date(installDate);
     const today = new Date();
@@ -486,11 +466,9 @@ export default function VehicleDetailsPage() {
     
     if (!vehicle) return;
     
-    // Find the corresponding position code
     const positionCode = wheelIdToPositionCode(data.wheelId);
     setSelectedWheel(positionCode);
     
-    // Find tire data for this position
     const tire = vehicle.current_tires.find(t => t.position_code === positionCode);
     
     if (tire) {
@@ -505,13 +483,11 @@ export default function VehicleDetailsPage() {
     setSelectedWheel(null);
   };
 
-  // Handle service button click
   const handleServiceClick = (positionCode?: string) => {
     setSelectedPositionForService(positionCode || null);
     setIsServiceModalOpen(true);
   };
 
-  // Filter table rows based on selected wheel
   const filteredTires = useMemo(() => {
     if (!vehicle) return [];
     
@@ -521,6 +497,271 @@ export default function VehicleDetailsPage() {
     
     return vehicle.current_tires;
   }, [vehicle, selectedWheel]);
+
+  // Print functionality
+  const handlePrint = () => {
+    if (!vehicle) return;
+    
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Vehicle Tire Report - ${vehicle.vehicle_number}</title>
+        <style>
+          @media print {
+            @page {
+              margin: 0.5in;
+              size: letter portrait;
+            }
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.4;
+              color: #333;
+              margin: 0;
+              padding: 0;
+            }
+            .print-header {
+              text-align: center;
+              border-bottom: 2px solid #333;
+              padding-bottom: 15px;
+              margin-bottom: 20px;
+            }
+            .print-header h1 {
+              margin: 0 0 5px 0;
+              color: #1a237e;
+            }
+            .print-header .subtitle {
+              color: #666;
+              margin: 0;
+            }
+            .vehicle-info {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+              gap: 15px;
+              margin-bottom: 25px;
+              padding: 15px;
+              background: #f8f9fa;
+              border-radius: 4px;
+            }
+            .info-item {
+              margin-bottom: 8px;
+            }
+            .info-label {
+              font-weight: bold;
+              color: #555;
+              display: inline-block;
+              min-width: 140px;
+            }
+            .tires-section {
+              margin-top: 25px;
+            }
+            .tires-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 15px;
+            }
+            .tires-table th {
+              background-color: #2c3e50;
+              color: white;
+              padding: 10px;
+              text-align: left;
+              border: 1px solid #34495e;
+            }
+            .tires-table td {
+              padding: 8px 10px;
+              border: 1px solid #ddd;
+            }
+            .tires-table tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .status-badge {
+              display: inline-block;
+              padding: 2px 8px;
+              border-radius: 12px;
+              font-size: 12px;
+              font-weight: bold;
+            }
+            .status-active {
+              background-color: #d4edda;
+              color: #155724;
+            }
+            .status-maintenance {
+              background-color: #fff3cd;
+              color: #856404;
+            }
+            .status-inactive {
+              background-color: #f8f9fa;
+              color: #6c757d;
+            }
+            .tire-type-new {
+              background-color: #d4edda;
+              color: #155724;
+            }
+            .tire-type-retread {
+              background-color: #fff3cd;
+              color: #856404;
+            }
+            .tire-type-used {
+              background-color: #cce5ff;
+              color: #004085;
+            }
+            .print-footer {
+              margin-top: 40px;
+              padding-top: 15px;
+              border-top: 1px solid #ddd;
+              text-align: center;
+              color: #666;
+              font-size: 12px;
+            }
+            .summary-stats {
+              display: flex;
+              justify-content: space-around;
+              margin: 20px 0;
+              padding: 10px;
+              background: #f1f8ff;
+              border-radius: 4px;
+            }
+            .stat-item {
+              text-align: center;
+            }
+            .stat-value {
+              font-size: 24px;
+              font-weight: bold;
+              color: #1a237e;
+            }
+            .stat-label {
+              font-size: 12px;
+              color: #666;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <h1>Vehicle Tire Report</h1>
+          <p class="subtitle">Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</p>
+        </div>
+        
+        <div class="vehicle-info">
+          <div class="info-item">
+            <span class="info-label">Vehicle Number:</span>
+            <strong>${vehicle.vehicle_number}</strong>
+          </div>
+          <div class="info-item">
+            <span class="info-label">Make & Model:</span>
+            ${vehicle.make} ${vehicle.model} (${vehicle.year})
+          </div>
+          <div class="info-item">
+            <span class="info-label">Status:</span>
+            <span class="status-badge status-${vehicle.status.toLowerCase()}">${vehicle.status}</span>
+          </div>
+        </div>
+        
+        <div class="summary-stats">
+          <div class="stat-item">
+            <div class="stat-value">${vehicle.current_tires.length}</div>
+            <div class="stat-label">Total Tires</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicle.current_tires.filter(t => t.type === "NEW").length}</div>
+            <div class="stat-label">New Tires</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicle.current_tires.filter(t => t.type === "RETREAD").length}</div>
+            <div class="stat-label">Retread Tires</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicle.current_tires.filter(t => t.type === "USED").length}</div>
+            <div class="stat-label">Used Tires</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehiclePositions.length}</div>
+            <div class="stat-label">Total Positions</div>
+          </div>
+        </div>
+        
+        <div class="tires-section">
+          <h2>Current Tires (${vehicle.current_tires.length})</h2>
+          <table class="tires-table">
+            <thead>
+              <tr>
+                <th>Position</th>
+                <th>Serial Number</th>
+                <th>Tire Type</th>
+                <th>Size</th>
+                <th>Brand</th>
+                <th>Install Date</th>
+                <th>Age (Days)</th>
+                <th>Install Odometer</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${vehicle.current_tires.map(tire => `
+                <tr>
+                  <td><strong>${tire.position_code}</strong><br><small>${tire.position_name}</small></td>
+                  <td><code>${tire.serial_number}</code></td>
+                  <td><span class="status-badge tire-type-${tire.type.toLowerCase()}">${tire.type}</span></td>
+                  <td>${tire.size}</td>
+                  <td>${tire.brand || 'N/A'}</td>
+                  <td>${formatDate(tire.install_date)}</td>
+                  <td>${getTireAge(tire.install_date)}</td>
+                  <td>${tire.install_odometer.toLocaleString()} km</td>
+                </tr>
+              `).join('')}
+              ${vehicle.current_tires.length === 0 ? `
+                <tr>
+                  <td colspan="8" style="text-align: center; padding: 30px; color: #666;">
+                    No tires currently installed on this vehicle.
+                  </td>
+                </tr>
+              ` : ''}
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="print-footer">
+          <p>Report ID: VEH-${vehicle.id}-${Date.now().toString().slice(-6)}</p>
+          <p>Fleet Management System | Confidential Document</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      
+      // Add a small delay before printing to ensure content is loaded
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
+    }
+  };
+
+  // Alternative print function using printRef
+  const handlePrintWithRef = () => {
+    if (!printRef.current || !vehicle) return;
+    
+    const printContent = printRef.current.innerHTML;
+    const originalContent = document.body.innerHTML;
+    
+    document.body.innerHTML = `
+      <div style="padding: 20px; font-family: Arial, sans-serif;">
+        <div style="text-align: center; border-bottom: 2px solid #333; padding-bottom: 15px; margin-bottom: 20px;">
+          <h1 style="color: #1a237e; margin-bottom: 5px;">Vehicle Tire Report</h1>
+          <p style="color: #666;">${vehicle.vehicle_number} - Generated on ${new Date().toLocaleDateString()}</p>
+        </div>
+        ${printContent}
+      </div>
+    `;
+    
+    window.print();
+    document.body.innerHTML = originalContent;
+    window.location.reload();
+  };
 
   if (loading) {
     return (
@@ -575,7 +816,7 @@ export default function VehicleDetailsPage() {
             size="sm"
             onClick={() => handleServiceClick()}
             className="h-8 text-xs"
-            >
+          >
             <Plus className="mr-1 h-3 w-3" />
             Service
           </Button>
@@ -583,6 +824,64 @@ export default function VehicleDetailsPage() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Refresh
           </Button>
+          <Button
+            variant="outline"
+            onClick={handlePrint}
+            className="bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700"
+          >
+            <Printer className="mr-2 h-4 w-4" />
+            Print Report
+          </Button>
+        </div>
+      </div>
+
+      {/* Hidden print content */}
+      <div ref={printRef} className="hidden">
+        {/* This content is only for printing */}
+        <div className="print-content">
+          <div className="vehicle-print-info">
+            <h3 className="text-lg font-semibold mb-2">Vehicle Information</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><span className="font-medium">Vehicle Number:</span> {vehicle.vehicle_number}</div>
+              <div><span className="font-medium">Make & Model:</span> {vehicle.make} {vehicle.model} ({vehicle.year})</div>
+              <div><span className="font-medium">Status:</span> {vehicle.status}</div>
+            </div>
+          </div>
+          
+          <div className="tire-print-table mt-4">
+            <h3 className="text-lg font-semibold mb-2">Current Tires</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-2">Position</th>
+                  <th className="text-left py-2">Serial Number</th>
+                  <th className="text-left py-2">Type</th>
+                  <th className="text-left py-2">Size</th>
+                  <th className="text-left py-2">Install Date</th>
+                  <th className="text-left py-2">Age (Days)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicle.current_tires.map(tire => (
+                  <tr key={tire.id} className="border-b">
+                    <td className="py-2">
+                      <div className="font-medium">{tire.position_code}</div>
+                      <div className="text-xs text-gray-500">{tire.position_name}</div>
+                    </td>
+                    <td className="py-2 font-mono">{tire.serial_number}</td>
+                    <td className="py-2">
+                      <span className={`px-2 py-1 rounded-full text-xs ${getTireTypeColor(tire.type)}`}>
+                        {tire.type}
+                      </span>
+                    </td>
+                    <td className="py-2">{tire.size}</td>
+                    <td className="py-2">{formatDate(tire.install_date)}</td>
+                    <td className="py-2">{getTireAge(tire.install_date)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -764,7 +1063,6 @@ export default function VehicleDetailsPage() {
                   />
                 </div>
                 
-                {/* Quick Stats */}
                 <div className="mt-4 pt-4 border-t">
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-3">
@@ -807,15 +1105,26 @@ export default function VehicleDetailsPage() {
                     }
                   </CardDescription>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setSelectedWheel(null)}
-                  disabled={!selectedWheel}
-                  className="h-7 text-xs"
-                >
-                  Show All
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedWheel(null)}
+                    disabled={!selectedWheel}
+                    className="h-7 text-xs"
+                  >
+                    Show All
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePrint}
+                    className="h-7 text-xs"
+                    title="Print tire report"
+                  >
+                    <Printer className="h-3 w-3" />
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="pt-0 h-[calc(100%-80px)]">
@@ -924,15 +1233,26 @@ export default function VehicleDetailsPage() {
                   {vehicle.current_tires.length > 0 && (
                     <div className="pt-4 border-t mt-2">
                       <div className="flex items-center justify-between">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleServiceClick()}
-                          className="h-8 text-xs"
-                        >
-                          <Plus className="mr-1 h-3 w-3" />
-                          Service
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleServiceClick()}
+                            className="h-8 text-xs"
+                          >
+                            <Plus className="mr-1 h-3 w-3" />
+                            Service
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handlePrint}
+                            className="h-8 text-xs"
+                          >
+                            <Printer className="mr-1 h-3 w-3" />
+                            Print
+                          </Button>
+                        </div>
                         <div className="text-xs text-muted-foreground">
                           {filteredTires.length} shown
                         </div>
@@ -946,43 +1266,43 @@ export default function VehicleDetailsPage() {
         </div>
       </div>
 
-          {vehicle && (
-      <>
-        <TireServiceModal
-          isOpen={isServiceModalOpen}
-          onClose={() => {
-            setIsServiceModalOpen(false);
-            setSelectedPositionForService(null);
-          }}
-          vehicleId={vehicle.id}
-          vehicleNumber={vehicle.vehicle_number}
-          currentTires={vehicle.current_tires.map(tire => ({
-            id: tire.id,
-            tire_id: tire.tire_id,
-            position_code: tire.position_code,
-            position_name: tire.position_name,
-            serial_number: tire.serial_number,
-            size: tire.size,
-            brand: tire.brand,
-            type: tire.type,
-            install_date: tire.install_date,
-            install_odometer: tire.install_odometer
-          }))}
-          onSuccess={() => {
-            fetchVehicle();
-            setSelectedWheel(null);
-          }}
-        />
-        
-        <TireHistoryModal
-          isOpen={isHistoryModalOpen}
-          onClose={() => setIsHistoryModalOpen(false)}
-          vehicleId={vehicle.id}
-          vehicleNumber={vehicle.vehicle_number}
-          historyData={vehicle.history}
-        />
-      </>
-    )}
+      {vehicle && (
+        <>
+          <TireServiceModal
+            isOpen={isServiceModalOpen}
+            onClose={() => {
+              setIsServiceModalOpen(false);
+              setSelectedPositionForService(null);
+            }}
+            vehicleId={vehicle.id}
+            vehicleNumber={vehicle.vehicle_number}
+            currentTires={vehicle.current_tires.map(tire => ({
+              id: tire.id,
+              tire_id: tire.tire_id,
+              position_code: tire.position_code,
+              position_name: tire.position_name,
+              serial_number: tire.serial_number,
+              size: tire.size,
+              brand: tire.brand,
+              type: tire.type,
+              install_date: tire.install_date,
+              install_odometer: tire.install_odometer
+            }))}
+            onSuccess={() => {
+              fetchVehicle();
+              setSelectedWheel(null);
+            }}
+          />
+          
+          <TireHistoryModal
+            isOpen={isHistoryModalOpen}
+            onClose={() => setIsHistoryModalOpen(false)}
+            vehicleId={vehicle.id}
+            vehicleNumber={vehicle.vehicle_number}
+            historyData={vehicle.history}
+          />
+        </>
+      )}
     </div>
   );
 }
