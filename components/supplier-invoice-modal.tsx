@@ -212,29 +212,30 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
     try {
       // Create accounting transaction
       const transactionData = {
-        transaction_date: format(formData.invoice_date, "yyyy-MM-dd"),
-        posting_date: format(formData.posting_date, "yyyy-MM-dd"),
-        invoice_number: formData.invoice_number,
-        reference_number: grn.grn_number,
-        supplier_id: grn.supplier_code,
-        supplier_name: grn.supplier_name,
-        grn_id: grn.id,
-        po_id: grn.po_id,
-        total_amount: formData.total_amount,
-        currency: "USD",
-        notes: formData.notes,
-        status: formData.status,
-        journal_entries: journalEntries,
-        metadata: {
-          tax_amount: formData.tax_amount,
-          shipping_amount: formData.shipping_amount,
-          discount_amount: formData.discount_amount,
-          other_charges: formData.other_charges,
-          payment_terms: formData.payment_terms,
-          payment_due_date: format(formData.payment_due_date, "yyyy-MM-dd"),
-        }
+          transaction_date: format(formData.invoice_date, "yyyy-MM-dd"),
+          posting_date: format(formData.posting_date, "yyyy-MM-dd"),
+          transaction_number: formData.invoice_number,  // Changed from invoice_number to transaction_number
+          reference_number: grn.grn_number,
+          description: `Invoice for GRN ${grn.grn_number}`,
+          transaction_type: "PURCHASE_INVOICE",  // Add this line
+          total_amount: formData.total_amount,
+          currency: "USD",
+          notes: formData.notes,
+          status: "POSTED",
+          supplier_id: grn.supplier_code,
+          supplier_name: grn.supplier_name,
+          grn_id: grn.id,
+          po_id: grn.po_id,
+          journal_entries: journalEntries,
+          metadata: {
+              tax_amount: formData.tax_amount,
+              shipping_amount: formData.shipping_amount,
+              discount_amount: formData.discount_amount,
+              other_charges: formData.other_charges,
+              payment_terms: formData.payment_terms,
+              payment_due_date: format(formData.payment_due_date, "yyyy-MM-dd"),
+          }
       };
-
       // API call to create accounting transaction
       const response = await fetch("http://localhost:5000/api/accounting/transactions", {
         method: "POST",

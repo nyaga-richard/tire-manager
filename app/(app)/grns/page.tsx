@@ -36,7 +36,7 @@ import {
   Clock,
   ChevronLeft,
   ChevronRight,
-  Calculator, // Changed from DollarSign
+  Calculator,
   Receipt,
 } from "lucide-react";
 import Link from "next/link";
@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/tooltip";
 import { DatePicker } from "@/components/ui/date-picker";
 import { GRNDetails } from "@/components/grn-details";
-import { SupplierInvoiceModal } from "@/components/supplier-invoice-modal"; // Updated import
+import { SupplierInvoiceModal } from "@/components/supplier-invoice-modal";
 import PurchaseOrderDetails from "@/components/purchase-order-details";
 
 interface GRN {
@@ -70,6 +70,7 @@ interface GRN {
   received_by_name: string;
   supplier_name: string;
   supplier_code: string;
+  supplier_id: number;
   supplier_invoice_number: string | null;
   delivery_note_number: string | null;
   vehicle_number: string | null;
@@ -78,10 +79,12 @@ interface GRN {
   total_quantity: number;
   total_value: number;
   status: "COMPLETED" | "PENDING" | "CANCELLED";
-  notes: string | null;
+  notes: string;
   created_at: string;
   updated_at: string;
-  accounting_transaction_id?: string | null; // Added accounting transaction reference
+  accounting_transaction_id?: string | null;
+  items: any[];
+  tires: any[];
 }
 
 export default function GRNsPage() {
@@ -106,10 +109,8 @@ export default function GRNsPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
-
   const [poModalOpen, setPoModalOpen] = useState(false);
   const [selectedPoId, setSelectedPoId] = useState<number | null>(null);
-
 
   useEffect(() => {
     fetchGRNs();
@@ -171,18 +172,19 @@ export default function GRNsPage() {
   };
 
   const handleInvoiceSupplier = (grn: GRN) => {
-    // Check if already invoiced in accounting
-    if (grn.accounting_transaction_id) {
-      const confirmed = window.confirm(
-        `This GRN already has accounting entries recorded.\n` +
-        `Transaction ID: ${grn.accounting_transaction_id}\n\n` +
-        `Do you want to view the existing transaction?`
-      );
+    // Check if already invoiced
+    if (grn.supplier_invoice_number) {
+      toast.info(`GRN ${grn.grn_number} already invoiced (${grn.supplier_invoice_number})`);
       
-      if (confirmed) {
-        // Redirect to accounting transaction view
-        window.open(`/accounting/transactions/${grn.accounting_transaction_id}`, '_blank');
-      }
+      // Optionally, open view-only modal
+      setSelectedGrnForInvoice(grn);
+      setShowInvoiceModal(true);
+      return;
+    }
+    
+    // Check if already has accounting entries
+    if (grn.accounting_transaction_id) {
+      toast.info(`GRN ${grn.grn_number} already has accounting entries`);
       return;
     }
     
@@ -253,6 +255,40 @@ export default function GRNsPage() {
       month: "short",
       day: "numeric",
     });
+  };
+
+  // Check if GRN is invoiced
+  const isGRNInvoiced = (grn: GRN) => {
+    return !!grn.supplier_invoice_number || !!grn.accounting_transaction_id;
+  };
+
+  const getInvoiceStatusBadge = (grn: GRN) => {
+    if (grn.supplier_invoice_number) {
+      return (
+        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Invoiced
+        </Badge>
+      );
+    } else if (grn.accounting_transaction_id) {
+      return (
+        <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-xs">
+          <Calculator className="h-3 w-3 mr-1" />
+          Accounted
+        </Badge>
+      );
+    }
+    return null;
+  };
+
+  const getInvoiceButtonTooltip = (grn: GRN) => {
+    if (grn.supplier_invoice_number) {
+      return `View Invoice: ${grn.supplier_invoice_number}`;
+    } else if (grn.accounting_transaction_id) {
+      return `View Accounting Entry`;
+    } else {
+      return "Record Supplier Invoice";
+    }
   };
 
   const exportToCSV = () => {
@@ -519,140 +555,147 @@ export default function GRNsPage() {
                     <TableHead className="w-[200px]">Supplier</TableHead>
                     <TableHead className="w-[100px]">Items</TableHead>
                     <TableHead className="w-[120px]">Total Value</TableHead>
-                    <TableHead className="w-[120px]">Status</TableHead>
+                    <TableHead className="w-[100px]">Status</TableHead>
                     <TableHead className="w-[150px]">Received By</TableHead>
                     <TableHead className="w-[130px] text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {grns.map((grn) => (
-                    <TableRow key={grn.id}>
-                      <TableCell className="font-medium">
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4 text-muted-foreground" />
-                          <span className="truncate">{grn.grn_number}</span>
-                          {grn.accounting_transaction_id && (
-                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 text-xs">
-                              <Calculator className="h-3 w-3 mr-1" />
-                              Accounted
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <button
-                          onClick={() => {
-                            setSelectedPoId(grn.po_id);
-                            setPoModalOpen(true);
-                          }}
-                          className="text-blue-600 hover:underline truncate block text-left"
-                        >
-                          {grn.po_number}
-                        </button>
-
-                      </TableCell>
-                      <TableCell>{formatDate(grn.receipt_date)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <div className="min-w-0">
-                            <div className="font-medium truncate">{grn.supplier_name}</div>
-                            {grn.supplier_code && (
-                              <div className="text-xs text-muted-foreground truncate">
-                                {grn.supplier_code}
-                              </div>
-                            )}
+                  {grns.map((grn) => {
+                    const invoiced = isGRNInvoiced(grn);
+                    
+                    return (
+                      <TableRow key={grn.id}>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground" />
+                            <span className="truncate">{grn.grn_number}</span>
+                            {getInvoiceStatusBadge(grn)}
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <div>
-                            <div>{grn.item_count} items</div>
-                            <div className="text-xs text-muted-foreground">
-                              {grn.total_quantity} units
+                        </TableCell>
+                        <TableCell>
+                          <button
+                            onClick={() => {
+                              setSelectedPoId(grn.po_id);
+                              setPoModalOpen(true);
+                            }}
+                            className="text-blue-600 hover:underline truncate block text-left"
+                          >
+                            {grn.po_number}
+                          </button>
+                        </TableCell>
+                        <TableCell>{formatDate(grn.receipt_date)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <div className="min-w-0">
+                              <div className="font-medium truncate">{grn.supplier_name}</div>
+                              {grn.supplier_code && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {grn.supplier_code}
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                      </TableCell>
-                      <TableCell className="font-semibold">
-                        {formatCurrency(grn.total_value)}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant="outline"
-                          className={`flex items-center gap-1 ${getStatusColor(grn.status)}`}
-                        >
-                          {getStatusIcon(grn.status)}
-                          <span className="truncate">{grn.status}</span>
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                          <span className="truncate">{grn.received_by_name || "N/A"}</span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1">
-                          {/* View Details Button */}
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  onClick={() => handleViewDetails(grn.id)}
-                                  className="h-8 w-8"
-                                >
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>View GRN Details</p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <div>
+                              <div>{grn.item_count} items</div>
+                              <div className="text-xs text-muted-foreground">
+                                {grn.total_quantity} units
+                              </div>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-semibold">
+                          {formatCurrency(grn.total_value)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="outline"
+                            className={`flex items-center gap-1 ${getStatusColor(grn.status)}`}
+                          >
+                            {getStatusIcon(grn.status)}
+                            <span className="truncate">{grn.status}</span>
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <span className="truncate">{grn.received_by_name || "N/A"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            {/* View Details Button */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => handleViewDetails(grn.id)}
+                                    className="h-8 w-8"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>View GRN Details</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
 
-                          {/* Record Supplier Invoice (Accounting) Button */}
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="icon"
-                                  onClick={() => handleInvoiceSupplier(grn)}
-                                  className="h-8 w-8"
-                                  disabled={grn.status === "CANCELLED"}
-                                  title={
-                                    grn.status === "CANCELLED" 
-                                      ? "Cannot account for cancelled GRN" 
-                                      : grn.accounting_transaction_id
-                                      ? `View accounting entry`
-                                      : `Record in accounting system`
-                                  }
-                                >
-                                  <Calculator className={`h-4 w-4 ${
-                                    grn.accounting_transaction_id 
-                                      ? "text-green-600" 
-                                      : "text-blue-600"
-                                  }`} />
-                                </Button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <p>
-                                  {grn.accounting_transaction_id 
-                                    ? "View Accounting Entry" 
-                                    : "Record Supplier Invoice"}
-                                </p>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {/* Invoice Button - Conditionally shown */}
+                            {!invoiced && grn.status === "COMPLETED" && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => handleInvoiceSupplier(grn)}
+                                      className="h-8 w-8"
+                                      title="Record Supplier Invoice"
+                                    >
+                                      <Receipt className="h-4 w-4 text-blue-600" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Record Supplier Invoice</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+
+                            {/* View Invoice Button - for already invoiced GRNs */}
+                            {invoiced && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => handleInvoiceSupplier(grn)}
+                                      className="h-8 w-8"
+                                      title={getInvoiceButtonTooltip(grn)}
+                                    >
+                                      <Calculator className="h-4 w-4 text-green-600" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{getInvoiceButtonTooltip(grn)}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -704,7 +747,6 @@ export default function GRNsPage() {
           }}
         />
       )}
-
     </div>
   );
 }
