@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { 
   Card, 
   CardContent, 
@@ -40,7 +40,11 @@ import {
   AlertCircle,
   CheckCircle,
   XCircle,
-  RefreshCw
+  RefreshCw,
+  Printer,
+  Download,
+  FileText,
+  BarChart
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -65,6 +69,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { format } from "date-fns";
 
 interface Vehicle {
   id: number;
@@ -130,6 +135,7 @@ export default function VehiclesPage() {
     "Other"
   ]);
   const itemsPerPage = 10;
+  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchVehicles();
@@ -395,6 +401,322 @@ export default function VehiclesPage() {
     return description;
   };
 
+  // Handle print functionality
+  const handlePrint = () => {
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${viewMode === "active" ? "Active" : "Retired"} Vehicles Report</title>
+        <style>
+          @media print {
+            @page {
+              margin: 0.5in;
+              size: landscape;
+            }
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.4;
+              color: #333;
+              margin: 0;
+              padding: 0;
+            }
+            .print-header {
+              text-align: center;
+              border-bottom: 2px solid #333;
+              padding-bottom: 15px;
+              margin-bottom: 20px;
+            }
+            .print-header h1 {
+              margin: 0 0 5px 0;
+              color: #1a237e;
+            }
+            .print-header .subtitle {
+              color: #666;
+              margin: 0;
+            }
+            .summary-stats {
+              display: flex;
+              justify-content: space-around;
+              margin: 20px 0;
+              padding: 15px;
+              background: #f8f9fa;
+              border-radius: 4px;
+            }
+            .stat-item {
+              text-align: center;
+            }
+            .stat-value {
+              font-size: 24px;
+              font-weight: bold;
+              color: #1a237e;
+            }
+            .stat-label {
+              font-size: 12px;
+              color: #666;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .filter-info {
+              background: #f1f8ff;
+              padding: 10px;
+              border-radius: 4px;
+              margin-bottom: 20px;
+              font-size: 12px;
+            }
+            .vehicles-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 15px;
+              font-size: 11px;
+            }
+            .vehicles-table th {
+              background-color: #2c3e50;
+              color: white;
+              padding: 8px;
+              text-align: left;
+              border: 1px solid #34495e;
+              font-weight: bold;
+            }
+            .vehicles-table td {
+              padding: 6px 8px;
+              border: 1px solid #ddd;
+            }
+            .vehicles-table tr:nth-child(even) {
+              background-color: #f9f9f9;
+            }
+            .status-badge {
+              display: inline-block;
+              padding: 2px 8px;
+              border-radius: 12px;
+              font-size: 10px;
+              font-weight: bold;
+            }
+            .status-active {
+              background-color: #d4edda;
+              color: #155724;
+            }
+            .status-inactive {
+              background-color: #f8f9fa;
+              color: #6c757d;
+            }
+            .status-maintenance {
+              background-color: #fff3cd;
+              color: #856404;
+            }
+            .status-retired {
+              background-color: #f8d7da;
+              color: #721c24;
+            }
+            .config-badge {
+              display: inline-block;
+              padding: 2px 8px;
+              border-radius: 12px;
+              font-size: 10px;
+              font-weight: bold;
+            }
+            .config-4x2 {
+              background-color: #cce5ff;
+              color: #004085;
+            }
+            .config-6x4 {
+              background-color: #d4edda;
+              color: #155724;
+            }
+            .config-8x4 {
+              background-color: #e2d9f3;
+              color: #4a3c6d;
+            }
+            .config-6x2 {
+              background-color: #fff3cd;
+              color: #856404;
+            }
+            .config-4x4 {
+              background-color: #f8d7da;
+              color: #721c24;
+            }
+            .print-footer {
+              margin-top: 40px;
+              padding-top: 15px;
+              border-top: 1px solid #ddd;
+              text-align: center;
+              color: #666;
+              font-size: 11px;
+            }
+            .print-summary {
+              margin: 15px 0;
+              padding: 10px;
+              background: #f8f9fa;
+              border-radius: 4px;
+              font-size: 12px;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <h1>${viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"} Report</h1>
+          <p class="subtitle">Fleet Management System</p>
+          <p class="subtitle">Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'hh:mm a')}</p>
+        </div>
+        
+        <div class="filter-info">
+          <strong>Report Criteria:</strong> 
+          ${viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}
+          ${selectedConfig !== "All" ? ` • Wheel Config: ${selectedConfig}` : ''}
+          ${search ? ` • Search: "${search}"` : ''}
+          ${currentPage > 1 ? ` • Page ${currentPage} of ${totalPages}` : ''}
+        </div>
+        
+        <div class="summary-stats">
+          <div class="stat-item">
+            <div class="stat-value">${totalVehicles}</div>
+            <div class="stat-label">Total ${viewMode === "active" ? "Active" : "Retired"}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicles.length}</div>
+            <div class="stat-label">${selectedConfig !== "All" || search ? "Filtered" : "Displayed"}</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicles.filter(v => v.status === "ACTIVE").length}</div>
+            <div class="stat-label">Active Status</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicles.filter(v => v.status === "MAINTENANCE").length}</div>
+            <div class="stat-label">In Maintenance</div>
+          </div>
+          <div class="stat-item">
+            <div class="stat-value">${vehicles.reduce((sum, v) => sum + (v.active_tires_count || 0), 0)}</div>
+            <div class="stat-label">Total Tires</div>
+          </div>
+        </div>
+        
+        <div class="print-summary">
+          Showing ${vehicles.length} of ${totalVehicles} ${viewMode === "active" ? "active" : "retired"} vehicles
+          • Generated by: System Admin • Report ID: VEH-${viewMode.toUpperCase()}-${Date.now().toString().slice(-6)}
+        </div>
+        
+        <table class="vehicles-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Vehicle Number</th>
+              <th>Make & Model</th>
+              <th>Wheel Config</th>
+              <th>Status</th>
+              <th>Tires</th>
+              ${viewMode === "retired" ? '<th>Retired Date</th><th>Reason</th>' : ''}
+              <th>Added Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${vehicles.map(vehicle => {
+              const statusClass = vehicle.status.toLowerCase();
+              const configClass = vehicle.wheel_config.toLowerCase();
+              return `
+                <tr>
+                  <td>${vehicle.id}</td>
+                  <td><strong>${vehicle.vehicle_number}</strong></td>
+                  <td>${vehicle.make} ${vehicle.model}</td>
+                  <td>
+                    <span class="config-badge config-${configClass}">
+                      ${vehicle.wheel_config}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="status-badge status-${statusClass}">
+                      ${vehicle.status}
+                    </span>
+                  </td>
+                  <td>${vehicle.active_tires_count || 0}</td>
+                  ${viewMode === "retired" ? `
+                    <td>${vehicle.retired_date ? formatDate(vehicle.retired_date) : 'N/A'}</td>
+                    <td>${vehicle.retirement_reason || 'N/A'}</td>
+                  ` : ''}
+                  <td>${formatDate(vehicle.created_at)}</td>
+                </tr>
+              `;
+            }).join('')}
+            ${vehicles.length === 0 ? `
+              <tr>
+                <td colspan="${viewMode === "retired" ? 9 : 7}" style="text-align: center; padding: 30px; color: #666;">
+                  No ${viewMode === "active" ? "active" : "retired"} vehicles found
+                  ${search || selectedConfig !== "All" ? 'matching the current filters' : ''}
+                </td>
+              </tr>
+            ` : ''}
+          </tbody>
+        </table>
+        
+        <div class="print-footer">
+          <p>Confidential Document - For Internal Use Only</p>
+          <p>Fleet Management System | ${format(new Date(), 'yyyy')} © All Rights Reserved</p>
+        </div>
+      </body>
+      </html>
+    `;
+    
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(printContent);
+      printWindow.document.close();
+      printWindow.focus();
+      
+      // Add a small delay before printing to ensure content is loaded
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 250);
+    }
+  };
+
+  // Handle export to CSV
+  const handleExportCSV = () => {
+    const headers = [
+      "ID",
+      "Vehicle Number",
+      "Make",
+      "Model",
+      "Year",
+      "Wheel Config",
+      "Status",
+      "Current Tires",
+      "Current Odometer",
+      "Added Date",
+      ...(viewMode === "retired" ? ["Retired Date", "Retirement Reason"] : [])
+    ];
+
+    const csvData = vehicles.map((vehicle) => [
+      vehicle.id,
+      vehicle.vehicle_number,
+      vehicle.make,
+      vehicle.model,
+      vehicle.year || "N/A",
+      vehicle.wheel_config,
+      vehicle.status,
+      vehicle.active_tires_count || 0,
+      vehicle.current_odometer ? `${vehicle.current_odometer.toLocaleString()} km` : "N/A",
+      formatDate(vehicle.created_at),
+      ...(viewMode === "retired" ? [
+        vehicle.retired_date ? formatDate(vehicle.retired_date) : "N/A",
+        vehicle.retirement_reason || "N/A"
+      ] : [])
+    ]);
+
+    const csvContent = [
+      headers.join(","),
+      ...csvData.map((row) => row.join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv" });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${viewMode}-vehicles-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="space-y-6">
       {/* Retirement Dialog */}
@@ -589,6 +911,29 @@ export default function VehiclesPage() {
               Retired ({viewMode === "retired" ? vehicles.length : "-"})
             </Button>
           </div>
+          
+          {/* Export and Print Buttons */}
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={handleExportCSV}
+              disabled={vehicles.length === 0 || loading}
+              className="gap-2"
+            >
+              <Download className="h-4 w-4" />
+              Export CSV
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handlePrint}
+              disabled={vehicles.length === 0 || loading}
+              className="gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+            >
+              <Printer className="h-4 w-4" />
+              Print Report
+            </Button>
+          </div>
+          
           <Button asChild>
             <Link href="/vehicles/create">
               <PlusCircle className="mr-2 h-4 w-4" />
@@ -711,6 +1056,32 @@ export default function VehiclesPage() {
               >
                 Clear all filters
               </Button>
+            </div>
+          )}
+
+          {/* Quick Stats Bar */}
+          {vehicles.length > 0 && (
+            <div className="mb-4 grid grid-cols-5 gap-2">
+              <div className="text-center p-2 bg-blue-50 rounded">
+                <div className="text-lg font-bold text-blue-700">{vehicles.length}</div>
+                <div className="text-xs text-blue-600">Displayed</div>
+              </div>
+              <div className="text-center p-2 bg-green-50 rounded">
+                <div className="text-lg font-bold text-green-700">{vehicles.filter(v => v.status === "ACTIVE").length}</div>
+                <div className="text-xs text-green-600">Active</div>
+              </div>
+              <div className="text-center p-2 bg-yellow-50 rounded">
+                <div className="text-lg font-bold text-yellow-700">{vehicles.filter(v => v.status === "MAINTENANCE").length}</div>
+                <div className="text-xs text-yellow-600">Maintenance</div>
+              </div>
+              <div className="text-center p-2 bg-gray-50 rounded">
+                <div className="text-lg font-bold text-gray-700">{vehicles.filter(v => v.status === "INACTIVE").length}</div>
+                <div className="text-xs text-gray-600">Inactive</div>
+              </div>
+              <div className="text-center p-2 bg-purple-50 rounded">
+                <div className="text-lg font-bold text-purple-700">{vehicles.reduce((sum, v) => sum + (v.active_tires_count || 0), 0)}</div>
+                <div className="text-xs text-purple-600">Total Tires</div>
+              </div>
             </div>
           )}
 
