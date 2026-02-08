@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -16,7 +16,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
-import { Eye, EyeOff, LogIn, Lock, User } from "lucide-react";
+import { Eye, EyeOff, LogIn, Lock, User, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+
+// Define environment variable for API URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface LoginFormData {
   username: string;
@@ -27,6 +31,7 @@ interface LoginFormData {
 interface ApiResponse {
   success: boolean;
   token?: string;
+  refreshToken?: string;
   user?: {
     id: number;
     username: string;
@@ -35,16 +40,22 @@ interface ApiResponse {
     role: string;
     role_id: number;
     department: string;
-    permissions: Array<{
-      code: string;
-      can_view: boolean;
-      can_create: boolean;
-      can_edit: boolean;
-      can_delete: boolean;
-      can_approve: boolean;
-    }>;
+    last_login: string;
+    created_at: string;
+  };
+  permissions?: Record<string, {
+    can_view: boolean;
+    can_create: boolean;
+    can_edit: boolean;
+    can_delete: boolean;
+    can_approve: boolean;
+  }>;
+  session?: {
+    id: number;
+    expires_at: string;
   };
   error?: string;
+  code?: string;
 }
 
 // Auth utility functions
@@ -56,13 +67,22 @@ const storeToken = (token: string, rememberMe: boolean = false): void => {
   }
 };
 
-const storeUser = (user: any, rememberMe: boolean = false): void => {
+const storeUser = (user: any, permissions: any, rememberMe: boolean = false): void => {
   const userData = JSON.stringify(user);
+  const permData = JSON.stringify(permissions);
+  
   if (rememberMe) {
     localStorage.setItem("user_info", userData);
+    localStorage.setItem("user_permissions", permData);
   } else {
     sessionStorage.setItem("user_info", userData);
+    sessionStorage.setItem("user_permissions", permData);
   }
+};
+
+// Check if user is already logged in (for redirection)
+const isAuthenticated = (): boolean => {
+  return !!(localStorage.getItem("auth_token") || sessionStorage.getItem("auth_token"));
 };
 
 export default function LoginPage() {
@@ -74,45 +94,81 @@ export default function LoginPage() {
     password: "",
     rememberMe: false,
   });
+  const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.push("/inventory");
+    }
+  }, [router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    setLoginError(null);
+
+    // Basic validation
+    if (!formData.username.trim() || !formData.password.trim()) {
+      setLoginError("Please enter both username and password");
+      setLoading(false);
+      return;
+    }
 
     try {
-        const response = await fetch ("http://localhost:5000/api/auth/login", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include", // ✅ REQUIRED
-          body: JSON.stringify(formData),
-        });
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(formData),
+      });
 
       const data: ApiResponse = await response.json();
 
       if (data.success && data.token && data.user) {
         // Store token and user info
         storeToken(data.token, formData.rememberMe);
-        storeUser(data.user, formData.rememberMe);
+        storeUser(data.user, data.permissions || {}, formData.rememberMe);
+
+        // If rememberMe is true and we have a refresh token, store it
+        if (formData.rememberMe && data.refreshToken) {
+          localStorage.setItem("refresh_token", data.refreshToken);
+        }
 
         // Show success message
         toast.success("Login successful", {
           description: `Welcome back, ${data.user.full_name}!`,
+          duration: 3000,
         });
 
-        // Redirect to dashboard or previous page
-        router.push("/inventory");
-        router.refresh();
+        // IMPORTANT: Clear any previous states and force navigation
+        setTimeout(() => {
+          // Use window.location for a hard redirect
+          window.location.href = "/inventory";
+        }, 500);
+
       } else {
+        // Handle specific error codes
+        const errorCode = data.code || 'LOGIN_FAILED';
+        const errorMessage = data.error || "Login failed";
+        
+        setLoginError(errorMessage);
+        
         toast.error("Login failed", {
-          description: data.error || "Invalid username or password",
+          description: errorMessage,
+          duration: 5000,
         });
       }
     } catch (error) {
       console.error("Login error:", error);
-      toast.error("Login failed", {
-        description: "Unable to connect to server. Please try again.",
+      const errorMessage = "Unable to connect to server. Please check your connection.";
+      setLoginError(errorMessage);
+      
+      toast.error("Connection Error", {
+        description: errorMessage,
+        duration: 5000,
       });
     } finally {
       setLoading(false);
@@ -125,6 +181,25 @@ export default function LoginPage() {
       ...formData,
       [name]: type === "checkbox" ? checked : value,
     });
+    // Clear error when user starts typing
+    if (loginError) setLoginError(null);
+  };
+
+  const handleDemoLogin = async (username: string, password: string) => {
+    setFormData({
+      username,
+      password,
+      rememberMe: false,
+    });
+    
+    // Auto-submit after a short delay
+    setTimeout(() => {
+      const form = document.querySelector('form');
+      if (form) {
+        const submitEvent = new Event('submit', { cancelable: true, bubbles: true });
+        form.dispatchEvent(submitEvent);
+      }
+    }, 300);
   };
 
   return (
@@ -140,6 +215,14 @@ export default function LoginPage() {
             Sign in to your account to continue
           </p>
         </div>
+
+        {/* Error Alert */}
+        {loginError && (
+          <Alert variant="destructive" className="mb-6 animate-in fade-in duration-300">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{loginError}</AlertDescription>
+          </Alert>
+        )}
 
         <Card className="shadow-lg">
           <CardHeader className="space-y-1">
@@ -164,6 +247,8 @@ export default function LoginPage() {
                     onChange={handleInputChange}
                     required
                     disabled={loading}
+                    autoComplete="username"
+                    autoFocus
                   />
                 </div>
               </div>
@@ -190,11 +275,13 @@ export default function LoginPage() {
                     onChange={handleInputChange}
                     required
                     disabled={loading}
+                    autoComplete="current-password"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                    tabIndex={-1}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -220,7 +307,7 @@ export default function LoginPage() {
                 />
                 <Label
                   htmlFor="rememberMe"
-                  className="text-sm font-normal cursor-pointer"
+                  className="text-sm font-normal cursor-pointer select-none"
                 >
                   Remember me for 7 days
                 </Label>
@@ -231,7 +318,7 @@ export default function LoginPage() {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={loading || !formData.username || !formData.password}
+                disabled={loading || !formData.username.trim() || !formData.password.trim()}
               >
                 {loading ? (
                   <>
@@ -260,22 +347,46 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        {/* Demo Credentials (remove in production) */}
+        {/* Demo Credentials */}
         <div className="mt-8 p-4 bg-muted/50 rounded-lg border">
           <h3 className="font-medium mb-2">Demo Credentials:</h3>
-          <div className="text-sm space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Super Admin:</span>
-              <code className="px-2 py-1 bg-background rounded text-xs">
-                admin / admin123
-              </code>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">Fleet Manager:</span>
-              <code className="px-2 py-1 bg-background rounded text-xs">
-                manager / manager123
-              </code>
-            </div>
+          <div className="grid grid-cols-1 gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start text-left"
+              onClick={() => handleDemoLogin("admin", "admin123")}
+              disabled={loading}
+            >
+              <div className="flex flex-col items-start flex-1">
+                <span className="font-medium">Super Admin</span>
+                <span className="text-xs text-muted-foreground">admin / admin123</span>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start text-left"
+              onClick={() => handleDemoLogin("manager", "manager123")}
+              disabled={loading}
+            >
+              <div className="flex flex-col items-start flex-1">
+                <span className="font-medium">Fleet Manager</span>
+                <span className="text-xs text-muted-foreground">manager / manager123</span>
+              </div>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full justify-start text-left"
+              onClick={() => handleDemoLogin("clerk", "clerk123")}
+              disabled={loading}
+            >
+              <div className="flex flex-col items-start flex-1">
+                <span className="font-medium">Inventory Clerk</span>
+                <span className="text-xs text-muted-foreground">clerk / clerk123</span>
+              </div>
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground mt-2">
             Note: These are demo credentials. Change them in production.

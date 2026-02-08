@@ -20,13 +20,6 @@ export const metadata: Metadata = {
   description: "Comprehensive tire and fleet management system",
 };
 
-const navItems = [
-  { name: "Dashboard", href: "/dashboard" },
-  { name: "Vehicles", href: "/vehicles" },
-  { name: "Inventory", href: "/inventory" },
-  { name: "Suppliers", href: "/suppliers" },
-  { name: "Purchases", href: "/purchases" },
-];
 
 export default function RootLayout({
   children,
