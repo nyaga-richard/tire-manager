@@ -246,7 +246,6 @@ export default function SuppliersPage() {
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="suppliers">All Suppliers</TabsTrigger>
-            <TabsTrigger value="ledger">Supplier Ledger</TabsTrigger>
           </TabsList>
           
           <div className="flex items-center gap-2">
@@ -454,104 +453,6 @@ export default function SuppliersPage() {
                 </div>
               </CardFooter>
             )}
-          </Card>
-        </TabsContent>
-
-        {/* Supplier Ledger Tab */}
-        <TabsContent value="ledger" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Supplier Ledger Summary</CardTitle>
-              <CardDescription>
-                Overview of all supplier transactions
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                    <p className="mt-2 text-muted-foreground">Loading ledger...</p>
-                  </div>
-                </div>
-              ) : suppliers.filter(s => s.balance !== 0).length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">No ledger entries</h3>
-                  <p className="text-muted-foreground mt-1">
-                    All suppliers have zero balance
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Total Purchases</TableHead>
-                        <TableHead>Total Payments</TableHead>
-                        <TableHead>Current Balance</TableHead>
-                        <TableHead>Last Transaction</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {suppliers
-                        .filter(supplier => supplier.balance !== 0)
-                        .map((supplier) => (
-                          <TableRow key={supplier.id} className="hover:bg-accent/50">
-                            <TableCell>
-                              <div className="font-medium">{supplier.name}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {supplier.contact_person || "No contact"}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={getSupplierTypeColor(supplier.type)}
-                              >
-                                {getSupplierTypeLabel(supplier.type)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2 text-red-600">
-                                <ArrowUpRight className="h-3 w-3" />
-                                <span>
-                                  {formatCurrency(
-                                    Math.max(0, supplier.balance > 0 ? supplier.balance : 0)
-                                  )}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2 text-green-600">
-                                <ArrowDownRight className="h-3 w-3" />
-                                <span>
-                                  {formatCurrency(
-                                    Math.max(0, supplier.balance < 0 ? Math.abs(supplier.balance) : 0)
-                                  )}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className={`font-medium ${
-                                supplier.balance > 0 ? "text-red-600" : "text-green-600"
-                              }`}>
-                                {supplier.balance > 0 ? "Owed: " : "Credit: "}
-                                {formatCurrency(Math.abs(supplier.balance))}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {formatDate(supplier.created_at)}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </CardContent>
           </Card>
         </TabsContent>
       </Tabs>

@@ -35,7 +35,9 @@ import {
   Hash,
   Circle,
   Printer,
-  FileText
+  FileText,
+  ChevronRight,
+  Clock
 } from "lucide-react";
 import TruckWheelDiagram from "@/components/truck-wheel-diagram/TruckWheelDiagram";
 import TireServiceModal from "@/components/tire-service-modal";
@@ -951,13 +953,31 @@ export default function VehicleDetailsPage() {
             </CardContent>
           </Card>
 
-          {/* Tire History Card */}
+          {/* Tire History Card - UPDATED WITH FULL HISTORY BUTTON */}
           <Card>
             <CardHeader>
-              <CardTitle>Tire Installation History</CardTitle>
-              <CardDescription>
-                Recent tire changes for this vehicle
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    Tire Installation History
+                  </CardTitle>
+                  <CardDescription>
+                    Recent tire changes for this vehicle
+                  </CardDescription>
+                </div>
+                {vehicle.history.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsHistoryModalOpen(true)}
+                    className="h-7 text-xs gap-1.5"
+                  >
+                    <Clock className="h-3.5 w-3.5" />
+                    Full History
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent>
               {vehicle.history.length === 0 ? (
@@ -978,50 +998,102 @@ export default function VehicleDetailsPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Position</TableHead>
-                        <TableHead>Tire Serial</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {vehicle.history.slice(0, 5).map((history) => (
-                        <TableRow key={history.id}>
-                          <TableCell className="py-2">
-                            <div className="text-xs">
-                              {formatDate(history.install_date)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="text-xs">
-                              {history.position_code}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="font-mono text-xs">
-                              {history.serial_number}
-                            </div>
-                          </TableCell>
+                <div className="space-y-3">
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="h-8">Date</TableHead>
+                          <TableHead className="h-8">Position</TableHead>
+                          <TableHead className="h-8">Tire Serial</TableHead>
+                          <TableHead className="h-8">Action</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {vehicle.history.slice(0, 5).map((history) => (
+                          <TableRow key={history.id}>
+                            <TableCell className="py-2">
+                              <div className="text-xs">
+                                {formatDate(history.install_date)}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline" className="text-xs">
+                                {history.position_code}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-mono text-xs">
+                                {history.serial_number}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={history.removal_date ? "outline" : "default"}
+                                className="text-xs"
+                              >
+                                {history.removal_date ? "Removed" : "Installed"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                   
-                  {vehicle.history.length > 5 && (
-                    <div className="p-2 border-t">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full text-xs"
-                        onClick={() => setIsHistoryModalOpen(true)}
-                      >
-                        View all {vehicle.history.length} records
-                      </Button>
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-muted-foreground">
+                        Showing {Math.min(5, vehicle.history.length)} of {vehicle.history.length} records
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {vehicle.history.length > 5 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs"
+                            onClick={() => setIsHistoryModalOpen(true)}
+                          >
+                            View All
+                            <ChevronRight className="ml-1 h-3 w-3" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  )}
+                    
+                    {/* Summary Statistics */}
+                    <div className="grid grid-cols-3 gap-1 text-xs">
+                      <div className="text-center p-1 bg-blue-50 rounded">
+                        <div className="font-medium text-blue-700">
+                          {vehicle.history.filter(h => !h.removal_date).length}
+                        </div>
+                        <div className="text-blue-600">Active</div>
+                      </div>
+                      <div className="text-center p-1 bg-gray-50 rounded">
+                        <div className="font-medium text-gray-700">
+                          {vehicle.history.filter(h => h.removal_date).length}
+                        </div>
+                        <div className="text-gray-600">Removed</div>
+                      </div>
+                      <div className="text-center p-1 bg-green-50 rounded">
+                        <div className="font-medium text-green-700">
+                          {vehicle.history.length}
+                        </div>
+                        <div className="text-green-600">Total</div>
+                      </div>
+                    </div>
+                    
+                    {/* Full History Button */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsHistoryModalOpen(true)}
+                      className="w-full h-8 text-xs mt-2"
+                    >
+                      <History className="mr-2 h-3 w-3" />
+                      View Complete Installation History ({vehicle.history.length} records)
+                    </Button>
+                  </div>
                 </div>
               )}
             </CardContent>

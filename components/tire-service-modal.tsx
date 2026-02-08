@@ -35,8 +35,8 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "
 interface Tire {
   id: number;
   serial_number: string;
-  size: string;
-  brand: string;
+  size?: string;
+  brand?: string;
   type: "NEW" | "RETREAD" | "USED";
   status: string;
   current_position?: string;
@@ -256,7 +256,21 @@ export default function TireServiceModal({
       const response = await fetch("http://localhost:5000/api/tires/");
       if (response.ok) {
         const data = await response.json();
-        setAvailableTires(data);
+        console.log("Fetched tires data:", data);
+        // Check for null values
+        const tiresWithNullBrand = data.filter((tire: Tire) => !tire.brand);
+        const tiresWithNullSize = data.filter((tire: Tire) => !tire.size);
+        if (tiresWithNullBrand.length > 0 || tiresWithNullSize.length > 0) {
+          console.warn("Some tires have null values:", { tiresWithNullBrand, tiresWithNullSize });
+        }
+        // Ensure all string fields have values
+        const sanitizedData = data.map((tire: any) => ({
+          ...tire,
+          brand: tire.brand || 'Unknown',
+          size: tire.size || 'N/A',
+          serial_number: tire.serial_number || 'N/A'
+        }));
+        setAvailableTires(sanitizedData);
       }
     } catch (error) {
       console.error("Error fetching available tires:", error);
@@ -272,15 +286,19 @@ export default function TireServiceModal({
         setTireSizes(data);
       } else {
         // Fallback: extract unique sizes from available tires
-        const sizes = new Set(availableTires.map(tire => tire.size));
-        const sizeArray = Array.from(sizes).map(size => ({ size, count: 0 }));
+        const sizes = new Set(availableTires.map(tire => tire.size || ''));
+        const sizeArray = Array.from(sizes)
+          .filter(size => size)
+          .map(size => ({ size, count: 0 }));
         setTireSizes(sizeArray);
       }
     } catch (error) {
       console.error("Error fetching tire sizes:", error);
       // Fallback: extract unique sizes from available tires
-      const sizes = new Set(availableTires.map(tire => tire.size));
-      const sizeArray = Array.from(sizes).map(size => ({ size, count: 0 }));
+      const sizes = new Set(availableTires.map(tire => tire.size || ''));
+      const sizeArray = Array.from(sizes)
+        .filter(size => size)
+        .map(size => ({ size, count: 0 }));
       setTireSizes(sizeArray);
     } finally {
       setLoadingSizes(false);
@@ -336,11 +354,18 @@ export default function TireServiceModal({
     // Apply search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(tire => 
-        tire.serial_number.toLowerCase().includes(query) ||
-        tire.brand.toLowerCase().includes(query) ||
-        tire.size.toLowerCase().includes(query)
-      );
+      filtered = filtered.filter(tire => {
+        // Handle null/undefined values by converting to empty strings
+        const serialNum = (tire.serial_number || '').toLowerCase();
+        const brand = (tire.brand || '').toLowerCase();
+        const size = (tire.size || '').toLowerCase();
+        
+        return (
+          serialNum.includes(query) ||
+          brand.includes(query) ||
+          size.includes(query)
+        );
+      });
     }
     
     return filtered;
@@ -821,11 +846,19 @@ const handleSubmit = async (e: React.FormEvent) => {
                   {installationItems.map((item, index) => {
                     const itemSearchQuery = searchInputs[item.id] || "";
                     const filteredTiresForItem = itemSearchQuery 
-                      ? availableTires.filter(tire => 
-                          tire.serial_number.toLowerCase().includes(itemSearchQuery.toLowerCase()) ||
-                          tire.brand.toLowerCase().includes(itemSearchQuery.toLowerCase()) ||
-                          tire.size.toLowerCase().includes(itemSearchQuery.toLowerCase())
-                        )
+                      ? availableTires.filter(tire => {
+                          // Handle null/undefined values
+                          const serialNum = (tire.serial_number || '').toLowerCase();
+                          const brand = (tire.brand || '').toLowerCase();
+                          const size = (tire.size || '').toLowerCase();
+                          const query = itemSearchQuery.toLowerCase();
+                          
+                          return (
+                            serialNum.includes(query) ||
+                            brand.includes(query) ||
+                            size.includes(query)
+                          );
+                        })
                       : getFilteredTires;
 
                     return (

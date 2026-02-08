@@ -555,7 +555,6 @@ export default function GRNsPage() {
                     <TableHead className="w-[200px]">Supplier</TableHead>
                     <TableHead className="w-[100px]">Items</TableHead>
                     <TableHead className="w-[120px]">Total Value</TableHead>
-                    <TableHead className="w-[100px]">Status</TableHead>
                     <TableHead className="w-[150px]">Received By</TableHead>
                     <TableHead className="w-[130px] text-right">Actions</TableHead>
                   </TableRow>
@@ -611,15 +610,6 @@ export default function GRNsPage() {
                         </TableCell>
                         <TableCell className="font-semibold">
                           {formatCurrency(grn.total_value)}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={`flex items-center gap-1 ${getStatusColor(grn.status)}`}
-                          >
-                            {getStatusIcon(grn.status)}
-                            <span className="truncate">{grn.status}</span>
-                          </Badge>
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
