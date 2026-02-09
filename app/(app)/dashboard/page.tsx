@@ -1,99 +1,161 @@
 "use client";
 
-import { Users, Shield, Lock, UserPlus } from "lucide-react";
-import Link from "next/link";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
+import React, { useState, useEffect } from "react";
+import DashboardHeader from "./DashboardHeader";
+import StatsCards from "./StatsCards";
+import ChartsSection from "./ChartsSection";
+import AlertsSection from "./AlertsSection";
+import RecentActivity from "./RecentActivity";
+import QuickActions from "./QuickActions";
+import KPIOverview from "./KPIOverview";
+import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from "sonner";
 
-const stats = [
-  {
-    label: "Total Users",
-    value: 128,
-    icon: Users,
-    href: "/dashboard/users",
-  },
-  {
-    label: "Roles",
-    value: 6,
-    icon: Shield,
-    href: "/dashboard/roles",
-  },
-  {
-    label: "Permissions",
-    value: 24,
-    icon: Lock,
-    href: "/dashboard/permissions",
-  },
-];
+const API_BASE_URL = "http://localhost:5000/api";
 
 export default function DashboardPage() {
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [alertsData, setAlertsData] = useState<any>(null);
+  const [activityData, setActivityData] = useState<any>(null);
+  const [kpiData, setKpiData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [dateRange, setDateRange] = useState({ start: "", end: "" });
+
+  const buildQuery = (params: Record<string, string>) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value) query.append(key, value);
+    });
+    return query.toString();
+  };
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+
+      const statsQuery = buildQuery(dateRange);
+
+    const [
+      dashboardRes,
+      alertsRes,
+      activityRes,
+      kpiRes,
+    ] = await Promise.all([
+      fetch(`${API_BASE_URL}/dashboard/stats?${statsQuery}`, {
+        credentials: "include", // << Add this
+      }),
+      fetch(`${API_BASE_URL}/dashboard/alerts`, {
+        credentials: "include",
+      }),
+      fetch(`${API_BASE_URL}/dashboard/activity?limit=10`, {
+        credentials: "include",
+      }),
+      fetch(`${API_BASE_URL}/dashboard/kpis`, {
+        credentials: "include",
+      }),
+    ]);
+
+
+      if (!dashboardRes.ok) throw new Error("Failed dashboard stats");
+      if (!alertsRes.ok) throw new Error("Failed alerts");
+      if (!activityRes.ok) throw new Error("Failed activity");
+      if (!kpiRes.ok) throw new Error("Failed KPIs");
+
+      const dashboardJson = await dashboardRes.json();
+      const alertsJson = await alertsRes.json();
+      const activityJson = await activityRes.json();
+      const kpiJson = await kpiRes.json();
+
+      setDashboardData(dashboardJson);
+      setAlertsData(alertsJson);
+      setActivityData(activityJson);
+      setKpiData(kpiJson.kpis);
+
+      toast.success("Dashboard data loaded");
+    } catch (error) {
+      console.error(error);
+      toast.error("Failed to load dashboard data");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardData();
+  }, [dateRange]);
+
+  const handleDateRangeChange = (range: { start: string; end: string }) => {
+    setDateRange(range);
+  };
+
+  if (loading) {
+    return (
+      <div className="container mx-auto p-6 space-y-6">
+        <Skeleton className="h-12 w-full" />
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Skeleton className="h-96" />
+          <Skeleton className="h-96" />
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">Dashboard</h1>
-          <p className="text-muted-foreground">Overview of your user access system</p>
+    <div className="container mx-auto p-6 space-y-6">
+      <DashboardHeader
+        onDateRangeChange={handleDateRangeChange}
+        onRefresh={fetchDashboardData}
+      />
+
+      <StatsCards summary={dashboardData?.summary} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 space-y-6">
+          <ChartsSection charts={dashboardData?.charts} />
+          <KPIOverview kpis={kpiData} />
         </div>
 
-        <Link href="/dashboard/users/create">
-          <Button className="gap-2">
-            <UserPlus className="h-4 w-4" />
-            New User
-          </Button>
-        </Link>
+        <div className="space-y-6">
+          <AlertsSection alerts={alertsData?.alerts || []} />
+          <QuickActions />
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {stats.map((stat) => (
-          <Link key={stat.label} href={stat.href}>
-            <Card className="hover:shadow-md transition cursor-pointer">
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">{stat.label}</CardTitle>
-                <stat.icon className="h-5 w-5 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{stat.value}</div>
-                <CardDescription className="mt-1">View details</CardDescription>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <RecentActivity activities={activityData?.activities || []} />
+        </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Common administrative tasks</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Link href="/dashboard/users/create" className="block">
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <UserPlus className="h-4 w-4" />
-                Create a new user
-              </Button>
-            </Link>
-            <Link href="/dashboard/roles/create" className="block">
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <Shield className="h-4 w-4" />
-                Create a new role
-              </Button>
-            </Link>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>RBAC Overview</CardTitle>
-            <CardDescription>How access control works</CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm text-muted-foreground space-y-2">
-            <p>• Users are assigned one or more roles</p>
-            <p>• Roles define permissions</p>
-            <p>• Permissions control system actions</p>
-            <p>• Permissions are enforced across the application</p>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="text-lg font-semibold mb-4">
+                Supplier Balances
+              </h3>
+              {dashboardData?.supplier_stats?.top_suppliers?.map(
+                (supplier: any, index: number) => (
+                  <div
+                    key={index}
+                    className="flex justify-between items-center py-2 border-b last:border-0"
+                  >
+                    <span className="text-sm truncate">
+                      {supplier.supplier}
+                    </span>
+                    <span className="text-sm font-medium">
+                      ${supplier.balance?.toFixed(2)}
+                    </span>
+                  </div>
+                )
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );
