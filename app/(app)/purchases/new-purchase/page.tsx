@@ -589,7 +589,7 @@ export default function NewPurchasePage() {
 
                       <div className="space-y-2">
                         <Label htmlFor={`price_${index}`}>
-                          Price per Tire ($) *
+                          Price per Tire (KSH) *
                           <span className="text-xs text-muted-foreground ml-1">(Unit price)</span>
                         </Label>
                         <Input

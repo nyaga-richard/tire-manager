@@ -167,7 +167,7 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "KSH",
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     }).format(amount);

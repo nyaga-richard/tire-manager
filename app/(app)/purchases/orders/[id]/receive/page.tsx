@@ -125,7 +125,8 @@ interface PurchaseOrder {
 interface ReceivingItem {
   po_item_id: number;
   size: string;
-  brand: string;
+  brand: string; // This will store the brand entered by user
+  original_brand: string; // This stores the original brand from PO
   model: string;
   type: string;
   ordered_quantity: number;
@@ -148,6 +149,7 @@ interface GRNDocument {
     po_item_id: number;
     quantity_received: number;
     serial_numbers: string[];
+    brand: string;
   }>;
   tires: Array<{
     id: number;
@@ -163,7 +165,6 @@ export default function ReceiveGoodsPage() {
 
   const [grnDetailsOpen, setGrnDetailsOpen] = useState(false);
   const [selectedGrnId, setSelectedGrnId] = useState<number | null>(null);
-
 
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(true);
@@ -200,7 +201,8 @@ export default function ReceiveGoodsPage() {
           const items = orderData.items.map((item: PurchaseOrderItem) => ({
             po_item_id: item.id,
             size: item.size,
-            brand: item.brand,
+            brand: item.brand || "", // Start with original brand, user can change it
+            original_brand: item.brand || "", // Store original for reference
             model: item.model,
             type: item.type,
             ordered_quantity: item.quantity,
@@ -208,7 +210,7 @@ export default function ReceiveGoodsPage() {
             remaining_quantity: item.remaining_quantity || item.quantity - (item.received_quantity || 0),
             current_receive: Math.max(0, item.quantity - (item.received_quantity || 0)),
             unit_price: item.unit_price,
-            serial_numbers: Array(item.quantity - (item.received_quantity || 0)).fill(""),
+            serial_numbers: Array(Math.max(0, item.quantity - (item.received_quantity || 0))).fill(""),
             batch_number: `BATCH-${orderData.po_number}-${item.id}`,
             location: "WAREHOUSE-A",
             condition: "GOOD" as const,
@@ -243,7 +245,7 @@ export default function ReceiveGoodsPage() {
           let newSerials = [...currentSerials];
           
           if (newQuantity > currentSerials.length) {
-            // Add empty serial numbers
+            // Add empty serial numbers as strings
             const additional = Array(newQuantity - currentSerials.length).fill("");
             newSerials = [...currentSerials, ...additional];
           } else if (newQuantity < currentSerials.length) {
@@ -266,9 +268,20 @@ export default function ReceiveGoodsPage() {
     setReceivingItems(prev =>
       prev.map(item => {
         if (item.po_item_id === poItemId) {
-          const newSerials = [...item.serial_numbers];
+          const newSerials = [...(item.serial_numbers || [])];
           newSerials[index] = value.toUpperCase();
           return { ...item, serial_numbers: newSerials };
+        }
+        return item;
+      })
+    );
+  };
+
+  const updateReceivingBrand = (poItemId: number, brand: string) => {
+    setReceivingItems(prev =>
+      prev.map(item => {
+        if (item.po_item_id === poItemId) {
+          return { ...item, brand };
         }
         return item;
       })
@@ -279,7 +292,7 @@ export default function ReceiveGoodsPage() {
     setReceivingItems(prev =>
       prev.map(item => {
         if (item.po_item_id === poItemId) {
-          const batchPrefix = `${item.brand?.slice(0, 3) || 'TIR'}-${item.size.replace('/', '-')}-${Date.now().toString().slice(-6)}`;
+          const batchPrefix = `${(item.brand || item.original_brand || 'TIR').slice(0, 3)}-${item.size.replace('/', '-')}-${Date.now().toString().slice(-6)}`;
           const newSerials = Array(item.current_receive)
             .fill("")
             .map((_, idx) => `${batchPrefix}-${(idx + 1).toString().padStart(3, '0')}`);
@@ -395,10 +408,16 @@ export default function ReceiveGoodsPage() {
       return false;
     }
 
-    // Validate serial numbers if entered
+    // Validate serial numbers and brand if items are being received
     for (const item of receivingItems) {
       if (item.current_receive > 0) {
-        const enteredSerials = item.serial_numbers.filter(sn => sn.trim() !== "");
+        // Check if brand is entered
+        if (!item.brand || item.brand.trim() === "") {
+          toast.error(`Please enter brand for ${item.size} tires`);
+          return false;
+        }
+        
+        const enteredSerials = (item.serial_numbers || []).filter(sn => sn.trim() !== "");
         if (enteredSerials.length !== item.current_receive) {
           toast.error(`Please enter all ${item.current_receive} serial numbers for ${item.size} ${item.brand}`);
           return false;
@@ -429,9 +448,12 @@ export default function ReceiveGoodsPage() {
           quantity_received: item.current_receive,
           unit_cost: item.unit_price,
           batch_number: item.batch_number,
-          serial_numbers: item.serial_numbers.filter(sn => sn.trim() !== ""),
+          brand: item.brand.trim(), // Make sure to use the brand from receiving form
+          serial_numbers: (item.serial_numbers || []).filter(sn => sn.trim() !== ""),
           notes: item.notes,
         }));
+
+      console.log("Sending items to receive:", itemsToReceive); // Debug log
 
       const grnData = {
         po_id: parseInt(orderId),
@@ -445,6 +467,8 @@ export default function ReceiveGoodsPage() {
         items: itemsToReceive,
       };
 
+      console.log("Sending GRN data:", grnData); // Debug log
+
       const response = await fetch('http://localhost:5000/api/grn', {
         method: 'POST',
         headers: {
@@ -454,6 +478,7 @@ export default function ReceiveGoodsPage() {
       });
 
       const result = await response.json();
+      console.log("GRN creation response:", result); // Debug log
 
       if (result.success) {
         toast.success("Goods Received Note created successfully!");
@@ -483,7 +508,7 @@ export default function ReceiveGoodsPage() {
     
     setReceivingItems(updatedItems);
     
-    toast.info("All remaining quantities filled. Please enter serial numbers.");
+    toast.info("All remaining quantities filled. Please enter serial numbers and brands.");
   };
 
   const copySerialNumbersToClipboard = (serialNumbers: string[]) => {
@@ -498,7 +523,6 @@ export default function ReceiveGoodsPage() {
       setGrnDetailsOpen(true);
     }
   };
-
 
   if (loading) {
     return (
@@ -756,7 +780,7 @@ export default function ReceiveGoodsPage() {
                 <div className="text-sm font-medium">Serial Numbers</div>
                 <div className="text-sm text-muted-foreground">
                   {receivingItems.reduce((sum, item) => 
-                    sum + item.serial_numbers.filter(sn => sn.trim() !== "").length, 0
+                    sum + (item.serial_numbers || []).filter(sn => sn.trim() !== "").length, 0
                   )} / {currentlyReceiving} entered
                 </div>
               </div>
@@ -801,7 +825,7 @@ export default function ReceiveGoodsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[200px]">Tire Details</TableHead>
+                          <TableHead className="w-[250px]">Tire Details</TableHead>
                           <TableHead className="text-center">Ordered</TableHead>
                           <TableHead className="text-center">Previously Received</TableHead>
                           <TableHead className="text-center">Remaining</TableHead>
@@ -813,7 +837,6 @@ export default function ReceiveGoodsPage() {
                       <TableBody>
                         {receivingItems.map((item) => {
                           const itemTotal = item.current_receive * item.unit_price;
-                          const hasSerials = item.serial_numbers.some(sn => sn.trim() !== "");
                           
                           return (
                             <TableRow key={item.po_item_id}>
@@ -821,18 +844,36 @@ export default function ReceiveGoodsPage() {
                                 <div>
                                   <div className="font-medium">{item.size}</div>
                                   <div className="text-sm text-muted-foreground">
-                                    {item.brand} • {item.model} • {item.type}
+                                    {item.model} • {item.type}
                                   </div>
                                   <div className="text-xs text-muted-foreground">
                                     Unit: {formatCurrency(item.unit_price)}
                                   </div>
-                                  <div className="mt-1">
-                                    <Input
-                                      value={item.batch_number}
-                                      onChange={(e) => updateReceivingField(item.po_item_id, 'batch_number', e.target.value)}
-                                      placeholder="Batch number"
-                                      className="w-full text-xs"
-                                    />
+                                  <div className="mt-2 space-y-2">
+                                    <div>
+                                      <Label className="text-xs">Batch number</Label>
+                                      <Input
+                                        value={item.batch_number}
+                                        onChange={(e) => updateReceivingField(item.po_item_id, 'batch_number', e.target.value)}
+                                        placeholder="Batch number"
+                                        className="w-full text-xs"
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">Brand *</Label>
+                                      <Input
+                                        value={item.brand}
+                                        onChange={(e) => updateReceivingBrand(item.po_item_id, e.target.value)}
+                                        placeholder="Enter brand for received tires"
+                                        className="w-full text-xs"
+                                        required={item.current_receive > 0}
+                                      />
+                                      {item.original_brand && item.original_brand !== item.brand && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          Original PO brand: {item.original_brand}
+                                        </p>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
                               </TableCell>
@@ -959,7 +1000,7 @@ export default function ReceiveGoodsPage() {
                                 <div key={index} className="space-y-1">
                                   <Label className="text-xs">Tire {index + 1}</Label>
                                   <Input
-                                    value={item.serial_numbers[index] || ""}
+                                    value={(item.serial_numbers?.[index] || "")}
                                     onChange={(e) => updateSerialNumber(item.po_item_id, index, e.target.value)}
                                     placeholder={`SN-${item.size}-${index + 1}`}
                                     className="text-sm"
@@ -970,13 +1011,13 @@ export default function ReceiveGoodsPage() {
                             {item.current_receive > 0 && (
                               <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
                                 <span>
-                                  {item.serial_numbers.filter(sn => sn.trim() !== "").length} / {item.current_receive} entered
+                                  {(item.serial_numbers || []).filter(sn => sn.trim() !== "").length} / {item.current_receive} entered
                                 </span>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => copySerialNumbersToClipboard(item.serial_numbers.filter(sn => sn.trim() !== ""))}
-                                  disabled={item.serial_numbers.filter(sn => sn.trim() !== "").length === 0}
+                                  onClick={() => copySerialNumbersToClipboard((item.serial_numbers || []).filter(sn => sn.trim() !== ""))}
+                                  disabled={(item.serial_numbers || []).filter(sn => sn.trim() !== "").length === 0}
                                 >
                                   <Copy className="mr-1 h-3 w-3" />
                                   Copy
@@ -1039,7 +1080,8 @@ export default function ReceiveGoodsPage() {
                           ...item,
                           current_receive: 0,
                           serial_numbers: Array(item.remaining_quantity).fill(""),
-                          condition: "GOOD",
+                          condition: "GOOD" as const,
+                          brand: item.original_brand || "", // Reset to original brand
                           batch_number: `BATCH-${order?.po_number}-${item.po_item_id}`,
                           notes: ""
                         }))
@@ -1096,7 +1138,7 @@ export default function ReceiveGoodsPage() {
       )}
 
       {receivingItems.some(item => item.current_receive > 0 && 
-        item.serial_numbers.filter(sn => sn.trim() !== "").length !== item.current_receive) && (
+        (item.serial_numbers || []).filter(sn => sn.trim() !== "").length !== item.current_receive) && (
         <Card className="border-orange-200 bg-orange-50">
           <CardContent className="pt-6">
             <div className="flex items-center gap-3">
@@ -1127,19 +1169,18 @@ export default function ReceiveGoodsPage() {
           </DialogHeader>
 
           {selectedGrnId && (
-          <GRNDetails
-            grnId={selectedGrnId}
-            open={grnDetailsOpen}
-            onOpenChange={(open: boolean | ((prevState: boolean) => boolean)) => {
-              setGrnDetailsOpen(open);
-              if (!open) {
-                setSelectedGrnId(null);
-              }
-            }}
-          />
-        )}
+            <GRNDetails
+              grnId={selectedGrnId}
+              open={grnDetailsOpen}
+              onOpenChange={(open: boolean | ((prevState: boolean) => boolean)) => {
+                setGrnDetailsOpen(open);
+                if (!open) {
+                  setSelectedGrnId(null);
+                }
+              }}
+            />
+          )}
 
-                  
           {generatedGRN && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
@@ -1162,6 +1203,7 @@ export default function ReceiveGoodsPage() {
                         <TableHead>Item</TableHead>
                         <TableHead className="text-center">Quantity</TableHead>
                         <TableHead>Serial Numbers</TableHead>
+                        <TableHead>Brand</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1170,7 +1212,7 @@ export default function ReceiveGoodsPage() {
                         return (
                           <TableRow key={item.grnItemId}>
                             <TableCell>
-                              {poItem?.size} • {poItem?.brand}
+                              {poItem?.size} • {item.brand}
                             </TableCell>
                             <TableCell className="text-center">
                               {item.quantity_received}
@@ -1183,6 +1225,9 @@ export default function ReceiveGoodsPage() {
                                   </div>
                                 ))}
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="text-sm font-medium">{item.brand}</div>
                             </TableCell>
                           </TableRow>
                         );
@@ -1219,8 +1264,5 @@ export default function ReceiveGoodsPage() {
         </DialogContent>
       </Dialog>
     </div>
-    
   );
-
-  
 }

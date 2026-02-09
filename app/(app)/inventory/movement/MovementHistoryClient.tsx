@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Card,
@@ -51,6 +51,7 @@ import {
   Receipt,
   Hash,
   Building2,
+  Printer,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -152,6 +153,7 @@ export default function MovementHistoryClient() {
   const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage] = useState(50);
   const [totalEntries, setTotalEntries] = useState(0);
+  const printRef = useRef<HTMLDivElement>(null);
 
   const tireId = searchParams.get("tire");
   const size = searchParams.get("size");
@@ -307,7 +309,7 @@ export default function MovementHistoryClient() {
       case "VEHICLE_TO_STORE":
         type = "Return from Vehicle";
         documentNo = movement.document_number || `RET-${movement.id}`;
-        reference = `${movement.vehicle_number || 'Vehicle'}${movement.notes ? ` - ${movement.notes}` : ''}`;
+        reference = `${movement.notes ? `  ${movement.notes}` : ''}`;
         break;
       
       case "STORE_TO_RETREAD_SUPPLIER":
@@ -459,10 +461,260 @@ export default function MovementHistoryClient() {
     window.URL.revokeObjectURL(url);
   };
 
+  const handlePrint = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const printDate = new Date().toLocaleString();
+    
+    const printContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Tire Stock Ledger Report</title>
+        <style>
+          @media print {
+            @page {
+              size: landscape;
+              margin: 0.5in;
+            }
+            body {
+              font-family: Arial, sans-serif;
+              font-size: 12px;
+              line-height: 1.4;
+            }
+            .print-header {
+              text-align: center;
+              margin-bottom: 20px;
+              border-bottom: 2px solid #000;
+              padding-bottom: 10px;
+            }
+            .print-title {
+              font-size: 24px;
+              font-weight: bold;
+              margin-bottom: 5px;
+            }
+            .print-subtitle {
+              font-size: 14px;
+              color: #666;
+              margin-bottom: 10px;
+            }
+            .print-meta {
+              display: flex;
+              justify-content: space-between;
+              font-size: 11px;
+              margin-bottom: 20px;
+            }
+            .print-table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 11px;
+            }
+            .print-table th {
+              background-color: #f3f4f6;
+              border: 1px solid #d1d5db;
+              padding: 8px;
+              text-align: left;
+              font-weight: bold;
+            }
+            .print-table td {
+              border: 1px solid #d1d5db;
+              padding: 6px;
+              vertical-align: top;
+            }
+            .print-table tr:nth-child(even) {
+              background-color: #f9fafb;
+            }
+            .print-footer {
+              margin-top: 30px;
+              padding-top: 10px;
+              border-top: 1px solid #d1d5db;
+              font-size: 10px;
+              color: #666;
+              text-align: center;
+            }
+            .badge {
+              display: inline-block;
+              padding: 2px 6px;
+              border-radius: 4px;
+              font-size: 10px;
+              font-weight: 500;
+            }
+            .badge-in {
+              background-color: #d1fae5;
+              color: #065f46;
+              border: 1px solid #a7f3d0;
+            }
+            .badge-out {
+              background-color: #fee2e2;
+              color: #991b1b;
+              border: 1px solid #fecaca;
+            }
+            .no-print {
+              display: none;
+            }
+            .text-right {
+              text-align: right;
+            }
+            .text-center {
+              text-align: center;
+            }
+            .font-mono {
+              font-family: 'Courier New', monospace;
+            }
+            .summary-box {
+              margin-bottom: 20px;
+              padding: 10px;
+              border: 1px solid #d1d5db;
+              border-radius: 4px;
+            }
+            .summary-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 10px;
+              margin-bottom: 20px;
+            }
+            .summary-item {
+              padding: 10px;
+              border: 1px solid #d1d5db;
+              border-radius: 4px;
+              text-align: center;
+            }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="print-header">
+          <div class="print-title">Tire Stock Ledger Report</div>
+          <div class="print-subtitle">Complete Stock Movement History</div>
+          <div class="print-meta">
+            <div>
+              <strong>Date Range:</strong> 
+              ${startDate ? startDate.toLocaleDateString() : 'All Dates'} 
+              to 
+              ${endDate ? endDate.toLocaleDateString() : 'Current Date'}
+            </div>
+            <div>
+              <strong>Generated:</strong> ${printDate}
+            </div>
+          </div>
+          ${tireId ? `<div><strong>Filter:</strong> Tire ID: ${tireId}</div>` : ''}
+          ${size ? `<div><strong>Filter:</strong> Size: ${size}</div>` : ''}
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-item">
+            <div style="font-size: 18px; font-weight: bold;">${formatNumber(totalEntries)}</div>
+            <div style="font-size: 11px; color: #666;">Total Transactions</div>
+          </div>
+          <div class="summary-item">
+            <div style="font-size: 18px; font-weight: bold; color: #059669;">
+              ${formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
+            </div>
+            <div style="font-size: 11px; color: #666;">Total Quantity In</div>
+          </div>
+          <div class="summary-item">
+            <div style="font-size: 18px; font-weight: bold; color: #dc2626;">
+              ${formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
+            </div>
+            <div style="font-size: 11px; color: #666;">Total Quantity Out</div>
+          </div>
+          <div class="summary-item">
+            <div style="font-size: 18px; font-weight: bold; color: #2563eb;">
+              ${filteredLedger.length > 0 ? formatNumber(filteredLedger[filteredLedger.length - 1].closing_stock) : '0'}
+            </div>
+            <div style="font-size: 11px; color: #666;">Current Stock</div>
+          </div>
+        </div>
+
+        <table class="print-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>User Name</th>
+              <th>Location</th>
+              <th class="text-right">Opening Stock</th>
+              <th class="text-right">Qty In</th>
+              <th class="text-right">Qty Out</th>
+              <th class="text-right">Closing Stock</th>
+              <th class="text-right">Price</th>
+              <th>Reference</th>
+              <th>Document No</th>
+              <th>Type</th>
+              <th>Serial Number</th>
+              <th>Size</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredLedger.map(entry => `
+              <tr>
+                <td>${formatDate(entry.date)}</td>
+                <td>${entry.user_name}</td>
+                <td>${entry.location}</td>
+                <td class="text-right font-mono">${formatNumber(entry.opening_stock)}</td>
+                <td class="text-right">
+                  ${entry.quantity_in > 0 ? `<span class="badge badge-in">+${formatNumber(entry.quantity_in)}</span>` : '0'}
+                </td>
+                <td class="text-right">
+                  ${entry.quantity_out > 0 ? `<span class="badge badge-out">-${formatNumber(entry.quantity_out)}</span>` : '0'}
+                </td>
+                <td class="text-right font-mono">${formatNumber(entry.closing_stock)}</td>
+                <td class="text-right font-mono">${entry.price ? formatCurrency(entry.price) : '-'}</td>
+                <td>${entry.reference}</td>
+                <td class="font-mono">${entry.document_no}</td>
+                <td>${entry.type}</td>
+                <td class="font-mono">${entry.movement.serial_number}</td>
+                <td>${entry.movement.size}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+
+        <div class="print-footer">
+          <div>Page 1 of 1 • Total Records: ${filteredLedger.length}</div>
+          <div>Generated by Tire Management System</div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    printWindow.document.write(printContent);
+    printWindow.document.close();
+    printWindow.focus();
+    
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 250);
+  };
+
   return (
     <div className="space-y-6">
+      {/* Print Styles */}
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .printable-area,
+          .printable-area * {
+            visibility: visible;
+          }
+          .printable-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 20px;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between no-print">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/inventory">
@@ -483,6 +735,10 @@ export default function MovementHistoryClient() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={handlePrint}>
+            <Printer className="mr-2 h-4 w-4" />
+            Print
+          </Button>
           <Button variant="outline" onClick={refreshData} disabled={loading}>
             <RefreshCw
               className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -497,7 +753,7 @@ export default function MovementHistoryClient() {
       </div>
 
       {/* Date Range Selector */}
-      <Card>
+      <Card className="no-print">
         <CardContent className="pt-6">
           <div className="flex flex-col md:flex-row md:items-end gap-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
@@ -527,7 +783,7 @@ export default function MovementHistoryClient() {
       </Card>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between no-print">
           <TabsList>
             <TabsTrigger value="ledger">Stock Ledger</TabsTrigger>
             <TabsTrigger value="summary">Summary View</TabsTrigger>
@@ -547,8 +803,8 @@ export default function MovementHistoryClient() {
 
         {/* Stock Ledger Tab */}
         <TabsContent value="ledger" className="space-y-4">
-          <Card>
-            <CardHeader>
+          <Card ref={printRef}>
+            <CardHeader className="no-print">
               <div className="flex items-center justify-between">
                 <div>
                   <CardTitle>Stock Movement Ledger</CardTitle>
@@ -598,7 +854,7 @@ export default function MovementHistoryClient() {
                           <TableHead className="w-[200px]">Reference</TableHead>
                           <TableHead className="w-[120px]">Document No</TableHead>
                           <TableHead className="w-[140px]">Type</TableHead>
-                          <TableHead className="w-[80px] text-right">Actions</TableHead>
+                          <TableHead className="w-[80px] text-right no-print">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -670,7 +926,7 @@ export default function MovementHistoryClient() {
                                 {entry.type}
                               </Badge>
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-right no-print">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <Button variant="ghost" className="h-8 w-8 p-0">
@@ -720,7 +976,7 @@ export default function MovementHistoryClient() {
               )}
             </CardContent>
             {filteredLedger.length > 0 && (
-              <CardFooter className="border-t px-6 py-4">
+              <CardFooter className="border-t px-6 py-4 no-print">
                 <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-4">
                   <div className="text-sm text-muted-foreground">
                     Showing {filteredLedger.length} of {totalEntries} entries
