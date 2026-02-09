@@ -847,8 +847,6 @@ export default function InventoryPage() {
             </CardContent>
           </Card>
         </TabsContent>
-
-        {/* Removed Goods Received Tab */}
       </Tabs>
     </div>
   );

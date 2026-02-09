@@ -219,7 +219,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
           description: `Invoice for GRN ${grn.grn_number}`,
           transaction_type: "PURCHASE_INVOICE",  // Add this line
           total_amount: formData.total_amount,
-          currency: "USD",
+          currency: "KSH",
           notes: formData.notes,
           status: "POSTED",
           supplier_id: grn.supplier_code,

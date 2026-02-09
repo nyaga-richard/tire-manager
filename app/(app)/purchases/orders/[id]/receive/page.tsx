@@ -359,7 +359,7 @@ export default function ReceiveGoodsPage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "KSH",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);

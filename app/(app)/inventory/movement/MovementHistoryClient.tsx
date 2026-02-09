@@ -400,7 +400,7 @@ export default function MovementHistoryClient() {
     if (!amount) return "";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: "KSH",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
