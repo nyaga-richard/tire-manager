@@ -491,7 +491,7 @@ export default function SupplierLedgerPage() {
               ${supplier?.contact_person ? `<p><strong>Contact:</strong> ${supplier.contact_person}</p>` : ""}
               <p><strong>Current Balance:</strong> 
                 <span class="${supplier?.balance && supplier.balance > 0 ? 'positive' : 'negative'}">
-                  ${supplier?.balance && supplier.balance > 0 ? '+' : ''}$${Math.abs(supplier?.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                  ${supplier?.balance && supplier.balance > 0 ? '+' : ''}KSH ${Math.abs(supplier?.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                 </span>
               </p>
               <p><strong>Showing:</strong> ${filteredLedger.length} transactions (Page ${currentPage} of ${totalPages})</p>
@@ -526,13 +526,13 @@ export default function SupplierLedgerPage() {
                       <td>${getTransactionTypeLabel(entry.transaction_type)}</td>
                       <td>${entry.reference_number || "N/A"}</td>
                       <td style="text-align: right;" class="debit">
-                        ${debitAmount > 0 ? `$${debitAmount.toFixed(2)}` : ""}
+                        ${debitAmount > 0 ? `KSH ${debitAmount.toFixed(2)}` : ""}
                       </td>
                       <td style="text-align: right;" class="credit">
-                        ${creditAmount > 0 ? `$${creditAmount.toFixed(2)}` : ""}
+                        ${creditAmount > 0 ? `KSH ${creditAmount.toFixed(2)}` : ""}
                       </td>
                       <td style="text-align: right;" class="${entry.running_balance > 0 ? 'positive' : 'negative'}">
-                        $${Math.abs(entry.running_balance).toFixed(2)}
+                        KSH ${Math.abs(entry.running_balance).toFixed(2)}
                       </td>
                     </tr>
                   `;

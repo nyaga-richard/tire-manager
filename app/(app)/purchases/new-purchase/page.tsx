@@ -203,7 +203,7 @@ export default function NewPurchasePage() {
 
   const calculateTax = () => {
     const subtotal = calculateTotal();
-    return subtotal * 0.10; // Assuming 10% tax
+    return subtotal * 0.16; // Assuming 10% tax
   };
 
   const calculateFinalAmount = () => {
@@ -469,7 +469,7 @@ export default function NewPurchasePage() {
                 <div className="space-y-2">
                   <div className="space-y-1">
                     <Label htmlFor="shipping_amount" className="text-sm">
-                      Shipping Amount ($)
+                      Shipping Amount (KSH)
                     </Label>
                     <Input
                       id="shipping_amount"
@@ -482,7 +482,7 @@ export default function NewPurchasePage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Tax will be calculated automatically at 10%
+                    Tax will be calculated automatically at 16%
                   </p>
                 </div>
               </div>
@@ -605,7 +605,7 @@ export default function NewPurchasePage() {
                         <div className="flex items-center justify-between text-xs">
                           <span className="text-muted-foreground">Unit price</span>
                           <span className="font-medium">
-                            Total: ${calculateItemTotal(item).toLocaleString(undefined, { 
+                            Total: KSH {calculateItemTotal(item).toLocaleString(undefined, { 
                               minimumFractionDigits: 2, 
                               maximumFractionDigits: 2 
                             })}
@@ -647,21 +647,21 @@ export default function NewPurchasePage() {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Subtotal:</span>
-                    <span>${totalAmount.toLocaleString(undefined, { 
+                    <span>KSH {totalAmount.toLocaleString(undefined, { 
                       minimumFractionDigits: 2, 
                       maximumFractionDigits: 2 
                     })}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Tax (10%):</span>
-                    <span>${taxAmount.toLocaleString(undefined, { 
+                    <span className="text-sm text-muted-foreground">Tax (16%):</span>
+                    <span>KSH {taxAmount.toLocaleString(undefined, { 
                       minimumFractionDigits: 2, 
                       maximumFractionDigits: 2 
                     })}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Shipping:</span>
-                    <span>${shippingAmount.toLocaleString(undefined, { 
+                    <span>KSH {shippingAmount.toLocaleString(undefined, { 
                       minimumFractionDigits: 2, 
                       maximumFractionDigits: 2 
                     })}</span>
@@ -670,7 +670,7 @@ export default function NewPurchasePage() {
                     <div className="flex justify-between items-center">
                       <span className="font-semibold">Total Amount:</span>
                       <span className="text-2xl font-bold">
-                        ${finalAmount.toLocaleString(undefined, { 
+                        KSH {finalAmount.toLocaleString(undefined, { 
                           minimumFractionDigits: 2, 
                           maximumFractionDigits: 2 
                         })}
