@@ -49,7 +49,7 @@ export default function KPIOverview({ kpis }: KPIOverviewProps) {
     },
     {
       title: 'Annual Retread Savings',
-      value: kpis?.annual_retread_savings ? `$${kpis.annual_retread_savings.toLocaleString()}` : '$0',
+      value: kpis?.annual_retread_savings ? `KSH ${kpis.annual_retread_savings.toLocaleString()}` : 'KSH 0',
       icon: DollarSign,
       color: 'bg-amber-500',
       description: 'Estimated savings from retreading',

@@ -121,18 +121,11 @@ export default function DashboardPage() {
           <KPIOverview kpis={kpiData} />
         </div>
 
+        {/* Right sidebar - Alerts and Supplier Balances */}
         <div className="space-y-6">
           <AlertsSection alerts={alertsData?.alerts || []} />
-          <QuickActions />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
-          <RecentActivity activities={activityData?.activities || []} />
-        </div>
-
-        <div className="space-y-6">
+          
+          {/* Supplier Balances Card */}
           <Card>
             <CardContent className="pt-6">
               <h3 className="text-lg font-semibold mb-4">
@@ -148,7 +141,7 @@ export default function DashboardPage() {
                       {supplier.supplier}
                     </span>
                     <span className="text-sm font-medium">
-                      ${supplier.balance?.toFixed(2)}
+                      KSH {supplier.balance?.toFixed(2)}
                     </span>
                   </div>
                 )
@@ -156,6 +149,11 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* This section now only contains the activity/other components */}
+        {/* Add other components here if needed */}
       </div>
     </div>
   );

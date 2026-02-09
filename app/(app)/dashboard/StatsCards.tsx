@@ -10,84 +10,157 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-interface StatsCardsProps {
-  summary?: {
-    total_tires: number;
-    total_vehicles: number;
-    total_suppliers: number;
-    total_purchases: number;
-    total_movements: number;
-    total_inventory_value: number;
-  };
+interface SummaryData {
+  total_tires: number;
+  total_vehicles: number;
+  total_suppliers: number;
+  total_purchases: number;
+  total_movements: number;
+  total_inventory_value: number;
 }
 
-const statCards = [
+interface StatsCardsProps {
+  summary?: SummaryData;
+  loading?: boolean;
+}
+
+interface StatCard {
+  title: string;
+  key: keyof SummaryData;
+  icon: React.ElementType;
+  color: string;
+  bgColor: string;
+  trend: string;
+  trendColor?: string;
+  formatter?: (value: number) => string;
+}
+
+const statCards: StatCard[] = [
   {
     title: 'Total Tires',
-    value: (summary: any) => summary?.total_tires || 0,
+    key: 'total_tires',
     icon: Package,
-    color: 'bg-blue-500',
+    color: 'text-blue-600',
+    bgColor: 'bg-blue-50 dark:bg-blue-900/20',
     trend: '+12%',
+    trendColor: 'text-green-600 dark:text-green-400',
   },
   {
     title: 'Active Vehicles',
-    value: (summary: any) => summary?.total_vehicles || 0,
+    key: 'total_vehicles',
     icon: Truck,
-    color: 'bg-green-500',
+    color: 'text-green-600',
+    bgColor: 'bg-green-50 dark:bg-green-900/20',
     trend: '+5%',
+    trendColor: 'text-green-600 dark:text-green-400',
   },
   {
     title: 'Suppliers',
-    value: (summary: any) => summary?.total_suppliers || 0,
+    key: 'total_suppliers',
     icon: Users,
-    color: 'bg-purple-500',
+    color: 'text-purple-600',
+    bgColor: 'bg-purple-50 dark:bg-purple-900/20',
     trend: '+8%',
+    trendColor: 'text-green-600 dark:text-green-400',
   },
   {
     title: 'Inventory Value',
-    value: (summary: any) => `$${(summary?.total_inventory_value || 0).toLocaleString()}`,
+    key: 'total_inventory_value',
     icon: DollarSign,
-    color: 'bg-amber-500',
+    color: 'text-amber-600',
+    bgColor: 'bg-amber-50 dark:bg-amber-900/20',
     trend: '+15%',
+    trendColor: 'text-green-600 dark:text-green-400',
+    formatter: (value: number) => `KSH ${value.toLocaleString()}`,
   },
   {
     title: 'Monthly Movements',
-    value: (summary: any) => summary?.total_movements || 0,
+    key: 'total_movements',
     icon: TrendingUp,
-    color: 'bg-red-500',
+    color: 'text-red-600',
+    bgColor: 'bg-red-50 dark:bg-red-900/20',
     trend: '+20%',
+    trendColor: 'text-green-600 dark:text-green-400',
   },
   {
     title: 'Total Purchases',
-    value: (summary: any) => summary?.total_purchases || 0,
+    key: 'total_purchases',
     icon: ShoppingCart,
-    color: 'bg-indigo-500',
+    color: 'text-indigo-600',
+    bgColor: 'bg-indigo-50 dark:bg-indigo-900/20',
     trend: '+18%',
+    trendColor: 'text-green-600 dark:text-green-400',
   },
 ];
 
-export default function StatsCards({ summary }: StatsCardsProps) {
+// Skeleton loader component
+const StatCardSkeleton = () => (
+  <Card className="overflow-hidden animate-pulse">
+    <CardContent className="p-6">
+      <div className="flex flex-col justify-between h-full">
+        <div className="flex items-center justify-between mb-4">
+          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-24"></div>
+          <div className="h-10 w-10 rounded-lg bg-gray-200 dark:bg-gray-700"></div>
+        </div>
+        <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-16 mb-2"></div>
+        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-20"></div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
+export default function StatsCards({ summary, loading = false }: StatsCardsProps) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <StatCardSkeleton key={index} />
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-      {statCards.map((stat, index) => {
+      {statCards.map((stat) => {
         const Icon = stat.icon;
+        const rawValue = summary?.[stat.key] || 0;
+        const displayValue = stat.formatter 
+          ? stat.formatter(rawValue as number)
+          : rawValue.toLocaleString();
+
         return (
-          <Card key={index} className="overflow-hidden">
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground">
+          <Card 
+            key={stat.key}
+            className="overflow-hidden hover:shadow-lg transition-shadow duration-200 border-border/50"
+          >
+            <CardContent className="p-5 h-full">
+              <div className="flex flex-col justify-between h-full">
+                {/* Top section - Title and Icon */}
+                <div className="flex items-start justify-between mb-4">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                     {stat.title}
                   </p>
-                  <p className="text-2xl font-bold mt-2">
-                    {typeof stat.value === 'function' ? stat.value(summary) : stat.value}
-                  </p>
-                  <p className="text-xs text-green-600 mt-1">
-                    {stat.trend} from last month
+                  <div className={cn("p-2 rounded-lg", stat.bgColor)}>
+                    <Icon className={cn("h-4 w-4", stat.color)} />
+                  </div>
+                </div>
+
+                {/* Middle section - Value */}
+                <div className="mb-4">
+                  <p className="text-2xl font-bold text-foreground">
+                    {displayValue}
                   </p>
                 </div>
-                <div className={cn("p-3 rounded-lg", stat.color)}>
-                  <Icon className="h-6 w-6 text-white" />
+
+                {/* Bottom section - Trend */}
+                <div className="flex items-center gap-1">
+                  <span className={cn("text-xs font-medium", stat.trendColor)}>
+                    {stat.trend}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    from last month
+                  </span>
                 </div>
               </div>
             </CardContent>
