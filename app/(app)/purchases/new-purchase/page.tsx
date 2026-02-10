@@ -45,8 +45,13 @@ interface PurchaseOrderItem {
   id: number;
   size: string;
   quantity: number;
-  price: number;
+  vatInclusivePrice: number; // User inputs VAT-inclusive price
+  lineTotalIncludingVAT: number; // Calculated line total including VAT
+  priceExcludingVAT: number; // Calculated for backend if needed
+  lineTotalExcludingVAT: number; // Calculated for backend if needed
 }
+
+const VAT_RATE = 0.16; // 16% VAT
 
 export default function NewPurchasePage() {
   const router = useRouter();
@@ -64,15 +69,18 @@ export default function NewPurchasePage() {
     terms: "",
     shipping_address: "",
     billing_address: "",
-    tax_amount: 0,
+    tax_amount: 0, // Total VAT amount for the order
     shipping_amount: 0,
-    created_by: 1, // Default user ID - in real app, get from auth context
+    created_by: 1,
     items: [
       {
         id: 1,
         size: "",
         quantity: 1,
-        price: 0,
+        vatInclusivePrice: 0,
+        lineTotalIncludingVAT: 0,
+        priceExcludingVAT: 0,
+        lineTotalExcludingVAT: 0,
       },
     ],
   });
@@ -111,10 +119,9 @@ export default function NewPurchasePage() {
     }
   };
 
-    const fetchTireSizes = async () => {
+  const fetchTireSizes = async () => {
     try {
       setSizesLoading(true);
-
       const response = await fetch("http://localhost:5000/api/tires/meta/sizes");
 
       if (!response.ok) {
@@ -123,23 +130,19 @@ export default function NewPurchasePage() {
 
       const result = await response.json();
 
-      // Backend returns: { success: true, data: string[] }
       if (!result?.success || !Array.isArray(result.data)) {
         throw new Error("Invalid tire sizes response");
       }
 
-      // Normalize to TireSize[]
       const normalizedSizes: TireSize[] = result.data.map((size: string) => ({
         size,
-        description: "" // optional – can enrich later
+        description: ""
       }));
 
       setSizes(normalizedSizes);
 
     } catch (error) {
       console.error("Error fetching tire sizes:", error);
-
-      // 🔁 Fallback sizes (offline / API down)
       const fallbackSizes: TireSize[] = [
         { size: "295/80R22.5", description: "Steer axle" },
         { size: "11R22.5", description: "Drive axle" },
@@ -147,18 +150,49 @@ export default function NewPurchasePage() {
         { size: "275/70R22.5", description: "Medium truck" },
         { size: "245/70R19.5", description: "Light truck" }
       ];
-
       setSizes(fallbackSizes);
-
     } finally {
       setSizesLoading(false);
     }
   };
 
+  // Calculate price excluding VAT from VAT-inclusive price
+  const calculatePriceExcludingVAT = (vatInclusivePrice: number): number => {
+    if (vatInclusivePrice <= 0) return 0;
+    return vatInclusivePrice / (1 + VAT_RATE);
+  };
+
+  // Calculate VAT amount from VAT-inclusive price
+  const calculateVATAmount = (vatInclusivePrice: number): number => {
+    if (vatInclusivePrice <= 0) return 0;
+    const exclusivePrice = vatInclusivePrice / (1 + VAT_RATE);
+    return vatInclusivePrice - exclusivePrice;
+  };
+
+  // Update item calculations when price changes
+  const updateItemCalculations = (item: PurchaseOrderItem): PurchaseOrderItem => {
+    const priceExcludingVAT = calculatePriceExcludingVAT(item.vatInclusivePrice);
+    const lineTotalIncludingVAT = item.vatInclusivePrice * item.quantity;
+    const lineTotalExcludingVAT = priceExcludingVAT * item.quantity;
+
+    return {
+      ...item,
+      priceExcludingVAT,
+      lineTotalIncludingVAT,
+      lineTotalExcludingVAT,
+    };
+  };
 
   const handleItemChange = (index: number, field: keyof PurchaseOrderItem, value: any) => {
     const newItems = [...formData.items];
-    newItems[index] = { ...newItems[index], [field]: value };
+    let updatedItem = { ...newItems[index], [field]: value };
+    
+    // If quantity or VAT-inclusive price changes, recalculate
+    if (field === 'quantity' || field === 'vatInclusivePrice') {
+      updatedItem = updateItemCalculations(updatedItem);
+    }
+    
+    newItems[index] = updatedItem;
     setFormData({ ...formData, items: newItems });
   };
 
@@ -167,17 +201,17 @@ export default function NewPurchasePage() {
       ? Math.max(...formData.items.map(item => item.id)) + 1 
       : 1;
     
-    const newItems = [
-      ...formData.items,
-      {
-        id: newId,
-        size: "",
-        quantity: 1,
-        price: 0,
-      },
-    ];
+    const newItem: PurchaseOrderItem = {
+      id: newId,
+      size: "",
+      quantity: 1,
+      vatInclusivePrice: 0,
+      lineTotalIncludingVAT: 0,
+      priceExcludingVAT: 0,
+      lineTotalExcludingVAT: 0,
+    };
     
-    setFormData({ ...formData, items: newItems });
+    setFormData({ ...formData, items: [...formData.items, newItem] });
   };
 
   const removeItem = (index: number) => {
@@ -191,26 +225,39 @@ export default function NewPurchasePage() {
     toast.success("Item removed from order");
   };
 
-  const calculateTotal = () => {
-    return formData.items.reduce((total, item) => {
-      return total + (item.quantity * item.price);
-    }, 0);
-  };
+  // Calculate order totals - MATCHING BACKEND LOGIC
+  const calculateOrderTotals = () => {
+    // Calculate subtotal including VAT (sum of all line totals)
+    const subtotalIncludingVAT = formData.items.reduce((total, item) => 
+      total + item.lineTotalIncludingVAT, 0);
+    
+    // Calculate VAT by working backwards from the inclusive total
+    // Formula: VAT = (subtotalIncludingVAT * VAT_RATE) / (1 + VAT_RATE)
+    const totalVAT = (subtotalIncludingVAT * VAT_RATE) / (1 + VAT_RATE);
+    
+    // Calculate subtotal excluding VAT - THIS IS WHAT BACKEND EXPECTS
+    // Backend calculates: total_amount = totalAmount * 0.84
+    // But actually should be: total_amount = subtotalIncludingVAT - totalVAT
+    const subtotalExcludingVAT = subtotalIncludingVAT - totalVAT;
+    
+    const shippingAmount = formData.shipping_amount || 0;
+    
+    // Grand total calculation - match backend logic
+    // Backend calculates: final_amount = (total_amount * 1.16) + shipping_amount
+    // But we want: final_amount = subtotalIncludingVAT + shippingAmount
+    const backendFinalAmount = (subtotalExcludingVAT * 1.16) + shippingAmount;
+    
+    // Our correct calculation
+    const correctFinalAmount = subtotalIncludingVAT + shippingAmount;
 
-  const calculateItemTotal = (item: PurchaseOrderItem) => {
-    return item.quantity * item.price;
-  };
-
-  const calculateTax = () => {
-    const subtotal = calculateTotal();
-    return subtotal * 0.16; // Assuming 10% tax
-  };
-
-  const calculateFinalAmount = () => {
-    const subtotal = calculateTotal();
-    const tax = calculateTax();
-    const shipping = formData.shipping_amount || 0;
-    return subtotal + tax + shipping;
+    return {
+      subtotalExcludingVAT,
+      totalVAT,
+      subtotalIncludingVAT,
+      shippingAmount,
+      backendFinalAmount, // What backend will calculate
+      correctFinalAmount // What it should be
+    };
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -230,7 +277,7 @@ export default function NewPurchasePage() {
     // Validate each item
     for (let i = 0; i < formData.items.length; i++) {
       const item = formData.items[i];
-      if (!item.size || item.quantity <= 0 || item.price < 0) {
+      if (!item.size || item.quantity <= 0 || item.vatInclusivePrice < 0) {
         toast.error(`Please fill all required fields for item #${i + 1}`);
         return;
       }
@@ -239,7 +286,9 @@ export default function NewPurchasePage() {
     setLoading(true);
 
     try {
-      // Prepare purchase order data according to API structure
+      const totals = calculateOrderTotals();
+      
+      // Prepare purchase order data - WORKING WITH CURRENT BACKEND LOGIC
       const orderData = {
         supplier_id: parseInt(formData.supplier_id),
         po_date: formData.po_date.toISOString().split("T")[0],
@@ -251,22 +300,31 @@ export default function NewPurchasePage() {
         terms: formData.terms || null,
         shipping_address: formData.shipping_address || null,
         billing_address: formData.billing_address || null,
-        tax_amount: calculateTax(),
+        // Don't send tax_amount - let backend calculate it from total_amount
+        // tax_amount: totals.totalVAT, // Remove this - backend will calculate
         shipping_amount: formData.shipping_amount,
         created_by: formData.created_by,
-        // The API will calculate these from items
-        total_amount: calculateTotal(),
-        final_amount: calculateFinalAmount(),
+        // Send total_amount as subtotal excluding VAT
+        total_amount: totals.subtotalExcludingVAT,
+        // Don't send final_amount - let backend calculate it
+        // final_amount: totals.correctFinalAmount, // Remove this - backend will calculate
         items: formData.items.map(item => ({
           tire_size: item.size,
           quantity: item.quantity,
-          unit_price: item.price,
-          line_total: calculateItemTotal(item),
-          received_quantity: 0 // Default to 0 when creating new PO
+          unit_price: item.vatInclusivePrice, // Store inclusive price in database
+          line_total: item.lineTotalIncludingVAT, // Store inclusive line total
+          received_quantity: 0
         }))
       };
 
-      console.log("Sending purchase order data:", orderData);
+      console.log("Sending purchase order data (WORKING WITH BACKEND):", orderData);
+      console.log("Calculation breakdown:");
+      console.log("- Subtotal including VAT:", totals.subtotalIncludingVAT);
+      console.log("- VAT (16%):", totals.totalVAT);
+      console.log("- Subtotal excluding VAT (total_amount sent):", totals.subtotalExcludingVAT);
+      console.log("- Shipping:", totals.shippingAmount);
+      console.log("- Expected final_amount from backend:", totals.backendFinalAmount);
+      console.log("- Correct final_amount should be:", totals.correctFinalAmount);
 
       const response = await fetch("http://localhost:5000/api/purchase-orders", {
         method: "POST",
@@ -280,6 +338,13 @@ export default function NewPurchasePage() {
 
       if (response.ok) {
         toast.success(`Purchase order created successfully`);
+        // Check if backend calculation is correct
+        if (result.data && result.data.final_amount !== totals.correctFinalAmount) {
+          console.warn("Backend calculation differs from expected:", {
+            expected: totals.correctFinalAmount,
+            actual: result.data.final_amount
+          });
+        }
         router.push("/purchases");
         router.refresh();
       } else {
@@ -294,10 +359,7 @@ export default function NewPurchasePage() {
     }
   };
 
-  const totalAmount = calculateTotal();
-  const taxAmount = calculateTax();
-  const shippingAmount = formData.shipping_amount || 0;
-  const finalAmount = calculateFinalAmount();
+  const totals = calculateOrderTotals();
   const totalQuantity = formData.items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
@@ -480,10 +542,10 @@ export default function NewPurchasePage() {
                       onChange={(e) => setFormData({ ...formData, shipping_amount: parseFloat(e.target.value) || 0 })}
                       placeholder="0.00"
                     />
+                    <p className="text-xs text-muted-foreground">
+                      Shipping is added to the grand total
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Tax will be calculated automatically at 16%
-                  </p>
                 </div>
               </div>
             </CardContent>
@@ -520,14 +582,6 @@ export default function NewPurchasePage() {
                         {index + 1}
                       </div>
                       <h3 className="font-medium">Item #{index + 1}</h3>
-                      {item.price > 0 && item.quantity > 0 && (
-                        <span className="ml-auto text-sm font-medium">
-                          Total: ${calculateItemTotal(item).toLocaleString(undefined, { 
-                            minimumFractionDigits: 2, 
-                            maximumFractionDigits: 2 
-                          })}
-                        </span>
-                      )}
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -588,24 +642,25 @@ export default function NewPurchasePage() {
                       </div>
 
                       <div className="space-y-2">
-                        <Label htmlFor={`price_${index}`}>
-                          Price per Tire (KSH) *
-                          <span className="text-xs text-muted-foreground ml-1">(Unit price)</span>
-                        </Label>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor={`price_${index}`}>
+                            Price per Tire (KSH) *
+                          </Label>
+                        </div>
                         <Input
                           id={`price_${index}`}
                           type="number"
                           min="0"
                           step="0.01"
-                          value={item.price || ""}
-                          onChange={(e) => handleItemChange(index, "price", parseFloat(e.target.value) || 0)}
+                          value={item.vatInclusivePrice || ""}
+                          onChange={(e) => handleItemChange(index, "vatInclusivePrice", parseFloat(e.target.value) || 0)}
                           placeholder="0.00"
                           required
                         />
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-muted-foreground">Unit price</span>
+                          <span className="text-muted-foreground">Includes 16% VAT</span>
                           <span className="font-medium">
-                            Total: KSH {calculateItemTotal(item).toLocaleString(undefined, { 
+                            Total: KSH {item.lineTotalIncludingVAT.toLocaleString(undefined, { 
                               minimumFractionDigits: 2, 
                               maximumFractionDigits: 2 
                             })}
@@ -645,37 +700,54 @@ export default function NewPurchasePage() {
                     <span className="text-sm text-muted-foreground">Total Quantity:</span>
                     <span>{totalQuantity} tires</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Subtotal:</span>
-                    <span>KSH {totalAmount.toLocaleString(undefined, { 
-                      minimumFractionDigits: 2, 
-                      maximumFractionDigits: 2 
-                    })}</span>
+                  
+                  <div className="pt-2 border-t">
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Subtotal (Including VAT):</span>
+                        <span>KSH {totals.subtotalIncludingVAT.toLocaleString(undefined, { 
+                          minimumFractionDigits: 2, 
+                          maximumFractionDigits: 2 
+                        })}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">VAT (16%):</span>
+                        <span>KSH {totals.totalVAT.toLocaleString(undefined, { 
+                          minimumFractionDigits: 2, 
+                          maximumFractionDigits: 2 
+                        })}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium">Subtotal (Excluding VAT):</span>
+                        <span className="text-sm font-medium">KSH {totals.subtotalExcludingVAT.toLocaleString(undefined, { 
+                          minimumFractionDigits: 2, 
+                          maximumFractionDigits: 2 
+                        })}</span>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Tax (16%):</span>
-                    <span>KSH {taxAmount.toLocaleString(undefined, { 
-                      minimumFractionDigits: 2, 
-                      maximumFractionDigits: 2 
-                    })}</span>
-                  </div>
+                  
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Shipping:</span>
-                    <span>KSH {shippingAmount.toLocaleString(undefined, { 
+                    <span>KSH {totals.shippingAmount.toLocaleString(undefined, { 
                       minimumFractionDigits: 2, 
                       maximumFractionDigits: 2 
                     })}</span>
                   </div>
+                  
                   <div className="pt-3 border-t">
                     <div className="flex justify-between items-center">
-                      <span className="font-semibold">Total Amount:</span>
+                      <span className="font-semibold">Grand Total:</span>
                       <span className="text-2xl font-bold">
-                        KSH {finalAmount.toLocaleString(undefined, { 
+                        KSH {totals.correctFinalAmount.toLocaleString(undefined, { 
                           minimumFractionDigits: 2, 
                           maximumFractionDigits: 2 
                         })}
                       </span>
                     </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Total includes 16% VAT on items
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -688,7 +760,6 @@ export default function NewPurchasePage() {
                     type="button"
                     variant="outline"
                     onClick={() => {
-                      // Save as draft
                       setFormData({ ...formData, status: "DRAFT" });
                       handleSubmit(new Event('submit') as any);
                     }}

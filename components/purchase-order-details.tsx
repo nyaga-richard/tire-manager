@@ -18,12 +18,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import {
   CheckCircle,
   Clock,
   Package,
@@ -39,24 +33,8 @@ import {
   CreditCard,
   Printer as PrinterIcon,
   Download as DownloadIcon,
-  ShoppingBag as ShoppingBagIcon,
   X,
-  Printer,
   DollarSign,
-  Layers,
-  Eye,
-  FileText,
-  ChevronDown,
-  Search,
-  Filter,
-  Wrench,
-  ShoppingCart,
-  BarChart3,
-  TrendingUp,
-  TrendingDown,
-  Plus,
-  RefreshCw,
-  Download,
 } from "lucide-react";
 import Link from "next/link";
 import { useReactToPrint } from "react-to-print";
@@ -76,10 +54,10 @@ export interface PurchaseOrder {
   expected_delivery_date: string | null;
   delivery_date: string | null;
   status: "DRAFT" | "PENDING" | "APPROVED" | "ORDERED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "CANCELLED" | "CLOSED";
-  total_amount: number;
-  tax_amount: number;
+  total_amount: number; // Subtotal EXCLUDING VAT
+  tax_amount: number; // Total VAT amount
   shipping_amount: number;
-  final_amount: number;
+  final_amount: number; // Total INCLUDING VAT + shipping
   notes: string | null;
   terms: string | null;
   shipping_address: string | null;
@@ -100,8 +78,8 @@ export interface PurchaseOrder {
     type: string;
     quantity: number;
     received_quantity: number;
-    unit_price: number;
-    line_total: number;
+    unit_price: number; // This is price INCLUDING VAT from database
+    line_total: number; // This is line total INCLUDING VAT from database
     received_total: number;
     remaining_quantity: number;
     notes: string;
@@ -118,6 +96,8 @@ interface PurchaseOrderModalProps {
   isOpen: boolean;
   onClose: () => void;
 }
+
+const VAT_RATE = 0.16; // 16% VAT
 
 export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: PurchaseOrderModalProps) {
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
@@ -162,27 +142,96 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
     contentRef: printRef,
     documentTitle: `PO-${order?.po_number || 'Order'}`,
     pageStyle: `
+      @page {
+        size: A4 portrait;
+        margin: 15mm;
+      }
+      
       @media print {
-        @page {
-          size: A4;
-          margin: 20mm;
-        }
         body {
-          -webkit-print-color-adjust: exact;
+          margin: 0;
+          padding: 0;
+          background: white;
+          color: black;
+          font-size: 12pt;
+          line-height: 1.4;
         }
+        
+        * {
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        
+        .print-content {
+          width: 100%;
+          max-width: none;
+          margin: 0;
+          padding: 0;
+        }
+        
         .no-print {
           display: none !important;
         }
-        .print-only {
-          display: block !important;
+        
+        /* Ensure tables don't break across pages */
+        table {
+          page-break-inside: avoid;
+          break-inside: avoid;
         }
-      }
-      @page {
-        margin: 20mm;
+        
+        tr {
+          page-break-inside: avoid;
+          break-inside: avoid;
+        }
+        
+        /* Text styling for print */
+        h1, h2, h3, h4, h5, h6 {
+          page-break-after: avoid;
+          page-break-inside: avoid;
+        }
+        
+        /* Ensure proper spacing */
+        .print-section {
+          page-break-inside: avoid;
+          margin-bottom: 12pt;
+        }
+        
+        /* Reduce font sizes for better fit */
+        .print-content {
+          font-size: 10pt !important;
+        }
+        
+        .print-table {
+          font-size: 9pt !important;
+        }
+        
+        /* Remove background colors that don't print well */
+        .bg-opacity-10,
+        .bg-primary/10,
+        .bg-gray-50,
+        .bg-yellow-50,
+        .bg-blue-50 {
+          background-color: #f9f9f9 !important;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+        
+        /* Ensure borders print properly */
+        table, th, td {
+          border: 0.5pt solid #ddd !important;
+        }
+        
+        /* Remove unnecessary padding in print */
+        .print-padding {
+          padding: 4pt !important;
+        }
       }
     `,
     onAfterPrint: () => toast.success("Purchase order printed successfully"),
-    onPrintError: () => toast.error("Failed to print purchase order"),
+    onPrintError: (error) => {
+      console.error("Print error:", error);
+      toast.error("Failed to print purchase order");
+    },
   });
 
   const formatDate = (dateString: string | null) => {
@@ -190,7 +239,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
     const date = new Date(dateString);
     return date.toLocaleDateString("en-US", {
       year: "numeric",
-      month: "long",
+      month: "short",
       day: "numeric",
     });
   };
@@ -214,6 +263,49 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
+  };
+
+  // Calculate exclusive price from inclusive price
+  const calculateExclusivePrice = (inclusivePrice: number): number => {
+    return inclusivePrice / (1 + VAT_RATE);
+  };
+
+  // Calculate VAT amount from inclusive price
+  const calculateVATAmount = (inclusivePrice: number): number => {
+    const exclusivePrice = calculateExclusivePrice(inclusivePrice);
+    return inclusivePrice - exclusivePrice;
+  };
+
+  // Calculate line total excluding VAT
+  const calculateLineTotalExcludingVAT = (lineTotalInclusive: number): number => {
+    return lineTotalInclusive / (1 + VAT_RATE);
+  };
+
+  // Calculate line VAT amount
+  const calculateLineVAT = (lineTotalInclusive: number): number => {
+    return lineTotalInclusive - calculateLineTotalExcludingVAT(lineTotalInclusive);
+  };
+
+  // Calculate subtotal from items (VAT inclusive)
+  const calculateSubtotalInclusive = (): number => {
+    if (!order || !order.items) return 0;
+    return order.items.reduce((sum, item) => sum + item.line_total, 0);
+  };
+
+  // Calculate VAT from subtotal (working backwards)
+  const calculateVATFromSubtotal = (): number => {
+    const subtotalInclusive = calculateSubtotalInclusive();
+    if (subtotalInclusive === 0) return 0;
+    
+    // Working backwards: VAT = (subtotalInclusive * VAT_RATE) / (1 + VAT_RATE)
+    return (subtotalInclusive * VAT_RATE) / (1 + VAT_RATE);
+  };
+
+  // Calculate subtotal excluding VAT
+  const calculateSubtotalExcludingVAT = (): number => {
+    const subtotalInclusive = calculateSubtotalInclusive();
+    const vatAmount = calculateVATFromSubtotal();
+    return subtotalInclusive - vatAmount;
   };
 
   const getStatusColor = (status: string) => {
@@ -344,256 +436,332 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                   </p>
                 </div>
               ) : (
-                <div ref={printRef} className="space-y-8">
+                <div ref={printRef} className="print-content space-y-8">
                   {/* Printable Header */}
-                  <div className="border-b pb-6">
+                  <div className="print-section border-b pb-4">
                     <div className="flex justify-between items-start">
-                      <div>
-                        <h1 className="text-3xl font-bold">PURCHASE ORDER</h1>
-                        <div className="mt-2 space-y-1">
-                          <div className="flex items-center gap-2">
-                            <FileTextIcon className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-semibold">Order #:</span>
-                            <span className="font-mono text-lg font-bold">{order.po_number}</span>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <CalendarDays className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-semibold">Date:</span>
-                            <span>{formatDate(order.po_date)}</span>
-                          </div>
-                          <div className="mt-2">
-                            <Badge className={`${getStatusColor(order.status)}`}>
-                              <div className="flex items-center gap-1">
-                                {getStatusIcon(order.status)}
-                                {order.status.replace("_", " ")}
-                              </div>
-                            </Badge>
+                      <div className="w-1/2">
+                        <div className="mb-4">
+                          <h1 className="text-2xl font-bold uppercase tracking-wide">PURCHASE ORDER</h1>
+                          <div className="mt-2 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <FileTextIcon className="h-3 w-3" />
+                              <span className="font-semibold text-sm">Order #:</span>
+                              <span className="font-mono text-base font-bold">{order.po_number}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <CalendarDays className="h-3 w-3" />
+                              <span className="font-semibold text-sm">Date:</span>
+                              <span className="text-sm">{formatDate(order.po_date)}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-lg font-bold mb-2">Fleet Management System</div>
-                        <div className="text-sm text-muted-foreground">
-                          123 Fleet Street<br />
-                          Industrial Area<br />
-                          City, State 12345<br />
-                          Phone: (555) 123-4567<br />
-                          Email: info@fleetmanagement.com
+                        
+                        <div className="text-sm">
+                          <p className="font-bold mb-1">Fleet Management System</p>
+                          <p className="text-xs">123 Fleet Street</p>
+                          <p className="text-xs">Industrial Area</p>
+                          <p className="text-xs">City, State 12345</p>
+                          <p className="text-xs">Phone: (555) 123-4567</p>
+                          <p className="text-xs">Email: info@fleetmanagement.com</p>
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Supplier and Delivery Information */}
-                  <div className="grid grid-cols-2 gap-8">
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                        <Building className="h-4 w-4" />
-                        Supplier Information
-                      </h3>
-                      <div className="space-y-2">
-                        <p className="font-bold text-lg">{order.supplier_name}</p>
-                        <p className="text-sm text-muted-foreground">
-                          Contact: {order.supplier_contact}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Phone: {order.supplier_phone}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Email: {order.supplier_email}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Address: {order.supplier_address}
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          Type: {order.supplier_type}
-                        </p>
-                        {order.shipping_address && (
-                          <div className="mt-4">
-                            <p className="text-sm font-medium">Shipping Address:</p>
-                            <p className="text-sm text-muted-foreground whitespace-pre-line">
-                              {order.shipping_address}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    <div>
-                      <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                        <TruckIcon className="h-4 w-4" />
-                        Delivery Information
-                      </h3>
-                      <div className="space-y-3">
-                        <div>
-                          <p className="font-medium">Expected Delivery:</p>
-                          <p className="text-muted-foreground">
+                      
+                      <div className="w-1/2 text-right">
+                        <div className="mb-4">
+                          <Badge className={`${getStatusColor(order.status)} text-xs py-1`}>
+                            <div className="flex items-center gap-1">
+                              {getStatusIcon(order.status)}
+                              {order.status.replace("_", " ")}
+                            </div>
+                          </Badge>
+                        </div>
+                        
+                        <div className="text-sm">
+                          <p className="font-bold mb-1">Delivery Information</p>
+                          <p className="text-xs">
+                            <span className="font-medium">Expected:</span>{" "}
                             {order.expected_delivery_date ? formatDate(order.expected_delivery_date) : "Not specified"}
                           </p>
-                        </div>
-                        {order.delivery_date && (
-                          <div>
-                            <p className="font-medium text-green-600">Actual Delivery:</p>
-                            <p className="text-muted-foreground">
+                          {order.delivery_date && (
+                            <p className="text-xs">
+                              <span className="font-medium text-green-600">Delivered:</span>{" "}
                               {formatDate(order.delivery_date)}
                             </p>
+                          )}
+                          <div className="mt-2">
+                            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden inline-block">
+                              <div 
+                                className="h-full bg-green-500 rounded-full"
+                                style={{ width: `${getProgress()}%` }}
+                              />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {getProgress()}% complete
+                            </p>
                           </div>
-                        )}
-                      </div>
-
-                      {order.terms && (
-                        <div className="mt-4">
-                          <h4 className="text-sm font-medium flex items-center gap-2">
-                            <CreditCard className="h-4 w-4" />
-                            Payment Terms
-                          </h4>
-                          <p className="text-sm font-medium">{order.terms}</p>
                         </div>
-                      )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Order Items */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                      <PackageOpen className="h-4 w-4" />
+                  {/* Supplier Information */}
+                  <div className="print-section">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div>
+                        <h3 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                          <Building className="h-3 w-3" />
+                          Supplier Information
+                        </h3>
+                        <div className="text-sm space-y-1 border p-3 rounded">
+                          <p className="font-bold">{order.supplier_name}</p>
+                          <p>Contact: {order.supplier_contact}</p>
+                          <p>Phone: {order.supplier_phone}</p>
+                          <p>Email: {order.supplier_email}</p>
+                          <p>Type: {order.supplier_type}</p>
+                          <p className="text-xs">{order.supplier_address}</p>
+                          
+                          {order.shipping_address && (
+                            <div className="mt-2 pt-2 border-t">
+                              <p className="font-medium text-xs">Shipping Address:</p>
+                              <p className="text-xs">{order.shipping_address}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                          <TruckIcon className="h-3 w-3" />
+                          Order Details
+                        </h3>
+                        <div className="text-sm space-y-2 border p-3 rounded">
+                          <div className="flex justify-between">
+                            <span className="font-medium">Prepared By:</span>
+                            <span>{order.created_by_name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium">Date Prepared:</span>
+                            <span>{formatDateTime(order.created_at)}</span>
+                          </div>
+                          
+                          {order.approved_by && order.approved_by_name && (
+                            <>
+                              <div className="flex justify-between">
+                                <span className="font-medium">Approved By:</span>
+                                <span>{order.approved_by_name}</span>
+                              </div>
+                              <div className="flex justify-between">
+                                <span className="font-medium">Date Approved:</span>
+                                <span>{formatDateTime(order.approved_date)}</span>
+                              </div>
+                            </>
+                          )}
+                          
+                          {order.terms && (
+                            <div className="mt-2 pt-2 border-t">
+                              <p className="font-medium">Payment Terms:</p>
+                              <p className="text-xs">{order.terms}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Order Items - Simplified Table */}
+                  <div className="print-section">
+                    <h3 className="text-sm font-semibold mb-2 flex items-center gap-1">
+                      <PackageOpen className="h-3 w-3" />
                       Order Items
                     </h3>
-                    <div className="border rounded-lg overflow-hidden">
-                      <Table>
-                        <TableHeader className="bg-gray-50">
+                    
+                    <div className="border rounded overflow-hidden">
+                      <Table className="print-table">
+                        <TableHeader className="bg-gray-50 print-padding">
                           <TableRow>
-                            <TableHead className="font-semibold">#</TableHead>
-                            <TableHead className="font-semibold">Size</TableHead>
-                            <TableHead className="font-semibold">Brand & Model</TableHead>
-                            <TableHead className="font-semibold">Type</TableHead>
-                            <TableHead className="font-semibold text-right">Quantity</TableHead>
-                            <TableHead className="font-semibold text-right">Unit Price</TableHead>
-                            <TableHead className="font-semibold text-right">Line Total</TableHead>
-                            <TableHead className="font-semibold text-right">Received</TableHead>
+                            <TableHead className="font-semibold text-xs w-8 p-2">#</TableHead>
+                            <TableHead className="font-semibold text-xs p-2">Size</TableHead>
+                            <TableHead className="font-semibold text-xs p-2">Description</TableHead>
+                            <TableHead className="font-semibold text-xs text-right p-2">Qty</TableHead>
+                            <TableHead className="font-semibold text-xs text-right p-2">
+                              <div>Unit Price</div>
+                              <div className="text-xs text-muted-foreground font-normal">(Inc. VAT)</div>
+                            </TableHead>
+                            <TableHead className="font-semibold text-xs text-right p-2">
+                              <div>Total</div>
+                              <div className="text-xs text-muted-foreground font-normal">(Inc. VAT)</div>
+                            </TableHead>
+                            <TableHead className="font-semibold text-xs text-right p-2">Received</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {order.items.map((item, index) => (
-                            <TableRow key={item.id}>
-                              <TableCell className="font-medium">{index + 1}</TableCell>
-                              <TableCell>{item.size}</TableCell>
-                              <TableCell>
-                                {item.brand} {item.model}
-                                {item.notes && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {item.notes}
+                          {order.items.map((item, index) => {
+                            const lineVAT = calculateLineVAT(item.line_total);
+                            const lineExcludingVAT = calculateLineTotalExcludingVAT(item.line_total);
+                            
+                            return (
+                              <TableRow key={item.id} className="print-padding">
+                                <TableCell className="text-xs font-medium p-2">{index + 1}</TableCell>
+                                <TableCell className="text-xs p-2">{item.size}</TableCell>
+                                <TableCell className="text-xs p-2">
+                                  {item.brand} {item.model}
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {item.type} {item.notes ? `• ${item.notes}` : ''}
                                   </div>
-                                )}
-                              </TableCell>
-                              <TableCell>{item.type}</TableCell>
-                              <TableCell className="text-right">{item.quantity}</TableCell>
-                              <TableCell className="text-right">{formatCurrency(item.unit_price)}</TableCell>
-                              <TableCell className="text-right font-medium">{formatCurrency(item.line_total)}</TableCell>
-                              <TableCell className="text-right">
-                                <div className="font-medium">{item.received_quantity}</div>
-                                <div className="text-xs text-muted-foreground">
-                                  {item.remaining_quantity} remaining
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
+                                </TableCell>
+                                <TableCell className="text-xs text-right p-2">{item.quantity}</TableCell>
+                                {/* Unit price is already VAT-inclusive */}
+                                <TableCell className="text-xs text-right p-2">
+                                  {formatCurrency(item.unit_price)}
+                                </TableCell>
+                                {/* Line total is already VAT-inclusive */}
+                                <TableCell className="text-xs text-right font-medium p-2">
+                                  {formatCurrency(item.line_total)}
+                                </TableCell>
+                                <TableCell className="text-xs text-right p-2">
+                                  <div>{item.received_quantity}</div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {item.remaining_quantity} pending
+                                  </div>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
                           
                           {/* Summary Rows */}
-                          <TableRow className="bg-gray-50">
-                            <TableCell colSpan={6}></TableCell>
-                            <TableCell className="text-right font-semibold">Subtotal:</TableCell>
-                            <TableCell className="text-right font-semibold">{formatCurrency(order.total_amount)}</TableCell>
+                          {/* First show the calculated subtotal from items (VAT inclusive) */}
+                          <TableRow className="bg-gray-50 print-padding">
+                            <TableCell colSpan={4} className="p-2"></TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2">Subtotal:</TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
+                              {formatCurrency(calculateSubtotalInclusive())}
+                            </TableCell>
                           </TableRow>
-                          <TableRow className="bg-gray-50">
-                            <TableCell colSpan={6}></TableCell>
-                            <TableCell className="text-right font-semibold">Tax ({Math.round((order.tax_amount / order.total_amount) * 100)}%):</TableCell>
-                            <TableCell className="text-right font-semibold">{formatCurrency(order.tax_amount)}</TableCell>
+                          
+                          {/* Calculate and show VAT (16%) */}
+                          <TableRow className="bg-gray-50 print-padding">
+                            <TableCell colSpan={4} className="p-2"></TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2">
+                              <div>VAT (16%):</div>
+                              <div className="text-[10px] text-muted-foreground font-normal">
+                                Calculated on {formatCurrency(calculateSubtotalExcludingVAT())}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
+                              {formatCurrency(calculateVATFromSubtotal())}
+                            </TableCell>
                           </TableRow>
-                          <TableRow className="bg-gray-50">
-                            <TableCell colSpan={6}></TableCell>
-                            <TableCell className="text-right font-semibold">Shipping:</TableCell>
-                            <TableCell className="text-right font-semibold">{formatCurrency(order.shipping_amount)}</TableCell>
+                          
+                          {/* Show subtotal excluding VAT */}
+                          <TableRow className="bg-gray-50 print-padding">
+                            <TableCell colSpan={4} className="p-2"></TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2">Subtotal (Ex VAT):</TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
+                              {formatCurrency(calculateSubtotalExcludingVAT())}
+                            </TableCell>
                           </TableRow>
-                          <TableRow className="bg-primary/10 border-t-2 border-primary">
-                            <TableCell colSpan={6}></TableCell>
-                            <TableCell className="text-right font-bold text-lg">GRAND TOTAL:</TableCell>
-                            <TableCell className="text-right font-bold text-lg">{formatCurrency(order.final_amount)}</TableCell>
+                          
+                          {/* Show shipping */}
+                          <TableRow className="bg-gray-50 print-padding">
+                            <TableCell colSpan={4} className="p-2"></TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2">Shipping:</TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
+                              {formatCurrency(order.shipping_amount)}
+                            </TableCell>
+                          </TableRow>
+                          
+                          {/* Show grand total */}
+                          <TableRow className="bg-primary/10 border-t-2 border-primary print-padding">
+                            <TableCell colSpan={4} className="p-2"></TableCell>
+                            <TableCell className="text-sm font-bold text-right p-2">GRAND TOTAL:</TableCell>
+                            <TableCell className="text-sm font-bold text-right p-2" colSpan={2}>
+                              {formatCurrency(
+                                calculateSubtotalInclusive() + order.shipping_amount
+                              )}
+                            </TableCell>
                           </TableRow>
                         </TableBody>
                       </Table>
                     </div>
-                    <div className="mt-2 text-sm text-muted-foreground">
-                      Total Items: {order.items.length} • Received: {order.items.reduce((sum, item) => sum + item.received_quantity, 0)} • 
-                      Progress: {getProgress()}%
+                    
+                    <div className="text-xs text-muted-foreground mt-2">
+                      Total Items: {order.items.length} • Total Quantity: {order.items.reduce((sum, item) => sum + item.quantity, 0)} • 
+                      Received: {order.items.reduce((sum, item) => sum + item.received_quantity, 0)} ({getProgress()}%)
+                    </div>
+                    
+                    {/* VAT Calculation Summary */}
+                    <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
+                      <p className="font-semibold mb-1">VAT Calculation Summary:</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <span className="text-muted-foreground">Subtotal (Inc VAT):</span> {formatCurrency(calculateSubtotalInclusive())}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Subtotal (Ex VAT):</span> {formatCurrency(calculateSubtotalExcludingVAT())}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">VAT Amount (16%):</span> {formatCurrency(calculateVATFromSubtotal())}
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">Shipping:</span> {formatCurrency(order.shipping_amount)}
+                        </div>
+                        <div className="col-span-2 mt-1 pt-1 border-t">
+                          <span className="text-muted-foreground">Total Payable:</span>{" "}
+                          <span className="font-semibold">
+                            {formatCurrency(calculateSubtotalInclusive() + order.shipping_amount)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
-                  {/* Notes and Additional Information */}
+                  {/* Notes and Billing Address */}
                   {(order.notes || order.billing_address) && (
-                    <div className="grid grid-cols-2 gap-8">
-                      {order.notes && (
-                        <div>
-                          <h3 className="text-lg font-semibold mb-3">Special Instructions</h3>
-                          <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                            <p className="text-sm whitespace-pre-line">{order.notes}</p>
+                    <div className="print-section">
+                      <div className="grid grid-cols-2 gap-4">
+                        {order.notes && (
+                          <div>
+                            <h4 className="text-xs font-semibold mb-1">Special Instructions</h4>
+                            <div className="text-xs p-2 bg-yellow-50 border border-yellow-200 rounded">
+                              <p className="whitespace-pre-line">{order.notes}</p>
+                            </div>
                           </div>
-                        </div>
-                      )}
-                      
-                      {order.billing_address && (
-                        <div>
-                          <h3 className="text-lg font-semibold mb-3">Billing Address</h3>
-                          <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                            <p className="text-sm whitespace-pre-line">{order.billing_address}</p>
+                        )}
+                        
+                        {order.billing_address && (
+                          <div>
+                            <h4 className="text-xs font-semibold mb-1 flex items-center gap-1">
+                              <CreditCard className="h-3 w-3" />
+                              Billing Address
+                            </h4>
+                            <div className="text-xs p-2 bg-blue-50 border border-blue-200 rounded">
+                              <p className="whitespace-pre-line">{order.billing_address}</p>
+                            </div>
                           </div>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                   )}
 
                   {/* Footer for Print */}
-                  <div className="border-t pt-6">
-                    <div className="grid grid-cols-3 gap-8">
-                      <div>
-                        <p className="font-semibold">Prepared By:</p>
-                        <p className="text-sm text-muted-foreground">{order.created_by_name}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.created_at)}</p>
-                      </div>
-                      
-                      {order.approved_by && order.approved_by_name && (
-                        <div>
-                          <p className="font-semibold">Approved By:</p>
-                          <p className="text-sm text-muted-foreground">{order.approved_by_name}</p>
-                          <p className="text-xs text-muted-foreground mt-1">{formatDateTime(order.approved_date)}</p>
-                        </div>
-                      )}
-
-                      <div className="text-right">
-                        <p className="font-semibold">Delivery Status:</p>
-                        <Badge className={`mt-1 ${getStatusColor(order.status)}`}>
-                          {order.status.replace("_", " ")}
-                        </Badge>
-                        <div className="mt-2">
-                          <div className="h-2 w-full bg-gray-200 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-green-500 rounded-full"
-                              style={{ width: `${getProgress()}%` }}
-                            />
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {getProgress()}% complete
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="mt-6 text-center text-sm text-muted-foreground">
+                  <div className="print-section border-t pt-4">
+                    <div className="text-center text-xs text-muted-foreground">
                       <p>Thank you for your business!</p>
-                      <p className="mt-1">This is an automatically generated purchase order from Fleet Management System</p>
-                      <p className="mt-4 text-xs">
-                        Generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
-                      </p>
+                      <p className="mt-0.5">This is an automatically generated purchase order from Fleet Management System</p>
+                      <div className="mt-2 flex justify-between items-center text-xs">
+                        <div className="text-left">
+                          <p>Page 1 of 1</p>
+                          <p>Confidential</p>
+                        </div>
+                        <div className="text-right">
+                          <p>Generated on {formatDateTime(new Date().toISOString())}</p>
+                          <p>Document ID: PO-{order.po_number}</p>
+                        </div>
+                      </div>
+                      <div className="mt-3 pt-2 border-t text-[10px]">
+                        <p>For inquiries, please contact: procurement@fleetmanagement.com | Phone: (555) 123-4567</p>
+                      </div>
                     </div>
                   </div>
                 </div>
