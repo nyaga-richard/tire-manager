@@ -364,7 +364,7 @@ export default function InventoryPage() {
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
         {/* Updated TabsList - Removed "goods-received" tab */}
-        <TabsList className="grid grid-cols-4 lg:w-[400px]">
+        <TabsList className="grid grid-cols-4 lg:w-100">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="store">Store</TabsTrigger>
           <TabsTrigger value="retread">Retread</TabsTrigger>
