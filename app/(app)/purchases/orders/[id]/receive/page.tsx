@@ -74,6 +74,7 @@ import {
   X,
   Download,
   Printer,
+  Info,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -81,7 +82,7 @@ interface PurchaseOrderItem {
   id: number;
   po_id: number;
   size: string;
-  brand: string;
+  brand: string; // Brand from PO (may be empty or different)
   model: string;
   type: string;
   quantity: number;
@@ -125,8 +126,7 @@ interface PurchaseOrder {
 interface ReceivingItem {
   po_item_id: number;
   size: string;
-  brand: string; // This will store the brand entered by user
-  original_brand: string; // This stores the original brand from PO
+  brand: string; // Brand entered during receiving - THIS IS REQUIRED
   model: string;
   type: string;
   ordered_quantity: number;
@@ -201,16 +201,15 @@ export default function ReceiveGoodsPage() {
           const items = orderData.items.map((item: PurchaseOrderItem) => ({
             po_item_id: item.id,
             size: item.size,
-            brand: item.brand || "", // Start with original brand, user can change it
-            original_brand: item.brand || "", // Store original for reference
-            model: item.model,
-            type: item.type,
+            brand: "", // START WITH EMPTY BRAND - User MUST enter it during receiving
+            model: item.model || "",
+            type: item.type || "NEW",
             ordered_quantity: item.quantity,
             previously_received: item.received_quantity || 0,
             remaining_quantity: item.remaining_quantity || item.quantity - (item.received_quantity || 0),
-            current_receive: Math.max(0, item.quantity - (item.received_quantity || 0)),
+            current_receive: 0, // Start with 0, user needs to specify
             unit_price: item.unit_price,
-            serial_numbers: Array(Math.max(0, item.quantity - (item.received_quantity || 0))).fill(""),
+            serial_numbers: [], // Start empty
             batch_number: `BATCH-${orderData.po_number}-${item.id}`,
             location: "WAREHOUSE-A",
             condition: "GOOD" as const,
@@ -292,7 +291,7 @@ export default function ReceiveGoodsPage() {
     setReceivingItems(prev =>
       prev.map(item => {
         if (item.po_item_id === poItemId) {
-          const batchPrefix = `${(item.brand || item.original_brand || 'TIR').slice(0, 3)}-${item.size.replace('/', '-')}-${Date.now().toString().slice(-6)}`;
+          const batchPrefix = `${(item.brand || 'TIR').slice(0, 3).toUpperCase()}-${item.size.replace('/', '-')}-${Date.now().toString().slice(-6)}`;
           const newSerials = Array(item.current_receive)
             .fill("")
             .map((_, idx) => `${batchPrefix}-${(idx + 1).toString().padStart(3, '0')}`);
@@ -408,12 +407,19 @@ export default function ReceiveGoodsPage() {
       return false;
     }
 
-    // Validate serial numbers and brand if items are being received
+    // Validate brand and serial numbers for all items being received
     for (const item of receivingItems) {
       if (item.current_receive > 0) {
-        // Check if brand is entered
+        // Check if brand is entered - BRAND IS REQUIRED DURING RECEIVING
         if (!item.brand || item.brand.trim() === "") {
           toast.error(`Please enter brand for ${item.size} tires`);
+          return false;
+        }
+
+        // Validate brand length and format
+        const trimmedBrand = item.brand.trim();
+        if (trimmedBrand.length < 2) {
+          toast.error(`Brand name for ${item.size} must be at least 2 characters`);
           return false;
         }
         
@@ -448,12 +454,12 @@ export default function ReceiveGoodsPage() {
           quantity_received: item.current_receive,
           unit_cost: item.unit_price,
           batch_number: item.batch_number,
-          brand: item.brand.trim(), // Make sure to use the brand from receiving form
+          brand: item.brand.trim(), // Use brand from receiving form - THIS IS REQUIRED
           serial_numbers: (item.serial_numbers || []).filter(sn => sn.trim() !== ""),
           notes: item.notes,
         }));
 
-      console.log("Sending items to receive:", itemsToReceive); // Debug log
+      console.log("Sending items to receive (with brand from receiving):", itemsToReceive);
 
       const grnData = {
         po_id: parseInt(orderId),
@@ -467,7 +473,7 @@ export default function ReceiveGoodsPage() {
         items: itemsToReceive,
       };
 
-      console.log("Sending GRN data:", grnData); // Debug log
+      console.log("Sending GRN data:", grnData);
 
       const response = await fetch('http://localhost:5000/api/grn', {
         method: 'POST',
@@ -478,9 +484,9 @@ export default function ReceiveGoodsPage() {
       });
 
       const result = await response.json();
-      console.log("GRN creation response:", result); // Debug log
+      console.log("GRN creation response:", result);
 
-      if (result.success) {
+      if (response.ok) {
         toast.success("Goods Received Note created successfully!");
         setGeneratedGRN(result.data);
         setShowGRNDialog(true);
@@ -583,6 +589,23 @@ export default function ReceiveGoodsPage() {
           </Badge>
         </div>
       </div>
+
+      {/* Brand Requirement Notice */}
+      {canReceive && (
+        <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start gap-3">
+            <Info className="h-5 w-5 text-blue-600 mt-0.5" />
+            <div>
+              <h3 className="font-medium text-blue-800">Brand Entry Required</h3>
+              <p className="text-sm text-blue-700 mt-1">
+                You must enter the brand for each tire being received. 
+                The brand entered here will be stored in the GRN and associated with each tire in inventory.
+                This overrides any brand specified in the purchase order.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Order Summary */}
       <Card>
@@ -784,6 +807,14 @@ export default function ReceiveGoodsPage() {
                   )} / {currentlyReceiving} entered
                 </div>
               </div>
+              <div className="space-y-1">
+                <div className="text-sm font-medium">Brands Entered</div>
+                <div className="text-sm text-muted-foreground">
+                  {receivingItems.filter(item => item.current_receive > 0 && item.brand.trim() !== "").length} / {
+                    receivingItems.filter(item => item.current_receive > 0).length
+                  } items
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -860,19 +891,20 @@ export default function ReceiveGoodsPage() {
                                       />
                                     </div>
                                     <div>
-                                      <Label className="text-xs">Brand *</Label>
+                                      <Label className="text-xs">
+                                        Brand *
+                                        <span className="text-red-500 ml-1">Required</span>
+                                      </Label>
                                       <Input
                                         value={item.brand}
                                         onChange={(e) => updateReceivingBrand(item.po_item_id, e.target.value)}
-                                        placeholder="Enter brand for received tires"
+                                        placeholder="Enter brand (e.g., Michelin, Bridgestone)"
                                         className="w-full text-xs"
                                         required={item.current_receive > 0}
                                       />
-                                      {item.original_brand && item.original_brand !== item.brand && (
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          Original PO brand: {item.original_brand}
-                                        </p>
-                                      )}
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Brand must be entered when receiving goods
+                                      </p>
                                     </div>
                                   </div>
                                 </div>
@@ -988,6 +1020,7 @@ export default function ReceiveGoodsPage() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => generateBatchSerialNumbers(item.po_item_id)}
+                                disabled={!item.brand || item.brand.trim() === ""}
                               >
                                 <Key className="mr-2 h-3 w-3" />
                                 Generate Batch
@@ -1079,9 +1112,9 @@ export default function ReceiveGoodsPage() {
                         prev.map(item => ({
                           ...item,
                           current_receive: 0,
-                          serial_numbers: Array(item.remaining_quantity).fill(""),
+                          serial_numbers: [],
                           condition: "GOOD" as const,
-                          brand: item.original_brand || "", // Reset to original brand
+                          brand: "", // Reset brand to empty
                           batch_number: `BATCH-${order?.po_number}-${item.po_item_id}`,
                           notes: ""
                         }))
@@ -1108,6 +1141,7 @@ export default function ReceiveGoodsPage() {
                     variant="outline"
                     onClick={handleReceiveGoods}
                     disabled={submitting || calculateTotalReceived() === 0}
+                    className="bg-green-600 hover:bg-green-700 text-white"
                   >
                     <Save className="mr-2 h-4 w-4" />
                     {submitting ? "Processing..." : "Receive Goods"}
@@ -1148,6 +1182,22 @@ export default function ReceiveGoodsPage() {
                 <p className="text-sm text-orange-700">
                   Please enter serial numbers for all tires being received. 
                   You can use the "Generate Batch" button for auto-generation.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {receivingItems.some(item => item.current_receive > 0 && (!item.brand || item.brand.trim() === "")) && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-3">
+              <AlertCircle className="h-5 w-5 text-red-600" />
+              <div>
+                <h3 className="font-medium">Brand Required</h3>
+                <p className="text-sm text-red-700">
+                  Please enter the brand for all items being received. Brand is required when receiving goods.
                 </p>
               </div>
             </div>
@@ -1203,7 +1253,7 @@ export default function ReceiveGoodsPage() {
                         <TableHead>Item</TableHead>
                         <TableHead className="text-center">Quantity</TableHead>
                         <TableHead>Serial Numbers</TableHead>
-                        <TableHead>Brand</TableHead>
+                        <TableHead>Brand (from GRN)</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1241,6 +1291,7 @@ export default function ReceiveGoodsPage() {
                 <Label>Tires Added to Inventory</Label>
                 <div className="mt-2 text-sm text-muted-foreground">
                   {generatedGRN.tires.length} tires have been added to inventory with status "IN_STORE".
+                  Each tire is associated with the brand entered during receiving.
                 </div>
               </div>
             </div>
