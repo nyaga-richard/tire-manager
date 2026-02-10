@@ -29,6 +29,8 @@ import {
   FileText,
   BarChart3,
   Menu,
+  Repeat,
+  ShoppingCart,
   X
 } from "lucide-react";
 import { useAuth } from "@/components/providers/auth-provider";
@@ -67,7 +69,13 @@ const navItems = [
   { 
     name: "Purchases", 
     href: "/purchases", 
-    icon: FileText,
+    icon: ShoppingCart,
+    permission: "po.view"
+  },
+  {
+    name: "Retreads",
+    href: "/retreads",
+    icon: Repeat,
     permission: "po.view"
   },
   { 
