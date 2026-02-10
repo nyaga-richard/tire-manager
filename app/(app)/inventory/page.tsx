@@ -738,7 +738,7 @@ export default function InventoryPage() {
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-2">
                               <Button variant="outline" size="sm" asChild>
-                                <Link href={`/retreads/create/${tire.id}`}>
+                                <Link href={`/retreads/send?tires=${tire.id}`}>
                                   <RefreshCw className="mr-2 h-4 w-4" />
                                   Schedule Retread
                                 </Link>
