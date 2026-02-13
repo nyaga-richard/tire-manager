@@ -163,7 +163,7 @@ export default function RetreadsPage() {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/suppliers?type=RETREAD");
+      const response = await fetch("http://localhost:5000/api/suppliers");
       const data = await response.json();
       if (data.success) {
         setSuppliers(data.data);
@@ -774,7 +774,7 @@ export default function RetreadsPage() {
                     </TableHeader>
                     <TableBody>
                       {supplierStats.map((supplier) => (
-                        <TableRow key={supplier.id}>
+                        <TableRow key={`supplier-${supplier.id}`}>
                           <TableCell>
                             <div>
                               <div className="font-medium">{supplier.name}</div>
