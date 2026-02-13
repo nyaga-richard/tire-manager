@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import {
   Card,
   CardContent,
@@ -52,6 +52,7 @@ import {
   Hash,
   Building2,
   Printer,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -79,6 +80,13 @@ import {
   PaginationPrevious,
   PaginationEllipsis,
 } from "@/components/ui/pagination";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/auth/PermissionGuard";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Movement {
   id: number;
@@ -139,10 +147,13 @@ interface MovementStats {
 }
 
 export default function MovementHistoryClient() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
   const [ledgerEntries, setLedgerEntries] = useState<StockLedgerEntry[]>([]);
   const [filteredLedger, setFilteredLedger] = useState<StockLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("ledger");
   const [startDate, setStartDate] = useState<Date | undefined>(
@@ -158,9 +169,26 @@ export default function MovementHistoryClient() {
   const tireId = searchParams.get("tire");
   const size = searchParams.get("size");
 
+  // Check authentication
   useEffect(() => {
-    fetchMovements();
-  }, [startDate, endDate, currentPage]);
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  // Check permission for inventory movement view
+  useEffect(() => {
+    if (!authLoading && isAuthenticated && !hasPermission("inventory.view")) {
+      router.push("/dashboard");
+      toast.error("You don't have permission to view inventory movements");
+    }
+  }, [authLoading, isAuthenticated, hasPermission, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && hasPermission("inventory.view")) {
+      fetchMovements();
+    }
+  }, [startDate, endDate, currentPage, isAuthenticated, hasPermission, tireId, size]);
 
   useEffect(() => {
     if (search) {
@@ -182,6 +210,8 @@ export default function MovementHistoryClient() {
   const fetchMovements = async () => {
     try {
       setLoading(true);
+      setError(null);
+      
       const params = new URLSearchParams({
         startDate: startDate?.toISOString().split("T")[0] || "",
         endDate: endDate?.toISOString().split("T")[0] || "",
@@ -192,26 +222,34 @@ export default function MovementHistoryClient() {
 
       let url;
       if (tireId) {
-        url = `http://localhost:5000/api/movements/tire/${tireId}?${params}`;
+        url = `${API_BASE_URL}/api/movements/tire/${tireId}?${params}`;
       } else if (size) {
-        url = `http://localhost:5000/api/movements/size/${encodeURIComponent(
+        url = `${API_BASE_URL}/api/movements/size/${encodeURIComponent(
           size
         )}?${params}`;
       } else {
-        url = `http://localhost:5000/api/movements?${params}`;
+        url = `${API_BASE_URL}/api/movements?${params}`;
       }
 
-      const response = await fetch(url);
+      const response = await authFetch(url);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch movements: ${response.status}`);
+      }
+      
       const data = await response.json();
       
-      // Calculate ledger entries from movements
-      const ledger = calculateStockLedger(data.movements || data);
+      const movements = Array.isArray(data) ? data : data.movements || [];
+      const ledger = calculateStockLedger(movements);
+      
       setLedgerEntries(ledger);
       setFilteredLedger(ledger);
       setTotalEntries(data.total || ledger.length);
       setTotalPages(data.totalPages || Math.ceil(ledger.length / itemsPerPage));
     } catch (error) {
       console.error("Error fetching movements:", error);
+      setError(error instanceof Error ? error.message : "Failed to load movements");
+      toast.error("Failed to load movement history");
       setLedgerEntries([]);
       setFilteredLedger([]);
     } finally {
@@ -222,7 +260,6 @@ export default function MovementHistoryClient() {
   const calculateStockLedger = (movements: Movement[]): StockLedgerEntry[] => {
     if (!movements.length) return [];
 
-    // Sort movements by date
     const sortedMovements = [...movements].sort(
       (a, b) => new Date(a.movement_date).getTime() - new Date(b.movement_date).getTime()
     );
@@ -230,7 +267,6 @@ export default function MovementHistoryClient() {
     const ledger: StockLedgerEntry[] = [];
     let runningStock = 0;
 
-    // Group movements by transaction (same date, same reference, same type)
     const groupedMovements = sortedMovements.reduce((acc, movement) => {
       const key = `${movement.movement_date}-${movement.reference_number || movement.reference_type}-${movement.movement_type}`;
       if (!acc[key]) {
@@ -240,7 +276,6 @@ export default function MovementHistoryClient() {
       return acc;
     }, {} as Record<string, Movement[]>);
 
-    // Process each transaction group
     Object.entries(groupedMovements).forEach(([key, transactionMovements]) => {
       const firstMovement = transactionMovements[0];
       let openingStock = runningStock;
@@ -252,7 +287,6 @@ export default function MovementHistoryClient() {
             movement.movement_type === "RETREAD_SUPPLIER_TO_STORE") {
           quantityIn += 1;
         } else if (movement.movement_type === "VEHICLE_TO_STORE") {
-          // Return from vehicle counts as quantity in
           quantityIn += 1;
         } else if (movement.movement_type === "STORE_TO_VEHICLE" || 
                   movement.movement_type === "STORE_TO_RETREAD_SUPPLIER" ||
@@ -264,7 +298,6 @@ export default function MovementHistoryClient() {
       const closingStock = openingStock + quantityIn - quantityOut;
       runningStock = closingStock;
 
-      // Determine transaction type and details
       const { type, documentNo, reference } = getTransactionDetails(firstMovement, transactionMovements.length);
       const price = getTransactionPrice(firstMovement);
 
@@ -272,7 +305,7 @@ export default function MovementHistoryClient() {
         id: firstMovement.id,
         date: firstMovement.movement_date,
         user_name: firstMovement.user_name || "System",
-        location: "MAIN_WAREHOUSE", // Could be dynamic based on location
+        location: "MAIN_WAREHOUSE",
         opening_stock: openingStock,
         quantity_in: quantityIn,
         quantity_out: quantityOut,
@@ -357,13 +390,13 @@ export default function MovementHistoryClient() {
 
   const getTransactionTypeColor = (type: string) => {
     if (type.includes("Purchase") || type.includes("Return from Retreading")) {
-      return "bg-green-100 text-green-800 border-green-200";
+      return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
     } else if (type.includes("Installation") || type.includes("Send for Retreading") || type.includes("Disposal")) {
-      return "bg-red-100 text-red-800 border-red-200";
+      return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
     } else if (type.includes("Return from Vehicle")) {
-      return "bg-blue-100 text-blue-800 border-blue-200";
+      return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800";
     } else {
-      return "bg-gray-100 text-gray-800 border-gray-200";
+      return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
@@ -384,23 +417,27 @@ export default function MovementHistoryClient() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).replace(",", "");
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }).replace(",", "");
+    } catch {
+      return "Invalid date";
+    }
   };
 
   const formatCurrency = (amount?: number) => {
     if (!amount) return "";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: "KES",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
@@ -411,6 +448,11 @@ export default function MovementHistoryClient() {
   };
 
   const exportToCSV = () => {
+    if (!filteredLedger.length) {
+      toast.error("No data to export");
+      return;
+    }
+
     const headers = [
       "Date",
       "User Name",
@@ -439,8 +481,8 @@ export default function MovementHistoryClient() {
           formatNumber(entry.quantity_in),
           formatNumber(entry.quantity_out),
           formatNumber(entry.closing_stock),
-          entry.price ? formatCurrency(entry.price) : "",
-          `"${entry.reference}"`,
+          entry.price ? formatCurrency(entry.price).replace(/[^0-9,-]/g, '') : "",
+          `"${entry.reference.replace(/"/g, '""')}"`,
           entry.document_no,
           entry.type,
           entry.movement.serial_number,
@@ -459,11 +501,16 @@ export default function MovementHistoryClient() {
     a.click();
     document.body.removeChild(a);
     window.URL.revokeObjectURL(url);
+    
+    toast.success("CSV export started");
   };
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
+    if (!printWindow) {
+      toast.error("Could not open print window");
+      return;
+    }
 
     const printDate = new Date().toLocaleString();
     
@@ -580,6 +627,11 @@ export default function MovementHistoryClient() {
               border-radius: 4px;
               text-align: center;
             }
+            .generated-by {
+              margin-top: 5px;
+              font-size: 10px;
+              color: #666;
+            }
           }
         </style>
       </head>
@@ -597,6 +649,9 @@ export default function MovementHistoryClient() {
             <div>
               <strong>Generated:</strong> ${printDate}
             </div>
+          </div>
+          <div class="generated-by">
+            <strong>Generated by:</strong> ${user?.full_name || user?.username || 'System'}
           </div>
           ${tireId ? `<div><strong>Filter:</strong> Tire ID: ${tireId}</div>` : ''}
           ${size ? `<div><strong>Filter:</strong> Size: ${size}</div>` : ''}
@@ -660,7 +715,7 @@ export default function MovementHistoryClient() {
                 </td>
                 <td class="text-right font-mono">${formatNumber(entry.closing_stock)}</td>
                 <td class="text-right font-mono">${entry.price ? formatCurrency(entry.price) : '-'}</td>
-                <td>${entry.reference}</td>
+                <td>${entry.reference.replace(/"/g, '&quot;')}</td>
                 <td class="font-mono">${entry.document_no}</td>
                 <td>${entry.type}</td>
                 <td class="font-mono">${entry.movement.serial_number}</td>
@@ -673,6 +728,7 @@ export default function MovementHistoryClient() {
         <div class="print-footer">
           <div>Page 1 of 1 • Total Records: ${filteredLedger.length}</div>
           <div>Generated by Tire Management System</div>
+          <div>Report ID: STOCK-LEDGER-${Date.now().toString().slice(-6)}</div>
         </div>
       </body>
       </html>
@@ -688,33 +744,64 @@ export default function MovementHistoryClient() {
     }, 250);
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Print Styles */}
-      <style jsx global>{`
-        @media print {
-          body * {
-            visibility: hidden;
-          }
-          .printable-area,
-          .printable-area * {
-            visibility: visible;
-          }
-          .printable-area {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100%;
-            padding: 20px;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
+  // Show auth loading state
+  if (authLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-10 w-10" />
+            <div>
+              <Skeleton className="h-8 w-64 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+        </div>
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
 
-      {/* Header */}
-      <div className="flex items-center justify-between no-print">
+  // Show permission denied
+  if (!hasPermission("inventory.view")) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/inventory">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Stock Ledger</h1>
+            <p className="text-muted-foreground">View tire movement history</p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You don't have permission to view inventory movements. Please contact your administrator.
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild>
+          <Link href="/inventory">Return to Inventory</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/inventory">
@@ -723,433 +810,512 @@ export default function MovementHistoryClient() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold tracking-tight">
-              Tire Stock Ledger
+              {tireId ? "Tire Movements" : size ? `Movements: ${size}` : "Stock Ledger"}
             </h1>
-            <p className="text-muted-foreground">
-              {tireId
-                ? "Viewing stock movements for specific tire"
-                : size
-                ? `Viewing stock movements for size: ${size}`
-                : "Complete stock movement ledger"}
-            </p>
+            <p className="text-muted-foreground">Error loading data</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handlePrint}>
-            <Printer className="mr-2 h-4 w-4" />
-            Print
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+
+        <div className="flex gap-2">
+          <Button onClick={refreshData} variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Try Again
           </Button>
-          <Button variant="outline" onClick={refreshData} disabled={loading}>
-            <RefreshCw
-              className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
-          <Button variant="outline" onClick={exportToCSV}>
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
+          <Button asChild variant="outline">
+            <Link href="/inventory">Back to Inventory</Link>
           </Button>
         </div>
       </div>
+    );
+  }
 
-      {/* Date Range Selector */}
-      <Card className="no-print">
-        <CardContent className="pt-6">
-          <div className="flex flex-col md:flex-row md:items-end gap-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Start Date</label>
-                <DatePicker
-                  date={startDate}
-                  onSelect={setStartDate}
-                  className="w-full"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">End Date</label>
-                <DatePicker
-                  date={endDate}
-                  onSelect={setEndDate}
-                  className="w-full"
-                />
-              </div>
-            </div>
-            <Button onClick={refreshData} disabled={loading}>
-              <Calendar className="mr-2 h-4 w-4" />
-              Apply Date Range
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+  return (
+    <PermissionGuard permissionCode="inventory.view" action="view">
+      <div className="space-y-6">
+        {/* Print Styles */}
+        <style jsx global>{`
+          @media print {
+            body * {
+              visibility: hidden;
+            }
+            .printable-area,
+            .printable-area * {
+              visibility: visible;
+            }
+            .printable-area {
+              position: absolute;
+              left: 0;
+              top: 0;
+              width: 100%;
+              padding: 20px;
+            }
+            .no-print {
+              display: none !important;
+            }
+          }
+        `}</style>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        {/* Header */}
         <div className="flex items-center justify-between no-print">
-          <TabsList>
-            <TabsTrigger value="ledger">Stock Ledger</TabsTrigger>
-            <TabsTrigger value="summary">Summary View</TabsTrigger>
-          </TabsList>
-          
-          <div className="relative w-64">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              type="search"
-              placeholder="Search transactions..."
-              className="pl-8"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" asChild>
+              <Link href="/inventory">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {tireId 
+                  ? "Tire Movement History" 
+                  : size 
+                  ? `Stock Movements: ${size}` 
+                  : "Tire Stock Ledger"}
+              </h1>
+              <p className="text-muted-foreground">
+                {tireId
+                  ? "Viewing stock movements for specific tire"
+                  : size
+                  ? `Viewing stock movements for size: ${size}`
+                  : "Complete stock movement ledger"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handlePrint}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+            <Button variant="outline" onClick={refreshData} disabled={loading}>
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
+              Refresh
+            </Button>
+            <Button variant="outline" onClick={exportToCSV} disabled={filteredLedger.length === 0}>
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
           </div>
         </div>
 
-        {/* Stock Ledger Tab */}
-        <TabsContent value="ledger" className="space-y-4">
-          <Card ref={printRef}>
-            <CardHeader className="no-print">
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Stock Movement Ledger</CardTitle>
-                  <CardDescription>
-                    Complete transaction history with running stock totals
-                  </CardDescription>
+        {/* Date Range Selector */}
+        <Card className="no-print">
+          <CardContent className="pt-6">
+            <div className="flex flex-col md:flex-row md:items-end gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Start Date</label>
+                  <DatePicker
+                    date={startDate}
+                    onSelect={setStartDate}
+                    className="w-full"
+                  />
                 </div>
-                <Badge variant="outline" className="text-sm">
-                  {formatNumber(totalEntries)} total entries
-                </Badge>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">End Date</label>
+                  <DatePicker
+                    date={endDate}
+                    onSelect={setEndDate}
+                    className="w-full"
+                  />
+                </div>
               </div>
-            </CardHeader>
-            <CardContent className="p-0">
-              {loading ? (
-                <div className="flex items-center justify-center h-64">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                    <p className="mt-2 text-muted-foreground">
-                      Loading ledger entries...
-                    </p>
-                  </div>
-                </div>
-              ) : filteredLedger.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">No ledger entries found</h3>
-                  <p className="text-muted-foreground mt-1">
-                    {search
-                      ? "Try a different search term"
-                      : "No transactions recorded in this date range"}
-                  </p>
-                </div>
-              ) : (
-                <div className="rounded-md border">
-                  <div className="relative overflow-auto max-h-[600px]">
-                    <Table>
-                      <TableHeader className="sticky top-0 bg-background z-10">
-                        <TableRow>
-                          <TableHead className="w-[180px]">Date</TableHead>
-                          <TableHead className="w-[140px]">User Name</TableHead>
-                          <TableHead className="w-[140px]">Store Location</TableHead>
-                          <TableHead className="w-[120px] text-right">Opening Stock</TableHead>
-                          <TableHead className="w-[100px] text-right">Qty In</TableHead>
-                          <TableHead className="w-[100px] text-right">Qty Out</TableHead>
-                          <TableHead className="w-[120px] text-right">Closing Stock</TableHead>
-                          <TableHead className="w-[100px] text-right">Price</TableHead>
-                          <TableHead className="w-[200px]">Reference</TableHead>
-                          <TableHead className="w-[120px]">Document No</TableHead>
-                          <TableHead className="w-[140px]">Type</TableHead>
-                          <TableHead className="w-[80px] text-right no-print">Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {filteredLedger.map((entry) => (
-                          <TableRow key={entry.id} className="hover:bg-accent/50">
-                            <TableCell className="font-medium text-xs">
-                              {formatDate(entry.date)}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <User className="h-3 w-3 text-muted-foreground" />
-                                <span className="truncate">{entry.user_name}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <Building2 className="h-3 w-3 text-muted-foreground" />
-                                <span>{entry.location}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              <span className="text-muted-foreground">
-                                {formatNumber(entry.opening_stock)}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {entry.quantity_in > 0 ? (
-                                <Badge className="bg-green-100 text-green-800 border-green-200">
-                                  <Plus className="mr-1 h-3 w-3" />
-                                  {formatNumber(entry.quantity_in)}
-                                </Badge>
-                              ) : (
-                                <span className="text-muted-foreground">0</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {entry.quantity_out > 0 ? (
-                                <Badge className="bg-red-100 text-red-800 border-red-200">
-                                  <Minus className="mr-1 h-3 w-3" />
-                                  {formatNumber(entry.quantity_out)}
-                                </Badge>
-                              ) : (
-                                <span className="text-muted-foreground">0</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right font-mono font-semibold">
-                              {formatNumber(entry.closing_stock)}
-                            </TableCell>
-                            <TableCell className="text-right font-mono">
-                              {entry.price ? formatCurrency(entry.price) : "-"}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {getTransactionIcon(entry.type)}
-                                <span className="truncate">{entry.reference}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                <FileText className="h-3 w-3 text-muted-foreground" />
-                                <span className="font-mono text-xs">{entry.document_no}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                variant="outline"
-                                className={getTransactionTypeColor(entry.type)}
-                              >
-                                {entry.type}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-right no-print">
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/inventory/${entry.movement.tire_id}`}>
-                                      <Eye className="mr-2 h-4 w-4" />
-                                      View Tire Details
-                                    </Link>
-                                  </DropdownMenuItem>
-                                  {entry.movement.vehicle_id && (
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/vehicles/${entry.movement.vehicle_id}`}>
-                                        <Car className="mr-2 h-4 w-4" />
-                                        View Vehicle
-                                      </Link>
-                                    </DropdownMenuItem>
-                                  )}
-                                  {entry.movement.supplier_id && (
-                                    <DropdownMenuItem asChild>
-                                      <Link href={`/suppliers/${entry.movement.supplier_id}`}>
-                                        <Building className="mr-2 h-4 w-4" />
-                                        View Supplier
-                                      </Link>
-                                    </DropdownMenuItem>
-                                  )}
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/inventory/movement?tire=${entry.movement.tire_id}`}>
-                                      <History className="mr-2 h-4 w-4" />
-                                      View All Movements
-                                    </Link>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-            {filteredLedger.length > 0 && (
-              <CardFooter className="border-t px-6 py-4 no-print">
-                <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-4">
-                  <div className="text-sm text-muted-foreground">
-                    Showing {filteredLedger.length} of {totalEntries} entries
-                    {size && ` for size: ${size}`}
-                  </div>
-                  
-                  {totalPages > 1 && (
-                    <Pagination>
-                      <PaginationContent>
-                        <PaginationItem>
-                          <PaginationPrevious 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              if (currentPage > 1) setCurrentPage(currentPage - 1);
-                            }}
-                            className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
-                          />
-                        </PaginationItem>
-                        
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                          let pageNum;
-                          if (totalPages <= 5) {
-                            pageNum = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i;
-                          } else {
-                            pageNum = currentPage - 2 + i;
-                          }
-                          
-                          return (
-                            <PaginationItem key={pageNum}>
-                              <PaginationLink
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  setCurrentPage(pageNum);
-                                }}
-                                isActive={currentPage === pageNum}
-                              >
-                                {pageNum}
-                              </PaginationLink>
-                            </PaginationItem>
-                          );
-                        })}
-                        
-                        <PaginationItem>
-                          <PaginationNext 
-                            onClick={(e) => {
-                              e.preventDefault();
-                              if (currentPage < totalPages) setCurrentPage(currentPage + 1);
-                            }}
-                            className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
-                          />
-                        </PaginationItem>
-                      </PaginationContent>
-                    </Pagination>
-                  )}
-                </div>
-              </CardFooter>
-            )}
-          </Card>
-        </TabsContent>
+              <Button onClick={refreshData} disabled={loading}>
+                <Calendar className="mr-2 h-4 w-4" />
+                Apply Date Range
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
 
-        {/* Summary Tab */}
-        <TabsContent value="summary" className="space-y-4">
-          <div className="grid gap-4 md:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-                <Receipt className="h-4 w-4 text-muted-foreground" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{formatNumber(totalEntries)}</div>
-                <p className="text-xs text-muted-foreground">
-                  In selected date range
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Qty In</CardTitle>
-                <Plus className="h-4 w-4 text-green-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-green-600">
-                  {formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Tires added to stock
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Qty Out</CardTitle>
-                <Minus className="h-4 w-4 text-red-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-red-600">
-                  {formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Tires removed from stock
-                </p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Current Stock</CardTitle>
-                <Package className="h-4 w-4 text-blue-600" />
-              </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold text-blue-600">
-                  {filteredLedger.length > 0 
-                    ? formatNumber(filteredLedger[filteredLedger.length - 1].closing_stock)
-                    : "0"}
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Latest closing stock
-                </p>
-              </CardContent>
-            </Card>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+          <div className="flex items-center justify-between no-print">
+            <TabsList>
+              <TabsTrigger value="ledger">Stock Ledger</TabsTrigger>
+              <TabsTrigger value="summary">Summary View</TabsTrigger>
+            </TabsList>
+            
+            <div className="relative w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search transactions..."
+                className="pl-8"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
           </div>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Transaction Type Distribution</CardTitle>
-              <CardDescription>
-                Breakdown of transaction types in the selected period
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {Array.from(new Set(filteredLedger.map(e => e.type))).map((type) => {
-                  const count = filteredLedger.filter(e => e.type === type).length;
-                  const percentage = (count / filteredLedger.length) * 100;
-                  const totalQty = filteredLedger
-                    .filter(e => e.type === type)
-                    .reduce((sum, e) => sum + e.quantity_in + e.quantity_out, 0);
-                  
-                  return (
-                    <div key={type} className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          {getTransactionIcon(type)}
-                          <span className="text-sm font-medium">{type}</span>
-                        </div>
-                        <div className="text-sm font-medium">
-                          {count} transactions • {totalQty} tires
-                        </div>
-                      </div>
-                      <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${percentage}%`,
-                            backgroundColor: getTransactionTypeColor(type).includes("green") 
-                              ? "#10b981" 
-                              : getTransactionTypeColor(type).includes("red")
-                              ? "#ef4444"
-                              : "#3b82f6",
-                          }}
-                        />
-                      </div>
+          {/* Stock Ledger Tab */}
+          <TabsContent value="ledger" className="space-y-4">
+            <Card ref={printRef}>
+              <CardHeader className="no-print">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Stock Movement Ledger</CardTitle>
+                    <CardDescription>
+                      Complete transaction history with running stock totals
+                    </CardDescription>
+                  </div>
+                  <Badge variant="outline" className="text-sm">
+                    {formatNumber(totalEntries)} total entries
+                  </Badge>
+                </div>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loading ? (
+                  <div className="flex items-center justify-center h-64">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                      <p className="mt-2 text-muted-foreground">
+                        Loading ledger entries...
+                      </p>
                     </div>
-                  );
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+                  </div>
+                ) : filteredLedger.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-64 text-center">
+                    <Receipt className="h-12 w-12 text-muted-foreground mb-4" />
+                    <h3 className="text-lg font-medium">No ledger entries found</h3>
+                    <p className="text-muted-foreground mt-1">
+                      {search
+                        ? "Try a different search term"
+                        : "No transactions recorded in this date range"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="rounded-md border">
+                    <div className="relative overflow-auto max-h-[600px]">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10">
+                          <TableRow>
+                            <TableHead className="w-[180px]">Date</TableHead>
+                            <TableHead className="w-[140px]">User Name</TableHead>
+                            <TableHead className="w-[140px]">Store Location</TableHead>
+                            <TableHead className="w-[120px] text-right">Opening Stock</TableHead>
+                            <TableHead className="w-[100px] text-right">Qty In</TableHead>
+                            <TableHead className="w-[100px] text-right">Qty Out</TableHead>
+                            <TableHead className="w-[120px] text-right">Closing Stock</TableHead>
+                            <TableHead className="w-[100px] text-right">Price</TableHead>
+                            <TableHead className="w-[200px]">Reference</TableHead>
+                            <TableHead className="w-[120px]">Document No</TableHead>
+                            <TableHead className="w-[140px]">Type</TableHead>
+                            <TableHead className="w-[80px] text-right no-print">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredLedger.map((entry) => (
+                            <TableRow key={entry.id} className="hover:bg-accent/50">
+                              <TableCell className="font-medium text-xs">
+                                {formatDate(entry.date)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <User className="h-3 w-3 text-muted-foreground" />
+                                  <span className="truncate">{entry.user_name}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Building2 className="h-3 w-3 text-muted-foreground" />
+                                  <span>{entry.location}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                <span className="text-muted-foreground">
+                                  {formatNumber(entry.opening_stock)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {entry.quantity_in > 0 ? (
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800">
+                                    <Plus className="mr-1 h-3 w-3" />
+                                    {formatNumber(entry.quantity_in)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">0</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {entry.quantity_out > 0 ? (
+                                  <Badge className="bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800">
+                                    <Minus className="mr-1 h-3 w-3" />
+                                    {formatNumber(entry.quantity_out)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">0</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {formatNumber(entry.closing_stock)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {entry.price ? formatCurrency(entry.price) : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  {getTransactionIcon(entry.type)}
+                                  <span className="truncate max-w-[150px]">{entry.reference}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-3 w-3 text-muted-foreground" />
+                                  <span className="font-mono text-xs">{entry.document_no}</span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="outline"
+                                  className={getTransactionTypeColor(entry.type)}
+                                >
+                                  {entry.type}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="text-right no-print">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                    <PermissionGuard permissionCode="inventory.view" action="view">
+                                      <DropdownMenuItem asChild>
+                                        <Link href={`/inventory/${entry.movement.tire_id}`}>
+                                          <Eye className="mr-2 h-4 w-4" />
+                                          View Tire Details
+                                        </Link>
+                                      </DropdownMenuItem>
+                                    </PermissionGuard>
+                                    {entry.movement.vehicle_id && (
+                                      <PermissionGuard permissionCode="vehicle.view" action="view">
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/vehicles/${entry.movement.vehicle_id}`}>
+                                            <Car className="mr-2 h-4 w-4" />
+                                            View Vehicle
+                                          </Link>
+                                        </DropdownMenuItem>
+                                      </PermissionGuard>
+                                    )}
+                                    {entry.movement.supplier_id && (
+                                      <PermissionGuard permissionCode="supplier.view" action="view">
+                                        <DropdownMenuItem asChild>
+                                          <Link href={`/suppliers/${entry.movement.supplier_id}`}>
+                                            <Building className="mr-2 h-4 w-4" />
+                                            View Supplier
+                                          </Link>
+                                        </DropdownMenuItem>
+                                      </PermissionGuard>
+                                    )}
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/inventory/movement?tire=${entry.movement.tire_id}`}>
+                                        <History className="mr-2 h-4 w-4" />
+                                        View All Movements
+                                      </Link>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+              {filteredLedger.length > 0 && (
+                <CardFooter className="border-t px-6 py-4 no-print">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between w-full gap-4">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {filteredLedger.length} of {totalEntries} entries
+                      {size && ` for size: ${size}`}
+                      {tireId && ` for tire: ${filteredLedger[0]?.movement.serial_number || tireId}`}
+                    </div>
+                    
+                    {totalPages > 1 && (
+                      <Pagination>
+                        <PaginationContent>
+                          <PaginationItem>
+                            <PaginationPrevious 
+                              onClick={(e) => {
+                                e.preventDefault();
+                                if (currentPage > 1) setCurrentPage(currentPage - 1);
+                              }}
+                              className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
+                            />
+                          </PaginationItem>
+                          
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum;
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <PaginationItem key={pageNum}>
+                                <PaginationLink
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    setCurrentPage(pageNum);
+                                  }}
+                                  isActive={currentPage === pageNum}
+                                >
+                                  {pageNum}
+                                </PaginationLink>
+                              </PaginationItem>
+                            );
+                          })}
+                          
+                          <PaginationItem>
+                            <PaginationNext 
+                              onClick={(e) => {
+                                e.preventDefault();
+                                if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+                              }}
+                              className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
+                            />
+                          </PaginationItem>
+                        </PaginationContent>
+                      </Pagination>
+                    )}
+                  </div>
+                </CardFooter>
+              )}
+            </Card>
+          </TabsContent>
+
+          {/* Summary Tab */}
+          <TabsContent value="summary" className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
+                  <Receipt className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">{formatNumber(totalEntries)}</div>
+                  <p className="text-xs text-muted-foreground">
+                    In selected date range
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Qty In</CardTitle>
+                  <Plus className="h-4 w-4 text-green-600 dark:text-green-400" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    {formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Tires added to stock
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Total Qty Out</CardTitle>
+                  <Minus className="h-4 w-4 text-red-600 dark:text-red-400" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    {formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Tires removed from stock
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">Current Stock</CardTitle>
+                  <Package className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                    {filteredLedger.length > 0 
+                      ? formatNumber(filteredLedger[filteredLedger.length - 1].closing_stock)
+                      : "0"}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Latest closing stock
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Transaction Type Distribution</CardTitle>
+                <CardDescription>
+                  Breakdown of transaction types in the selected period
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {filteredLedger.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No transaction data available</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {Array.from(new Set(filteredLedger.map(e => e.type))).map((type) => {
+                      const count = filteredLedger.filter(e => e.type === type).length;
+                      const percentage = (count / filteredLedger.length) * 100;
+                      const totalQty = filteredLedger
+                        .filter(e => e.type === type)
+                        .reduce((sum, e) => sum + e.quantity_in + e.quantity_out, 0);
+                      
+                      return (
+                        <div key={type} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              {getTransactionIcon(type)}
+                              <span className="text-sm font-medium">{type}</span>
+                            </div>
+                            <div className="text-sm font-medium">
+                              {count} transactions • {totalQty} tires
+                            </div>
+                          </div>
+                          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${percentage}%`,
+                                backgroundColor: getTransactionTypeColor(type).includes("green") 
+                                  ? "#10b981" 
+                                  : getTransactionTypeColor(type).includes("red")
+                                  ? "#ef4444"
+                                  : "#3b82f6",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </PermissionGuard>
   );
 }

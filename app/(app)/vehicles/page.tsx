@@ -1,13 +1,10 @@
+// app/vehicles/page.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { 
-  Card, 
-  CardContent, 
-  CardDescription, 
-  CardHeader, 
-  CardTitle 
-} from "@/components/ui/card";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/auth/PermissionGuard";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -39,12 +36,9 @@ import {
   RotateCcw,
   AlertCircle,
   CheckCircle,
-  XCircle,
   RefreshCw,
   Printer,
-  Download,
-  FileText,
-  BarChart
+  Download
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -63,13 +57,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import { format } from "date-fns";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Vehicle {
   id: number;
@@ -100,14 +95,12 @@ interface RetirementData {
   notes?: string;
 }
 
-// Available wheel configurations
 const WHEEL_CONFIGS = ["All", "4x2", "6x4", "8x4", "6x2", "4x4"] as const;
 type WheelConfig = typeof WHEEL_CONFIGS[number];
-
-// View mode - Active or Retired
 type ViewMode = "active" | "retired";
 
 export default function VehiclesPage() {
+  const { user, hasPermission, authFetch, isLoading: authLoading } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -126,53 +119,46 @@ export default function VehiclesPage() {
   });
   const [retirementLoading, setRetirementLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
-  const [retirementReasons] = useState([
+  const retirementReasons = [
     "End of Service Life",
     "Accident Damage",
     "Mechanical Failure",
     "Fleet Reduction",
     "Sold/Transferred",
     "Other"
-  ]);
+  ];
   const itemsPerPage = 10;
-  const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    fetchVehicles();
-  }, [currentPage, search, selectedConfig, viewMode]);
+    if (!authLoading) {
+      fetchVehicles();
+    }
+  }, [currentPage, search, selectedConfig, viewMode, authLoading]);
 
   const fetchVehicles = async () => {
     try {
       setLoading(true);
       
-      // Build query parameters based on view mode
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
       });
       
-      // Add search term if provided
       if (search.trim()) {
         params.append("search", search.trim());
       }
       
-      // Determine which API endpoint to use based on view mode
-      let apiUrl;
-      if (viewMode === "active") {
-        apiUrl = `http://localhost:5000/api/vehicles?${params.toString()}`;
-      } else {
-        apiUrl = `http://localhost:5000/api/vehicles/retired/list?${params.toString()}`;
+      if (selectedConfig !== "All") {
+        params.append("wheel_config", selectedConfig);
       }
       
-      const response = await fetch(apiUrl);
+      const apiUrl = viewMode === "active"
+        ? `${API_BASE_URL}/api/vehicles?${params.toString()}`
+        : `${API_BASE_URL}/api/vehicles/retired/list?${params.toString()}`;
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
+      const response = await authFetch(apiUrl);
       const data: ApiResponse = await response.json();
       
-      // Filter out retired vehicles on the frontend if we're in active mode
       let filteredVehicles = data.vehicles || [];
       if (viewMode === "active") {
         filteredVehicles = filteredVehicles.filter(vehicle => vehicle.status !== "RETIRED");
@@ -180,7 +166,6 @@ export default function VehiclesPage() {
       
       setVehicles(filteredVehicles);
       setTotalPages(data.totalPages || 1);
-      // Adjust total count for active view to exclude retired vehicles
       const activeTotal = viewMode === "active" 
         ? data.vehicles?.filter(v => v.status !== "RETIRED").length || 0
         : data.total || 0;
@@ -196,6 +181,86 @@ export default function VehiclesPage() {
     }
   };
 
+  const handleRetireVehicle = async () => {
+    if (!selectedVehicle || !retirementData.reason.trim() || !user) return;
+    
+    try {
+      setRetirementLoading(true);
+      
+      const response = await authFetch(`${API_BASE_URL}/api/vehicles/${selectedVehicle.id}/retire`, {
+        method: "POST",
+        body: JSON.stringify({
+          reason: retirementData.reason,
+          retirement_date: retirementData.retirement_date,
+          retired_by: user.id,
+          notes: retirementData.notes
+        }),
+      });
+      
+      if (response.ok) {
+        toast.success("Vehicle retired successfully");
+        fetchVehicles();
+        handleCloseRetirementDialog();
+      }
+    } catch (error) {
+      console.error("Error retiring vehicle:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to retire vehicle");
+    } finally {
+      setRetirementLoading(false);
+    }
+  };
+
+  const handleRestoreVehicle = async () => {
+    if (!selectedVehicle || !user) return;
+    
+    try {
+      setRestoreLoading(true);
+      
+      const response = await authFetch(`${API_BASE_URL}/api/vehicles/${selectedVehicle.id}/reactivate`, {
+        method: "POST",
+        body: JSON.stringify({
+          reactivated_by: user.id,
+          reason: "Vehicle reactivated"
+        }),
+      });
+      
+      if (response.ok) {
+        toast.success("Vehicle reactivated successfully");
+        fetchVehicles();
+        handleCloseReactivationDialog();
+      }
+    } catch (error) {
+      console.error("Error restoring vehicle:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to restore vehicle");
+    } finally {
+      setRestoreLoading(false);
+    }
+  };
+
+  const handlePermanentDelete = async (vehicleId: number) => {
+    if (!hasPermission('vehicle.delete')) {
+      toast.error("You don't have permission to delete vehicles");
+      return;
+    }
+    
+    if (!confirm("Are you sure you want to permanently delete this retired vehicle? This action cannot be undone.")) return;
+    
+    try {
+      const response = await authFetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`, {
+        method: "DELETE",
+        body: JSON.stringify({ deleted_by: user?.id }),
+      });
+      
+      if (response.ok) {
+        toast.success("Vehicle deleted permanently");
+        fetchVehicles();
+      }
+    } catch (error) {
+      console.error("Error deleting vehicle:", error);
+      toast.error(error instanceof Error ? error.message : "Failed to delete vehicle");
+    }
+  };
+
   const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
     setCurrentPage(1);
@@ -204,64 +269,6 @@ export default function VehiclesPage() {
   const handleConfigFilter = (config: WheelConfig) => {
     setSelectedConfig(config);
     setCurrentPage(1);
-  };
-
-  const formatDate = (dateString: string) => {
-    try {
-      return new Date(dateString).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
-    } catch (error) {
-      return "Invalid date";
-    }
-  };
-
-  const formatDateTime = (dateString: string) => {
-    try {
-      return new Date(dateString).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (error) {
-      return "Invalid date";
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "ACTIVE":
-        return "bg-green-500 hover:bg-green-600";
-      case "INACTIVE":
-        return "bg-gray-500 hover:bg-gray-600";
-      case "MAINTENANCE":
-        return "bg-yellow-500 hover:bg-yellow-600";
-      case "RETIRED":
-        return "bg-red-500 hover:bg-red-600";
-      default:
-        return "bg-gray-500 hover:bg-gray-600";
-    }
-  };
-
-  const getConfigColor = (config: string) => {
-    switch (config) {
-      case "4x2":
-        return "bg-blue-100 text-blue-800 border-blue-200";
-      case "6x4":
-        return "bg-green-100 text-green-800 border-green-200";
-      case "8x4":
-        return "bg-purple-100 text-purple-800 border-purple-200";
-      case "6x2":
-        return "bg-amber-100 text-amber-800 border-amber-200";
-      case "4x4":
-        return "bg-red-100 text-red-800 border-red-200";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
-    }
   };
 
   const handleOpenRetirementDialog = (vehicle: Vehicle) => {
@@ -290,436 +297,399 @@ export default function VehiclesPage() {
     setSelectedVehicle(null);
   };
 
-  const handleRetireVehicle = async () => {
-    if (!selectedVehicle || !retirementData.reason.trim()) return;
-    
+  const formatDate = (dateString: string) => {
     try {
-      setRetirementLoading(true);
-      
-      const response = await fetch(`http://localhost:5000/api/vehicles/${selectedVehicle.id}/retire`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reason: retirementData.reason,
-          retirement_date: retirementData.retirement_date,
-          retired_by: 1, // Replace with actual user ID from auth context
-          notes: retirementData.notes
-        }),
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
       });
-      
-      if (response.ok) {
-        toast.success("Vehicle retired successfully");
-        // Refresh the list
-        fetchVehicles();
-        handleCloseRetirementDialog();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to retire vehicle");
-      }
-    } catch (error) {
-      console.error("Error retiring vehicle:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to retire vehicle");
-    } finally {
-      setRetirementLoading(false);
+    } catch {
+      return "Invalid date";
     }
   };
 
-  const handleRestoreVehicle = async () => {
-    if (!selectedVehicle) return;
-    
+  const formatDateTime = (dateString: string) => {
     try {
-      setRestoreLoading(true);
-      
-      const response = await fetch(`http://localhost:5000/api/vehicles/${selectedVehicle.id}/reactivate`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          reactivated_by: 1, // Replace with actual user ID from auth context
-          reason: "Vehicle reactivated"
-        }),
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: '2-digit',
+        minute: '2-digit'
       });
-      
-      if (response.ok) {
-        toast.success("Vehicle reactivated successfully");
-        // Refresh the list
-        fetchVehicles();
-        handleCloseReactivationDialog();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to restore vehicle");
-      }
-    } catch (error) {
-      console.error("Error restoring vehicle:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to restore vehicle");
-    } finally {
-      setRestoreLoading(false);
+    } catch {
+      return "Invalid date";
     }
   };
 
-  const handlePermanentDelete = async (vehicleId: number) => {
-    if (!confirm("Are you sure you want to permanently delete this retired vehicle? This action cannot be undone.")) return;
-    
-    try {
-      const response = await fetch(`http://localhost:5000/api/vehicles/${vehicleId}`, {
-        method: "DELETE",
-      });
-      
-      if (response.ok) {
-        toast.success("Vehicle deleted permanently");
-        // Refresh the list
-        fetchVehicles();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to delete vehicle");
-      }
-    } catch (error) {
-      console.error("Error deleting vehicle:", error);
-      toast.error(error instanceof Error ? error.message : "Failed to delete vehicle");
-    }
+  const getStatusColor = (status: string) => {
+    const colors = {
+      ACTIVE: "bg-green-500 hover:bg-green-600",
+      INACTIVE: "bg-gray-500 hover:bg-gray-600",
+      MAINTENANCE: "bg-yellow-500 hover:bg-yellow-600",
+      RETIRED: "bg-red-500 hover:bg-red-600"
+    };
+    return colors[status as keyof typeof colors] || "bg-gray-500 hover:bg-gray-600";
   };
 
-  // Get filtered vehicle count for display
+  const getConfigColor = (config: string) => {
+    const colors = {
+      "4x2": "bg-blue-100 text-blue-800 border-blue-200",
+      "6x4": "bg-green-100 text-green-800 border-green-200",
+      "8x4": "bg-purple-100 text-purple-800 border-purple-200",
+      "6x2": "bg-amber-100 text-amber-800 border-amber-200",
+      "4x4": "bg-red-100 text-red-800 border-red-200"
+    };
+    return colors[config as keyof typeof colors] || "bg-gray-100 text-gray-800 border-gray-200";
+  };
+
   const getFilterDescription = () => {
     if (selectedConfig === "All" && !search) {
       return `${viewMode === "active" ? "Active" : "Retired"} vehicles (${vehicles.length} of ${totalVehicles})`;
     }
     
     let description = "";
-    if (selectedConfig !== "All") {
-      description += `${selectedConfig} vehicles`;
-    }
+    if (selectedConfig !== "All") description += `${selectedConfig} vehicles`;
     if (search) {
       if (description) description += " matching ";
       description += `"${search}"`;
     }
     description += ` (${vehicles.length} of ${totalVehicles})`;
-    
     return description;
   };
 
-  // Handle print functionality
-  const handlePrint = () => {
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>${viewMode === "active" ? "Active" : "Retired"} Vehicles Report</title>
-        <style>
-          @media print {
-            @page {
-              margin: 0.5in;
-              size: landscape;
+
+    // Handle print functionality
+    const handlePrint = () => {
+      const printContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>${viewMode === "active" ? "Active" : "Retired"} Vehicles Report</title>
+          <style>
+            @media print {
+              @page {
+                margin: 0.5in;
+                size: landscape;
+              }
+              body {
+                font-family: Arial, sans-serif;
+                line-height: 1.4;
+                color: #333;
+                margin: 0;
+                padding: 0;
+              }
+              .print-header {
+                text-align: center;
+                border-bottom: 2px solid #333;
+                padding-bottom: 15px;
+                margin-bottom: 20px;
+              }
+              .print-header h1 {
+                margin: 0 0 5px 0;
+                color: #1a237e;
+              }
+              .print-header .subtitle {
+                color: #666;
+                margin: 0;
+              }
+              .summary-stats {
+                display: flex;
+                justify-content: space-around;
+                margin: 20px 0;
+                padding: 15px;
+                background: #f8f9fa;
+                border-radius: 4px;
+              }
+              .stat-item {
+                text-align: center;
+              }
+              .stat-value {
+                font-size: 24px;
+                font-weight: bold;
+                color: #1a237e;
+              }
+              .stat-label {
+                font-size: 12px;
+                color: #666;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+              }
+              .filter-info {
+                background: #f1f8ff;
+                padding: 10px;
+                border-radius: 4px;
+                margin-bottom: 20px;
+                font-size: 12px;
+              }
+              .vehicles-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 15px;
+                font-size: 11px;
+              }
+              .vehicles-table th {
+                background-color: #2c3e50;
+                color: white;
+                padding: 8px;
+                text-align: left;
+                border: 1px solid #34495e;
+                font-weight: bold;
+              }
+              .vehicles-table td {
+                padding: 6px 8px;
+                border: 1px solid #ddd;
+              }
+              .vehicles-table tr:nth-child(even) {
+                background-color: #f9f9f9;
+              }
+              .status-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 12px;
+                font-size: 10px;
+                font-weight: bold;
+              }
+              .status-active {
+                background-color: #d4edda;
+                color: #155724;
+              }
+              .status-inactive {
+                background-color: #f8f9fa;
+                color: #6c757d;
+              }
+              .status-maintenance {
+                background-color: #fff3cd;
+                color: #856404;
+              }
+              .status-retired {
+                background-color: #f8d7da;
+                color: #721c24;
+              }
+              .config-badge {
+                display: inline-block;
+                padding: 2px 8px;
+                border-radius: 12px;
+                font-size: 10px;
+                font-weight: bold;
+              }
+              .config-4x2 {
+                background-color: #cce5ff;
+                color: #004085;
+              }
+              .config-6x4 {
+                background-color: #d4edda;
+                color: #155724;
+              }
+              .config-8x4 {
+                background-color: #e2d9f3;
+                color: #4a3c6d;
+              }
+              .config-6x2 {
+                background-color: #fff3cd;
+                color: #856404;
+              }
+              .config-4x4 {
+                background-color: #f8d7da;
+                color: #721c24;
+              }
+              .print-footer {
+                margin-top: 40px;
+                padding-top: 15px;
+                border-top: 1px solid #ddd;
+                text-align: center;
+                color: #666;
+                font-size: 11px;
+              }
+              .print-summary {
+                margin: 15px 0;
+                padding: 10px;
+                background: #f8f9fa;
+                border-radius: 4px;
+                font-size: 12px;
+              }
             }
-            body {
-              font-family: Arial, sans-serif;
-              line-height: 1.4;
-              color: #333;
-              margin: 0;
-              padding: 0;
-            }
-            .print-header {
-              text-align: center;
-              border-bottom: 2px solid #333;
-              padding-bottom: 15px;
-              margin-bottom: 20px;
-            }
-            .print-header h1 {
-              margin: 0 0 5px 0;
-              color: #1a237e;
-            }
-            .print-header .subtitle {
-              color: #666;
-              margin: 0;
-            }
-            .summary-stats {
-              display: flex;
-              justify-content: space-around;
-              margin: 20px 0;
-              padding: 15px;
-              background: #f8f9fa;
-              border-radius: 4px;
-            }
-            .stat-item {
-              text-align: center;
-            }
-            .stat-value {
-              font-size: 24px;
-              font-weight: bold;
-              color: #1a237e;
-            }
-            .stat-label {
-              font-size: 12px;
-              color: #666;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .filter-info {
-              background: #f1f8ff;
-              padding: 10px;
-              border-radius: 4px;
-              margin-bottom: 20px;
-              font-size: 12px;
-            }
-            .vehicles-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 15px;
-              font-size: 11px;
-            }
-            .vehicles-table th {
-              background-color: #2c3e50;
-              color: white;
-              padding: 8px;
-              text-align: left;
-              border: 1px solid #34495e;
-              font-weight: bold;
-            }
-            .vehicles-table td {
-              padding: 6px 8px;
-              border: 1px solid #ddd;
-            }
-            .vehicles-table tr:nth-child(even) {
-              background-color: #f9f9f9;
-            }
-            .status-badge {
-              display: inline-block;
-              padding: 2px 8px;
-              border-radius: 12px;
-              font-size: 10px;
-              font-weight: bold;
-            }
-            .status-active {
-              background-color: #d4edda;
-              color: #155724;
-            }
-            .status-inactive {
-              background-color: #f8f9fa;
-              color: #6c757d;
-            }
-            .status-maintenance {
-              background-color: #fff3cd;
-              color: #856404;
-            }
-            .status-retired {
-              background-color: #f8d7da;
-              color: #721c24;
-            }
-            .config-badge {
-              display: inline-block;
-              padding: 2px 8px;
-              border-radius: 12px;
-              font-size: 10px;
-              font-weight: bold;
-            }
-            .config-4x2 {
-              background-color: #cce5ff;
-              color: #004085;
-            }
-            .config-6x4 {
-              background-color: #d4edda;
-              color: #155724;
-            }
-            .config-8x4 {
-              background-color: #e2d9f3;
-              color: #4a3c6d;
-            }
-            .config-6x2 {
-              background-color: #fff3cd;
-              color: #856404;
-            }
-            .config-4x4 {
-              background-color: #f8d7da;
-              color: #721c24;
-            }
-            .print-footer {
-              margin-top: 40px;
-              padding-top: 15px;
-              border-top: 1px solid #ddd;
-              text-align: center;
-              color: #666;
-              font-size: 11px;
-            }
-            .print-summary {
-              margin: 15px 0;
-              padding: 10px;
-              background: #f8f9fa;
-              border-radius: 4px;
-              font-size: 12px;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <h1>${viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"} Report</h1>
-          <p class="subtitle">Fleet Management System</p>
-          <p class="subtitle">Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'hh:mm a')}</p>
-        </div>
-        
-        <div class="filter-info">
-          <strong>Report Criteria:</strong> 
-          ${viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}
-          ${selectedConfig !== "All" ? ` • Wheel Config: ${selectedConfig}` : ''}
-          ${search ? ` • Search: "${search}"` : ''}
-          ${currentPage > 1 ? ` • Page ${currentPage} of ${totalPages}` : ''}
-        </div>
-        
-        <div class="summary-stats">
-          <div class="stat-item">
-            <div class="stat-value">${totalVehicles}</div>
-            <div class="stat-label">Total ${viewMode === "active" ? "Active" : "Retired"}</div>
+          </style>
+        </head>
+        <body>
+          <div class="print-header">
+            <h1>${viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"} Report</h1>
+            <p class="subtitle">Fleet Management System</p>
+            <p class="subtitle">Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'hh:mm a')}</p>
           </div>
-          <div class="stat-item">
-            <div class="stat-value">${vehicles.length}</div>
-            <div class="stat-label">${selectedConfig !== "All" || search ? "Filtered" : "Displayed"}</div>
+          
+          <div class="filter-info">
+            <strong>Report Criteria:</strong> 
+            ${viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}
+            ${selectedConfig !== "All" ? ` • Wheel Config: ${selectedConfig}` : ''}
+            ${search ? ` • Search: "${search}"` : ''}
+            ${currentPage > 1 ? ` • Page ${currentPage} of ${totalPages}` : ''}
           </div>
-          <div class="stat-item">
-            <div class="stat-value">${vehicles.filter(v => v.status === "ACTIVE").length}</div>
-            <div class="stat-label">Active Status</div>
+          
+          <div class="summary-stats">
+            <div class="stat-item">
+              <div class="stat-value">${totalVehicles}</div>
+              <div class="stat-label">Total ${viewMode === "active" ? "Active" : "Retired"}</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">${vehicles.length}</div>
+              <div class="stat-label">${selectedConfig !== "All" || search ? "Filtered" : "Displayed"}</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">${vehicles.filter(v => v.status === "ACTIVE").length}</div>
+              <div class="stat-label">Active Status</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">${vehicles.filter(v => v.status === "MAINTENANCE").length}</div>
+              <div class="stat-label">In Maintenance</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value">${vehicles.reduce((sum, v) => sum + (v.active_tires_count || 0), 0)}</div>
+              <div class="stat-label">Total Tires</div>
+            </div>
           </div>
-          <div class="stat-item">
-            <div class="stat-value">${vehicles.filter(v => v.status === "MAINTENANCE").length}</div>
-            <div class="stat-label">In Maintenance</div>
+          
+          <div class="print-summary">
+            Showing ${vehicles.length} of ${totalVehicles} ${viewMode === "active" ? "active" : "retired"} vehicles
+            • Generated by: ${user?.full_name || user?.username || 'System Admin'} • Report ID: VEH-${viewMode.toUpperCase()}-${Date.now().toString().slice(-6)}
           </div>
-          <div class="stat-item">
-            <div class="stat-value">${vehicles.reduce((sum, v) => sum + (v.active_tires_count || 0), 0)}</div>
-            <div class="stat-label">Total Tires</div>
-          </div>
-        </div>
-        
-        <div class="print-summary">
-          Showing ${vehicles.length} of ${totalVehicles} ${viewMode === "active" ? "active" : "retired"} vehicles
-          • Generated by: System Admin • Report ID: VEH-${viewMode.toUpperCase()}-${Date.now().toString().slice(-6)}
-        </div>
-        
-        <table class="vehicles-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Vehicle Number</th>
-              <th>Make & Model</th>
-              <th>Wheel Config</th>
-              <th>Status</th>
-              <th>Tires</th>
-              ${viewMode === "retired" ? '<th>Retired Date</th><th>Reason</th>' : ''}
-              <th>Added Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${vehicles.map(vehicle => {
-              const statusClass = vehicle.status.toLowerCase();
-              const configClass = vehicle.wheel_config.toLowerCase();
-              return `
-                <tr>
-                  <td>${vehicle.id}</td>
-                  <td><strong>${vehicle.vehicle_number}</strong></td>
-                  <td>${vehicle.make} ${vehicle.model}</td>
-                  <td>
-                    <span class="config-badge config-${configClass}">
-                      ${vehicle.wheel_config}
-                    </span>
-                  </td>
-                  <td>
-                    <span class="status-badge status-${statusClass}">
-                      ${vehicle.status}
-                    </span>
-                  </td>
-                  <td>${vehicle.active_tires_count || 0}</td>
-                  ${viewMode === "retired" ? `
-                    <td>${vehicle.retired_date ? formatDate(vehicle.retired_date) : 'N/A'}</td>
-                    <td>${vehicle.retirement_reason || 'N/A'}</td>
-                  ` : ''}
-                  <td>${formatDate(vehicle.created_at)}</td>
-                </tr>
-              `;
-            }).join('')}
-            ${vehicles.length === 0 ? `
+          
+          <table class="vehicles-table">
+            <thead>
               <tr>
-                <td colspan="${viewMode === "retired" ? 9 : 7}" style="text-align: center; padding: 30px; color: #666;">
-                  No ${viewMode === "active" ? "active" : "retired"} vehicles found
-                  ${search || selectedConfig !== "All" ? 'matching the current filters' : ''}
-                </td>
+                <th>ID</th>
+                <th>Vehicle Number</th>
+                <th>Make & Model</th>
+                <th>Wheel Config</th>
+                <th>Status</th>
+                <th>Tires</th>
+                ${viewMode === "retired" ? '<th>Retired Date</th><th>Reason</th>' : ''}
+                <th>Added Date</th>
               </tr>
-            ` : ''}
-          </tbody>
-        </table>
-        
-        <div class="print-footer">
-          <p>Confidential Document - For Internal Use Only</p>
-          <p>Fleet Management System | ${format(new Date(), 'yyyy')} © All Rights Reserved</p>
-        </div>
-      </body>
-      </html>
-    `;
-    
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
+            </thead>
+            <tbody>
+              ${vehicles.map(vehicle => {
+                const statusClass = vehicle.status.toLowerCase();
+                const configClass = vehicle.wheel_config.toLowerCase();
+                return `
+                  <tr>
+                    <td>${vehicle.id}</td>
+                    <td><strong>${vehicle.vehicle_number}</strong></td>
+                    <td>${vehicle.make} ${vehicle.model}</td>
+                    <td>
+                      <span class="config-badge config-${configClass}">
+                        ${vehicle.wheel_config}
+                      </span>
+                    </td>
+                    <td>
+                      <span class="status-badge status-${statusClass}">
+                        ${vehicle.status}
+                      </span>
+                    </td>
+                    <td>${vehicle.active_tires_count || 0}</td>
+                    ${viewMode === "retired" ? `
+                      <td>${vehicle.retired_date ? formatDate(vehicle.retired_date) : 'N/A'}</td>
+                      <td>${vehicle.retirement_reason || 'N/A'}</td>
+                    ` : ''}
+                    <td>${formatDate(vehicle.created_at)}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${vehicles.length === 0 ? `
+                <tr>
+                  <td colspan="${viewMode === "retired" ? 9 : 7}" style="text-align: center; padding: 30px; color: #666;">
+                    No ${viewMode === "active" ? "active" : "retired"} vehicles found
+                    ${search || selectedConfig !== "All" ? 'matching the current filters' : ''}
+                  </td>
+                </tr>
+              ` : ''}
+            </tbody>
+          </table>
+          
+          <div class="print-footer">
+            <p>Confidential Document - For Internal Use Only</p>
+            <p>Fleet Management System | ${format(new Date(), 'yyyy')} © All Rights Reserved</p>
+          </div>
+        </body>
+        </html>
+      `;
       
-      // Add a small delay before printing to ensure content is loaded
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 250);
-    }
-  };
+      const printWindow = window.open('', '_blank');
+      if (printWindow) {
+        printWindow.document.write(printContent);
+        printWindow.document.close();
+        printWindow.focus();
+        
+        // Add a small delay before printing to ensure content is loaded
+        setTimeout(() => {
+          printWindow.print();
+          printWindow.close();
+        }, 250);
+      }
+    };
 
-  // Handle export to CSV
-  const handleExportCSV = () => {
-    const headers = [
-      "ID",
-      "Vehicle Number",
-      "Make",
-      "Model",
-      "Year",
-      "Wheel Config",
-      "Status",
-      "Current Tires",
-      "Current Odometer",
-      "Added Date",
-      ...(viewMode === "retired" ? ["Retired Date", "Retirement Reason"] : [])
-    ];
+    // Handle export to CSV
+    const handleExportCSV = () => {
+      const headers = [
+        "ID",
+        "Vehicle Number",
+        "Make",
+        "Model",
+        "Year",
+        "Wheel Config",
+        "Status",
+        "Current Tires",
+        "Current Odometer",
+        "Added Date",
+        ...(viewMode === "retired" ? ["Retired Date", "Retirement Reason"] : [])
+      ];
 
-    const csvData = vehicles.map((vehicle) => [
-      vehicle.id,
-      vehicle.vehicle_number,
-      vehicle.make,
-      vehicle.model,
-      vehicle.year || "N/A",
-      vehicle.wheel_config,
-      vehicle.status,
-      vehicle.active_tires_count || 0,
-      vehicle.current_odometer ? `${vehicle.current_odometer.toLocaleString()} km` : "N/A",
-      formatDate(vehicle.created_at),
-      ...(viewMode === "retired" ? [
-        vehicle.retired_date ? formatDate(vehicle.retired_date) : "N/A",
-        vehicle.retirement_reason || "N/A"
-      ] : [])
-    ]);
+      const csvData = vehicles.map((vehicle) => [
+        vehicle.id,
+        vehicle.vehicle_number,
+        vehicle.make,
+        vehicle.model,
+        vehicle.year || "N/A",
+        vehicle.wheel_config,
+        vehicle.status,
+        vehicle.active_tires_count || 0,
+        vehicle.current_odometer ? `${vehicle.current_odometer.toLocaleString()} km` : "N/A",
+        formatDate(vehicle.created_at),
+        ...(viewMode === "retired" ? [
+          vehicle.retired_date ? formatDate(vehicle.retired_date) : "N/A",
+          vehicle.retirement_reason || "N/A"
+        ] : [])
+      ]);
 
-    const csvContent = [
-      headers.join(","),
-      ...csvData.map((row) => row.join(",")),
-    ].join("\n");
+      const csvContent = [
+        headers.join(","),
+        ...csvData.map((row) => row.join(",")),
+      ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${viewMode}-vehicles-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
-  };
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${viewMode}-vehicles-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }; 
+    
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Retirement Dialog */}
+      {/* Dialogs */}
       <Dialog open={retirementDialogOpen} onOpenChange={setRetirementDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -735,9 +705,7 @@ export default function VehiclesPage() {
           
           <div className="space-y-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="retirement_date" className="text-right">
-                Retirement Date*
-              </Label>
+              <Label htmlFor="retirement_date" className="text-right">Retirement Date*</Label>
               <Input
                 id="retirement_date"
                 type="date"
@@ -749,13 +717,10 @@ export default function VehiclesPage() {
             </div>
             
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="reason" className="text-right">
-                Reason*
-              </Label>
+              <Label htmlFor="reason" className="text-right">Reason*</Label>
               <Select
                 value={retirementData.reason}
                 onValueChange={(value) => setRetirementData({...retirementData, reason: value})}
-                required
               >
                 <SelectTrigger className="col-span-3">
                   <SelectValue placeholder="Select a reason" />
@@ -769,9 +734,7 @@ export default function VehiclesPage() {
             </div>
             
             <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="notes" className="text-right">
-                Notes
-              </Label>
+              <Label htmlFor="notes" className="text-right">Notes</Label>
               <Textarea
                 id="notes"
                 placeholder="Additional notes about the retirement..."
@@ -782,26 +745,27 @@ export default function VehiclesPage() {
               />
             </div>
             
-            {selectedVehicle && selectedVehicle.active_tires_count > 0 && (
+            {(selectedVehicle?.active_tires_count ?? 0) > 0 && (
               <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-4">
                 <div className="flex items-center gap-2 text-yellow-800">
                   <AlertCircle className="h-4 w-4" />
                   <span className="text-sm font-medium">Important Note</span>
                 </div>
                 <p className="mt-1 text-sm text-yellow-700">
-                  This vehicle has <span className="font-semibold">{selectedVehicle.active_tires_count} tires</span> currently installed. 
+                  This vehicle has{" "}
+                  <span className="font-semibold">
+                    {selectedVehicle?.active_tires_count ?? 0} tires
+                  </span>{" "}
+                  currently installed.
                   All tires will be automatically removed and returned to the store when you retire this vehicle.
                 </p>
               </div>
             )}
+
           </div>
           
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCloseRetirementDialog}
-              disabled={retirementLoading}
-            >
+            <Button variant="outline" onClick={handleCloseRetirementDialog} disabled={retirementLoading}>
               Cancel
             </Button>
             <Button
@@ -825,7 +789,6 @@ export default function VehiclesPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Reactivation Dialog */}
       <Dialog open={reactivationDialogOpen} onOpenChange={setReactivationDialogOpen}>
         <DialogContent className="sm:max-w-[500px]">
           <DialogHeader>
@@ -851,18 +814,10 @@ export default function VehiclesPage() {
           </div>
           
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={handleCloseReactivationDialog}
-              disabled={restoreLoading}
-            >
+            <Button variant="outline" onClick={handleCloseReactivationDialog} disabled={restoreLoading}>
               Cancel
             </Button>
-            <Button
-              variant="default"
-              onClick={handleRestoreVehicle}
-              disabled={restoreLoading}
-            >
+            <Button variant="default" onClick={handleRestoreVehicle} disabled={restoreLoading}>
               {restoreLoading ? (
                 <>
                   <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
@@ -879,22 +834,18 @@ export default function VehiclesPage() {
         </DialogContent>
       </Dialog>
 
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Vehicles</h1>
-          <p className="text-muted-foreground">
-            {getFilterDescription()}
-          </p>
+          <p className="text-muted-foreground">{getFilterDescription()}</p>
         </div>
         <div className="flex items-center gap-2">
           <div className="flex rounded-md border border-input overflow-hidden">
             <Button
               variant={viewMode === "active" ? "default" : "ghost"}
               className="rounded-none border-r border-input"
-              onClick={() => {
-                setViewMode("active");
-                setCurrentPage(1);
-              }}
+              onClick={() => { setViewMode("active"); setCurrentPage(1); }}
             >
               <CheckCircle className="mr-2 h-4 w-4" />
               Active ({viewMode === "active" ? vehicles.length : "-"})
@@ -902,17 +853,13 @@ export default function VehiclesPage() {
             <Button
               variant={viewMode === "retired" ? "default" : "ghost"}
               className="rounded-none"
-              onClick={() => {
-                setViewMode("retired");
-                setCurrentPage(1);
-              }}
+              onClick={() => { setViewMode("retired"); setCurrentPage(1); }}
             >
               <Archive className="mr-2 h-4 w-4" />
               Retired ({viewMode === "retired" ? vehicles.length : "-"})
             </Button>
           </div>
           
-          {/* Export and Print Buttons */}
           <div className="flex gap-2">
             <Button
               variant="outline"
@@ -934,23 +881,23 @@ export default function VehiclesPage() {
             </Button>
           </div>
           
-          <Button asChild>
-            <Link href="/vehicles/create">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add New Vehicle
-            </Link>
-          </Button>
+          <PermissionGuard permissionCode="vehicle.create" action="create">
+            <Button asChild>
+              <Link href="/vehicles/create">
+                <PlusCircle className="mr-2 h-4 w-4" />
+                Add New Vehicle
+              </Link>
+            </Button>
+          </PermissionGuard>
         </div>
       </div>
 
+      {/* Main Content */}
       <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <div>
-              <CardTitle>
-                {viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}
-              </CardTitle>
- 
+              <CardTitle>{viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}</CardTitle>
               <CardDescription>
                 {viewMode === "active" 
                   ? "View and manage all active vehicles in your fleet"
@@ -959,35 +906,31 @@ export default function VehiclesPage() {
               </CardDescription>
             </div>
             <div className="flex gap-4">
-              <div className="flex gap-2">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
-                      <Filter className="mr-2 h-4 w-4" />
-                      {selectedConfig === "All" ? "Filter by Config" : selectedConfig}
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    {WHEEL_CONFIGS.map((config) => (
-                      <DropdownMenuItem
-                        key={config}
-                        onClick={() => handleConfigFilter(config)}
-                        className={selectedConfig === config ? "bg-accent" : ""}
-                      >
-                        {config}
-                        {config !== "All" && (
-                          <Badge 
-                            variant="outline" 
-                            className={`ml-2 ${getConfigColor(config).replace("border-", "border-")}`}
-                          >
-                            {config}
-                          </Badge>
-                        )}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Filter className="mr-2 h-4 w-4" />
+                    {selectedConfig === "All" ? "Filter by Config" : selectedConfig}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {WHEEL_CONFIGS.map((config) => (
+                    <DropdownMenuItem
+                      key={config}
+                      onClick={() => handleConfigFilter(config)}
+                      className={selectedConfig === config ? "bg-accent" : ""}
+                    >
+                      {config}
+                      {config !== "All" && (
+                        <Badge variant="outline" className={`ml-2 ${getConfigColor(config)}`}>
+                          {config}
+                        </Badge>
+                      )}
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+              
               <div className="relative w-64">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -1001,8 +944,8 @@ export default function VehiclesPage() {
             </div>
           </div>
         </CardHeader>
+        
         <CardContent>
-          {/* View Mode Info Banner */}
           {viewMode === "retired" && (
             <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
               <div className="flex items-center gap-2 text-amber-800">
@@ -1015,52 +958,30 @@ export default function VehiclesPage() {
             </div>
           )}
 
-          {/* Active Filters Display */}
           {(selectedConfig !== "All" || search) && (
             <div className="mb-4 flex flex-wrap gap-2">
               {selectedConfig !== "All" && (
-                <Badge 
-                  variant="secondary" 
-                  className="flex items-center gap-1"
-                >
+                <Badge variant="secondary" className="flex items-center gap-1">
                   Config: {selectedConfig}
-                  <button
-                    onClick={() => setSelectedConfig("All")}
-                    className="ml-1 text-muted-foreground hover:text-foreground"
-                  >
+                  <button onClick={() => setSelectedConfig("All")} className="ml-1 text-muted-foreground hover:text-foreground">
                     ×
                   </button>
                 </Badge>
               )}
               {search && (
-                <Badge 
-                  variant="secondary" 
-                  className="flex items-center gap-1"
-                >
+                <Badge variant="secondary" className="flex items-center gap-1">
                   Search: "{search}"
-                  <button
-                    onClick={() => setSearch("")}
-                    className="ml-1 text-muted-foreground hover:text-foreground"
-                  >
+                  <button onClick={() => setSearch("")} className="ml-1 text-muted-foreground hover:text-foreground">
                     ×
                   </button>
                 </Badge>
               )}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSelectedConfig("All");
-                  setSearch("");
-                }}
-                className="h-6 text-xs"
-              >
+              <Button variant="ghost" size="sm" onClick={() => { setSelectedConfig("All"); setSearch(""); }} className="h-6 text-xs">
                 Clear all filters
               </Button>
             </div>
           )}
 
-          {/* Quick Stats Bar */}
           {vehicles.length > 0 && (
             <div className="mb-4 grid grid-cols-5 gap-2">
               <div className="text-center p-2 bg-blue-50 rounded">
@@ -1110,14 +1031,7 @@ export default function VehiclesPage() {
                 }
               </p>
               {(search || selectedConfig !== "All") && (
-                <Button
-                  variant="outline"
-                  className="mt-4"
-                  onClick={() => {
-                    setSelectedConfig("All");
-                    setSearch("");
-                  }}
-                >
+                <Button variant="outline" className="mt-4" onClick={() => { setSelectedConfig("All"); setSearch(""); }}>
                   Clear filters
                 </Button>
               )}
@@ -1149,10 +1063,7 @@ export default function VehiclesPage() {
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <Car className="h-4 w-4 text-muted-foreground" />
-                            <Link 
-                              href={`/vehicles/${vehicle.id}`}
-                              className="hover:text-primary hover:underline"
-                            >
+                            <Link href={`/vehicles/${vehicle.id}`} className="hover:text-primary hover:underline">
                               {vehicle.vehicle_number}
                             </Link>
                           </div>
@@ -1164,10 +1075,7 @@ export default function VehiclesPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge 
-                            variant="outline" 
-                            className={getConfigColor(vehicle.wheel_config)}
-                          >
+                          <Badge variant="outline" className={getConfigColor(vehicle.wheel_config)}>
                             {vehicle.wheel_config}
                           </Badge>
                         </TableCell>
@@ -1183,9 +1091,7 @@ export default function VehiclesPage() {
                         </TableCell>
                         {viewMode === "retired" && (
                           <>
-                            <TableCell>
-                              {vehicle.retired_date ? formatDateTime(vehicle.retired_date) : "N/A"}
-                            </TableCell>
+                            <TableCell>{vehicle.retired_date ? formatDateTime(vehicle.retired_date) : "N/A"}</TableCell>
                             <TableCell className="max-w-[200px]">
                               <div className="truncate" title={vehicle.retirement_reason || "N/A"}>
                                 {vehicle.retirement_reason || "N/A"}
@@ -1213,38 +1119,53 @@ export default function VehiclesPage() {
                               
                               {viewMode === "active" ? (
                                 <>
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/vehicles/${vehicle.id}/edit`}>
-                                      <Edit className="mr-2 h-4 w-4" />
-                                      Edit Vehicle
-                                    </Link>
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem 
-                                    className="text-amber-600"
-                                    onClick={() => handleOpenRetirementDialog(vehicle)}
-                                  >
-                                    <Archive className="mr-2 h-4 w-4" />
-                                    Retire Vehicle
-                                  </DropdownMenuItem>
+                                  <PermissionGuard permissionCode="vehicle.edit" action="edit" fallback={null}>
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/vehicles/${vehicle.id}/edit`}>
+                                        <Edit className="mr-2 h-4 w-4" />
+                                        Edit Vehicle
+                                      </Link>
+                                    </DropdownMenuItem>
+                                  </PermissionGuard>
+                                  
+                                  {(hasPermission('vehicle.edit') || hasPermission('vehicle.delete')) && (
+                                    <DropdownMenuSeparator />
+                                  )}
+                                  
+                                  {(hasPermission('vehicle.edit') || hasPermission('vehicle.delete')) && (
+                                    <DropdownMenuItem 
+                                      className="text-amber-600"
+                                      onClick={() => handleOpenRetirementDialog(vehicle)}
+                                    >
+                                      <Archive className="mr-2 h-4 w-4" />
+                                      Retire Vehicle
+                                    </DropdownMenuItem>
+                                  )}
                                 </>
                               ) : (
                                 <>
-                                  <DropdownMenuItem 
-                                    className="text-green-600"
-                                    onClick={() => handleOpenReactivationDialog(vehicle)}
-                                  >
-                                    <RotateCcw className="mr-2 h-4 w-4" />
-                                    Restore to Active
-                                  </DropdownMenuItem>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem 
-                                    className="text-red-600"
-                                    onClick={() => handlePermanentDelete(vehicle.id)}
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete Permanently
-                                  </DropdownMenuItem>
+                                  <PermissionGuard permissionCode="vehicle.edit" action="edit" fallback={null}>
+                                    <DropdownMenuItem 
+                                      className="text-green-600"
+                                      onClick={() => handleOpenReactivationDialog(vehicle)}
+                                    >
+                                      <RotateCcw className="mr-2 h-4 w-4" />
+                                      Restore to Active
+                                    </DropdownMenuItem>
+                                  </PermissionGuard>
+                                  
+                                  <PermissionGuard permissionCode="vehicle.delete" action="delete" fallback={null}>
+                                    <>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem 
+                                        className="text-red-600"
+                                        onClick={() => handlePermanentDelete(vehicle.id)}
+                                      >
+                                        <Trash2 className="mr-2 h-4 w-4" />
+                                        Delete Permanently
+                                      </DropdownMenuItem>
+                                    </>
+                                  </PermissionGuard>
                                 </>
                               )}
                             </DropdownMenuContent>
@@ -1263,34 +1184,23 @@ export default function VehiclesPage() {
                       <PaginationItem>
                         <PaginationPrevious 
                           href="#" 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (currentPage > 1) setCurrentPage(currentPage - 1);
-                          }}
+                          onClick={(e) => { e.preventDefault(); if (currentPage > 1) setCurrentPage(currentPage - 1); }}
                           className={currentPage === 1 ? "pointer-events-none opacity-50" : ""}
                         />
                       </PaginationItem>
                       
                       {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
                         let pageNum;
-                        if (totalPages <= 5) {
-                          pageNum = i + 1;
-                        } else if (currentPage <= 3) {
-                          pageNum = i + 1;
-                        } else if (currentPage >= totalPages - 2) {
-                          pageNum = totalPages - 4 + i;
-                        } else {
-                          pageNum = currentPage - 2 + i;
-                        }
+                        if (totalPages <= 5) pageNum = i + 1;
+                        else if (currentPage <= 3) pageNum = i + 1;
+                        else if (currentPage >= totalPages - 2) pageNum = totalPages - 4 + i;
+                        else pageNum = currentPage - 2 + i;
                         
                         return (
                           <PaginationItem key={pageNum}>
                             <PaginationLink
                               href="#"
-                              onClick={(e) => {
-                                e.preventDefault();
-                                setCurrentPage(pageNum);
-                              }}
+                              onClick={(e) => { e.preventDefault(); setCurrentPage(pageNum); }}
                               isActive={currentPage === pageNum}
                             >
                               {pageNum}
@@ -1302,10 +1212,7 @@ export default function VehiclesPage() {
                       <PaginationItem>
                         <PaginationNext 
                           href="#" 
-                          onClick={(e) => {
-                            e.preventDefault();
-                            if (currentPage < totalPages) setCurrentPage(currentPage + 1);
-                          }}
+                          onClick={(e) => { e.preventDefault(); if (currentPage < totalPages) setCurrentPage(currentPage + 1); }}
                           className={currentPage === totalPages ? "pointer-events-none opacity-50" : ""}
                         />
                       </PaginationItem>

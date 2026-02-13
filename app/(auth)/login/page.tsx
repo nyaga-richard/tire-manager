@@ -314,7 +314,7 @@ export default function LoginPage() {
               </div>
             </CardContent>
 
-            <CardFooter className="flex flex-col space-y-4">
+            <CardFooter className="flex flex-col space-y-4 mt-4">
               <Button
                 type="submit"
                 className="w-full"
@@ -347,51 +347,6 @@ export default function LoginPage() {
           </form>
         </Card>
 
-        {/* Demo Credentials */}
-        <div className="mt-8 p-4 bg-muted/50 rounded-lg border">
-          <h3 className="font-medium mb-2">Demo Credentials:</h3>
-          <div className="grid grid-cols-1 gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start text-left"
-              onClick={() => handleDemoLogin("admin", "admin123")}
-              disabled={loading}
-            >
-              <div className="flex flex-col items-start flex-1">
-                <span className="font-medium">Super Admin</span>
-                <span className="text-xs text-muted-foreground">admin / admin123</span>
-              </div>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start text-left"
-              onClick={() => handleDemoLogin("manager", "manager123")}
-              disabled={loading}
-            >
-              <div className="flex flex-col items-start flex-1">
-                <span className="font-medium">Fleet Manager</span>
-                <span className="text-xs text-muted-foreground">manager / manager123</span>
-              </div>
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full justify-start text-left"
-              onClick={() => handleDemoLogin("clerk", "clerk123")}
-              disabled={loading}
-            >
-              <div className="flex flex-col items-start flex-1">
-                <span className="font-medium">Inventory Clerk</span>
-                <span className="text-xs text-muted-foreground">clerk / clerk123</span>
-              </div>
-            </Button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2">
-            Note: These are demo credentials. Change them in production.
-          </p>
-        </div>
 
         {/* Footer */}
         <div className="mt-8 text-center text-sm text-muted-foreground">

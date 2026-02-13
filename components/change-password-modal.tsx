@@ -14,11 +14,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
-import { Key, Eye, EyeOff, Lock, User } from "lucide-react";
-import { useAuth } from "@/components/providers/auth-provider";
+import { Key, Eye, EyeOff, Lock, User, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext"; 
 
-// API base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface UserData {
   id: number;
@@ -40,7 +39,7 @@ export default function ChangePasswordModal({
   onSuccess,
   user,
 }: ChangePasswordModalProps) {
-  const { token } = useAuth();
+  const { user: currentUser, authFetch } = useAuth(); 
   const [loading, setLoading] = useState(false);
   const [showPasswords, setShowPasswords] = useState({
     current: false,
@@ -98,10 +97,9 @@ export default function ChangePasswordModal({
 
     try {
       const url = user 
-        ? `${API_BASE_URL}/api/users/${user.id}/password`  // Admin changing another user's password
-        : `${API_BASE_URL}/api/auth/change-password`;      // User changing their own password
+        ? `${API_BASE_URL}/api/users/${user.id}/password` 
+        : `${API_BASE_URL}/api/auth/change-password`;      
 
-      // IMPORTANT: Backend expects camelCase field names
       const requestBody = user 
         ? {
             newPassword: formData.new_password,
@@ -116,13 +114,9 @@ export default function ChangePasswordModal({
       console.log("Sending request to:", url);
       console.log("Request body:", requestBody);
 
-      const response = await fetch(url, {
-        method: "PUT", // Backend uses PUT for user password changes
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`,
-        },
-        credentials: "include",
+      // ✅ Use authFetch instead of fetch with manual token
+      const response = await authFetch(url, {
+        method: "PUT",
         body: JSON.stringify(requestBody),
       });
 
@@ -130,7 +124,7 @@ export default function ChangePasswordModal({
       console.log("Response:", data);
 
       if (!response.ok) {
-        throw new Error(data.error || `Failed to change password: ${response.status}`);
+        throw new Error(data.error || data.message || `Failed to change password: ${response.status}`);
       }
 
       toast.success("Password Changed", {
@@ -330,7 +324,7 @@ export default function ChangePasswordModal({
             >
               {loading ? (
                 <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Changing...
                 </>
               ) : (

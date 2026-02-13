@@ -1,4 +1,3 @@
-// components/supplier-invoice-modal.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -51,6 +50,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useAuth } from "@/contexts/AuthContext";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface GRN {
   id: number;
@@ -91,6 +93,7 @@ interface SupplierInvoiceModalProps {
 }
 
 export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }: SupplierInvoiceModalProps) {
+  const { user, authFetch } = useAuth();
   const [loading, setLoading] = useState(false);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([
     {
@@ -129,14 +132,12 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
   useEffect(() => {
     if (isOpen && grn) {
       const timestamp = new Date().getTime().toString().slice(-6);
-      const invoiceNumber = `INV-${grn.supplier_code}-${timestamp}`;
+      const invoiceNumber = `INV-${grn.supplier_code || 'SUP'}-${timestamp}`;
       
-      // Calculate totals
       const subtotal = grn.total_value;
       const totalAmount = subtotal + formData.tax_amount + formData.shipping_amount + 
                          formData.other_charges - formData.discount_amount;
       
-      // Update journal entries
       const updatedEntries = journalEntries.map(entry => {
         if (entry.account_name === "Accounts Payable") {
           return { ...entry, credit: totalAmount };
@@ -177,7 +178,6 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
           }
         ]);
       } else {
-        // Update existing tax entry
         setJournalEntries(prev =>
           prev.map(entry =>
             entry.account_name === "Tax Payable"
@@ -187,7 +187,6 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
         );
       }
     } else {
-      // Remove tax entry if tax is 0
       setJournalEntries(prev =>
         prev.filter(entry => entry.account_name !== "Tax Payable")
       );
@@ -198,8 +197,11 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
     e.preventDefault();
     
     if (!grn) return;
+    if (!user) {
+      toast.error("You must be logged in to record invoices");
+      return;
+    }
 
-    // Validate journal entries (debits must equal credits)
     const totalDebits = journalEntries.reduce((sum, entry) => sum + entry.debit, 0);
     const totalCredits = journalEntries.reduce((sum, entry) => sum + entry.credit, 0);
     
@@ -210,59 +212,63 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
 
     setLoading(true);
     try {
-      // Create accounting transaction
       const transactionData = {
-          transaction_date: format(formData.invoice_date, "yyyy-MM-dd"),
-          posting_date: format(formData.posting_date, "yyyy-MM-dd"),
-          transaction_number: formData.invoice_number,  // Changed from invoice_number to transaction_number
-          reference_number: grn.grn_number,
-          description: `Invoice for GRN ${grn.grn_number}`,
-          transaction_type: "PURCHASE_INVOICE",  // Add this line
-          total_amount: formData.total_amount,
-          currency: "KSH",
-          notes: formData.notes,
-          status: "POSTED",
-          supplier_id: grn.supplier_code,
-          supplier_name: grn.supplier_name,
-          grn_id: grn.id,
-          po_id: grn.po_id,
-          journal_entries: journalEntries,
-          metadata: {
-              tax_amount: formData.tax_amount,
-              shipping_amount: formData.shipping_amount,
-              discount_amount: formData.discount_amount,
-              other_charges: formData.other_charges,
-              payment_terms: formData.payment_terms,
-              payment_due_date: format(formData.payment_due_date, "yyyy-MM-dd"),
-          }
+        transaction_date: format(formData.invoice_date, "yyyy-MM-dd"),
+        posting_date: format(formData.posting_date, "yyyy-MM-dd"),
+        transaction_number: formData.invoice_number,
+        reference_number: grn.grn_number,
+        description: `Invoice for GRN ${grn.grn_number} - ${grn.supplier_name}`,
+        transaction_type: "PURCHASE_INVOICE",
+        total_amount: formData.total_amount,
+        currency: "KES",
+        notes: formData.notes || null,
+        status: "POSTED",
+        supplier_id: grn.supplier_code,
+        supplier_name: grn.supplier_name,
+        grn_id: grn.id,
+        po_id: grn.po_id,
+        created_by: user.id,
+        created_by_name: user.full_name || user.username,
+        journal_entries: journalEntries,
+        metadata: {
+          tax_amount: formData.tax_amount,
+          shipping_amount: formData.shipping_amount,
+          discount_amount: formData.discount_amount,
+          other_charges: formData.other_charges,
+          payment_terms: formData.payment_terms,
+          payment_due_date: format(formData.payment_due_date, "yyyy-MM-dd"),
+          invoice_status: formData.status,
+        }
       };
-      // API call to create accounting transaction
-      const response = await fetch("http://localhost:5000/api/accounting/transactions", {
+
+      console.log("Creating accounting transaction:", transactionData);
+
+      const response = await authFetch(`${API_BASE_URL}/api/accounting/transactions`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify(transactionData),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to create accounting transaction");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to create accounting transaction");
       }
 
       const data = await response.json();
       
       if (data.success) {
-        // Update GRN with invoice number
-        await fetch(`http://localhost:5000/api/grn/${grn.id}`, {
+        // Update GRN with invoice number and accounting transaction ID
+        const grnUpdateResponse = await authFetch(`${API_BASE_URL}/api/grn/${grn.id}`, {
           method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
           body: JSON.stringify({
             supplier_invoice_number: formData.invoice_number,
             accounting_transaction_id: data.transaction_id,
+            updated_by: user.id,
           }),
         });
+
+        if (!grnUpdateResponse.ok) {
+          console.warn("GRN updated but failed to save invoice number");
+        }
 
         toast.success("Supplier invoice recorded in accounting system!");
         onInvoiceCreated?.();
@@ -317,7 +323,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: "KES",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(amount);
@@ -337,7 +343,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
   if (!grn) return null;
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="min-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -351,7 +357,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Transaction Header */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
             <div>
               <Label className="text-xs text-muted-foreground">GRN Number</Label>
               <div className="flex items-center gap-2 font-medium">
@@ -370,6 +376,10 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
               <Label className="text-xs text-muted-foreground">PO Number</Label>
               <div className="font-medium">{grn.po_number}</div>
             </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">GRN Value</Label>
+              <div className="font-medium">{formatCurrency(grn.total_value)}</div>
+            </div>
           </div>
 
           {/* Invoice Details */}
@@ -381,18 +391,23 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
             
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="invoice_number">Invoice Number *</Label>
+                <Label htmlFor="invoice_number">
+                  Invoice Number <span className="text-red-500">*</span>
+                </Label>
                 <Input
                   id="invoice_number"
                   value={formData.invoice_number}
                   onChange={(e) => handleFormChange("invoice_number", e.target.value)}
                   required
                   placeholder="Auto-generated"
+                  disabled={loading}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="invoice_date">Invoice Date *</Label>
+                <Label htmlFor="invoice_date">
+                  Invoice Date <span className="text-red-500">*</span>
+                </Label>
                 <DatePicker
                   date={formData.invoice_date}
                   onSelect={(date) => date && handleFormChange("invoice_date", date)}
@@ -400,7 +415,9 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="posting_date">Posting Date *</Label>
+                <Label htmlFor="posting_date">
+                  Posting Date <span className="text-red-500">*</span>
+                </Label>
                 <DatePicker
                   date={formData.posting_date}
                   onSelect={(date) => date && handleFormChange("posting_date", date)}
@@ -412,6 +429,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                 <Select
                   value={formData.status}
                   onValueChange={(value) => handleFormChange("status", value)}
+                  disabled={loading}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -431,6 +449,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                 <Select
                   value={formData.payment_terms}
                   onValueChange={(value) => handleFormChange("payment_terms", value)}
+                  disabled={loading}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -466,13 +485,13 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="subtotal">Subtotal</Label>
+                <Label htmlFor="subtotal">Subtotal (from GRN)</Label>
                 <div className="p-2 border rounded bg-muted/50">
                   <div className="text-lg font-medium">
                     {formatCurrency(grn.total_value)}
                   </div>
                   <div className="text-xs text-muted-foreground">
-                    Based on GRN value
+                    Based on received goods value
                   </div>
                 </div>
               </div>
@@ -485,9 +504,10 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                     type="number"
                     min="0"
                     step="0.01"
-                    value={formData.tax_amount}
+                    value={formData.tax_amount || ""}
                     onChange={(e) => handleFormChange("tax_amount", parseFloat(e.target.value) || 0)}
                     className="flex-1"
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -499,8 +519,9 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                   type="number"
                   min="0"
                   step="0.01"
-                  value={formData.shipping_amount}
+                  value={formData.shipping_amount || ""}
                   onChange={(e) => handleFormChange("shipping_amount", parseFloat(e.target.value) || 0)}
+                  disabled={loading}
                 />
               </div>
 
@@ -511,22 +532,26 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                   type="number"
                   min="0"
                   step="0.01"
-                  value={formData.discount_amount}
+                  value={formData.discount_amount || ""}
                   onChange={(e) => handleFormChange("discount_amount", parseFloat(e.target.value) || 0)}
+                  disabled={loading}
                 />
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="other_charges">Other Charges</Label>
-              <Input
-                id="other_charges"
-                type="number"
-                min="0"
-                step="0.01"
-                value={formData.other_charges}
-                onChange={(e) => handleFormChange("other_charges", parseFloat(e.target.value) || 0)}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="other_charges">Other Charges</Label>
+                <Input
+                  id="other_charges"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.other_charges || ""}
+                  onChange={(e) => handleFormChange("other_charges", parseFloat(e.target.value) || 0)}
+                  disabled={loading}
+                />
+              </div>
             </div>
 
             {/* Total Amount Display */}
@@ -559,20 +584,21 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                 variant="outline"
                 size="sm"
                 onClick={handleAddJournalEntry}
+                disabled={loading}
               >
                 Add Entry
               </Button>
             </div>
 
-            <div className="rounded-md border">
+            <div className="rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[100px]">Account Code</TableHead>
-                    <TableHead>Account Name</TableHead>
+                    <TableHead className="w-[120px]">Account Code</TableHead>
+                    <TableHead className="w-[180px]">Account Name</TableHead>
                     <TableHead className="w-[150px]">Debit</TableHead>
                     <TableHead className="w-[150px]">Credit</TableHead>
-                    <TableHead>Description</TableHead>
+                    <TableHead className="min-w-[200px]">Description</TableHead>
                     <TableHead className="w-[80px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -584,6 +610,8 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                           value={entry.account_code}
                           onChange={(e) => handleJournalEntryChange(index, "account_code", e.target.value)}
                           placeholder="e.g., 5000"
+                          className="text-xs font-mono"
+                          disabled={loading}
                         />
                       </TableCell>
                       <TableCell>
@@ -591,6 +619,8 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                           value={entry.account_name}
                           onChange={(e) => handleJournalEntryChange(index, "account_name", e.target.value)}
                           placeholder="e.g., Inventory"
+                          className="text-xs"
+                          disabled={loading}
                         />
                       </TableCell>
                       <TableCell>
@@ -598,9 +628,10 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                           type="number"
                           min="0"
                           step="0.01"
-                          value={entry.debit}
+                          value={entry.debit || ""}
                           onChange={(e) => handleJournalEntryChange(index, "debit", parseFloat(e.target.value) || 0)}
-                          className="text-right"
+                          className="text-right font-mono"
+                          disabled={loading}
                         />
                       </TableCell>
                       <TableCell>
@@ -608,9 +639,10 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                           type="number"
                           min="0"
                           step="0.01"
-                          value={entry.credit}
+                          value={entry.credit || ""}
                           onChange={(e) => handleJournalEntryChange(index, "credit", parseFloat(e.target.value) || 0)}
-                          className="text-right"
+                          className="text-right font-mono"
+                          disabled={loading}
                         />
                       </TableCell>
                       <TableCell>
@@ -618,6 +650,8 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                           value={entry.description}
                           onChange={(e) => handleJournalEntryChange(index, "description", e.target.value)}
                           placeholder="Description"
+                          className="text-xs"
+                          disabled={loading}
                         />
                       </TableCell>
                       <TableCell>
@@ -628,6 +662,7 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
                             size="sm"
                             onClick={() => handleRemoveJournalEntry(index)}
                             className="h-8 w-8 p-0"
+                            disabled={loading}
                           >
                             <X className="h-4 w-4" />
                           </Button>
@@ -640,33 +675,33 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
             </div>
 
             {/* Journal Entry Summary */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 border rounded-lg">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 p-4 border rounded-lg">
               <div>
                 <div className="text-sm text-muted-foreground">Total Debits</div>
-                <div className="text-lg font-medium text-green-600 flex items-center gap-2">
+                <div className="text-lg font-medium text-green-600 dark:text-green-400 flex items-center gap-2">
                   <TrendingUp className="h-4 w-4" />
                   {formatCurrency(totalDebits)}
                 </div>
               </div>
               <div>
                 <div className="text-sm text-muted-foreground">Total Credits</div>
-                <div className="text-lg font-medium text-blue-600 flex items-center gap-2">
+                <div className="text-lg font-medium text-blue-600 dark:text-blue-400 flex items-center gap-2">
                   <TrendingDown className="h-4 w-4" />
                   {formatCurrency(totalCredits)}
                 </div>
               </div>
-              <div>
+              <div className="col-span-2">
                 <div className="text-sm text-muted-foreground">Balance</div>
-                <div className={`text-lg font-medium flex items-center gap-2 ${isBalanced ? 'text-green-600' : 'text-red-600'}`}>
+                <div className={`text-lg font-medium flex items-center gap-2 ${isBalanced ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                   {isBalanced ? (
                     <>
                       <CheckCircle className="h-4 w-4" />
-                      Balanced
+                      Journal is Balanced
                     </>
                   ) : (
                     <>
                       <AlertCircle className="h-4 w-4" />
-                      {formatCurrency(difference)}
+                      Difference: {formatCurrency(difference)}
                     </>
                   )}
                 </div>
@@ -675,14 +710,13 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
 
             {/* Journal Entry Explanation */}
             <div className="p-4 bg-muted/50 rounded-lg">
-              <h4 className="font-medium mb-2">Standard Accounting Entry:</h4>
+              <h4 className="font-medium mb-2">Standard Purchase Invoice Accounting:</h4>
               <div className="text-sm text-muted-foreground space-y-1">
-                <div>1. <strong>Debit</strong> Inventory/Purchases account (Asset/Expense increase)</div>
-                <div>2. <strong>Debit</strong> Tax account if applicable</div>
-                <div>3. <strong>Credit</strong> Accounts Payable (Liability increase)</div>
+                <div>• <strong>Debit</strong> Inventory/Purchases account (Asset/Expense increase)</div>
+                <div>• <strong>Debit</strong> Tax Payable (if applicable) - Tax asset/expense</div>
+                <div>• <strong>Credit</strong> Accounts Payable (Liability increase to supplier)</div>
                 <div className="mt-2 text-xs italic">
-                  Note: For a purchase invoice, typically debit the expense/asset accounts 
-                  and credit accounts payable to the supplier.
+                  Total Debits must equal Total Credits. Use the "Add Entry" button for additional accounts.
                 </div>
               </div>
             </div>
@@ -697,7 +731,13 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
               onChange={(e) => handleFormChange("notes", e.target.value)}
               placeholder="Add any notes or memo for this transaction..."
               rows={3}
+              disabled={loading}
             />
+          </div>
+
+          {/* Created By Info */}
+          <div className="text-xs text-muted-foreground border-t pt-4">
+            Recording invoice as: {user?.full_name || user?.username || "Unknown"}
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
@@ -712,8 +752,8 @@ export function SupplierInvoiceModal({ isOpen, onClose, grn, onInvoiceCreated }:
             </Button>
             <Button 
               type="submit" 
-              disabled={loading || !isBalanced}
-              className={!isBalanced ? "bg-gray-400 hover:bg-gray-400" : ""}
+              disabled={loading || !isBalanced || !formData.invoice_number}
+              className={!isBalanced ? "bg-gray-400 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-600" : ""}
             >
               {loading ? (
                 <>

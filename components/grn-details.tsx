@@ -36,6 +36,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/auth/PermissionGuard";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface GRNItem {
   id: number;
@@ -103,6 +107,7 @@ interface GRNDetailsProps {
 }
 
 export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
+  const { user, hasPermission, authFetch } = useAuth();
   const [grn, setGrn] = useState<GRN | null>(null);
   const [loading, setLoading] = useState(true);
   const [printLoading, setPrintLoading] = useState(false);
@@ -117,10 +122,10 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
   const fetchGRNDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/grn/${grnId}`);
+      const response = await authFetch(`${API_BASE_URL}/api/grn/${grnId}`);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        throw new Error(`Failed to fetch GRN: ${response.status}`);
       }
       
       const data = await response.json();
@@ -128,7 +133,7 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
       if (data.success) {
         setGrn(data.data);
       } else {
-        toast.error("Failed to load GRN details");
+        throw new Error(data.message || "Failed to load GRN details");
       }
     } catch (error: any) {
       console.error("Error fetching GRN details:", error);
@@ -141,13 +146,13 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "COMPLETED":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
       case "PENDING":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+        return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
       case "CANCELLED":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
@@ -167,7 +172,7 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: "KES",
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
     }).format(amount);
@@ -175,23 +180,31 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+    } catch {
+      return "Invalid date";
+    }
   };
 
   const formatDateTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return "Invalid date";
+    }
   };
 
   // Calculate summary values from actual data
@@ -199,12 +212,8 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
     if (!grn) return { totalItems: 0, totalQuantity: 0, totalValue: 0 };
 
     const totalItems = grn.items?.length || 0;
-    
-    // Calculate total quantity from items
     const totalQuantity = grn.items?.reduce((sum, item) => 
       sum + (item.quantity_received || 0), 0) || 0;
-    
-    // Calculate total value from tires' purchase_cost
     const totalValue = grn.tires?.reduce((sum, tire) => 
       sum + (tire.purchase_cost || 0), 0) || 0;
 
@@ -217,10 +226,8 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
     try {
       setPrintLoading(true);
       
-      // Calculate summary values
       const { totalItems, totalQuantity, totalValue } = calculateSummary();
       
-      // Create a print-friendly HTML
       const printContent = `
         <!DOCTYPE html>
         <html>
@@ -355,6 +362,11 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
               font-size: 12px;
               color: #666;
             }
+            .generated-by {
+              margin-top: 10px;
+              font-size: 11px;
+              color: #666;
+            }
             @media print {
               body {
                 padding: 0;
@@ -378,6 +390,9 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
                 Date: ${formatDate(grn.receipt_date)}
               </div>
             </div>
+          </div>
+          <div class="generated-by">
+            Generated by: ${user?.full_name || user?.username || 'System'} on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
           </div>
 
           <div class="section">
@@ -534,14 +549,13 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
           ` : ''}
 
           <div class="print-footer">
-            <div>Generated on ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}</div>
+            <div>Report ID: GRN-${grn.id}-${Date.now().toString().slice(-6)}</div>
             <div>This is a computer-generated document. No signature required.</div>
           </div>
         </body>
         </html>
       `;
 
-      // Open print window
       const printWindow = window.open('', '_blank');
       if (!printWindow) {
         throw new Error('Popup blocked. Please allow popups to print.');
@@ -550,7 +564,6 @@ export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
       printWindow.document.write(printContent);
       printWindow.document.close();
       
-      // Wait for content to load
       printWindow.onload = () => {
         printWindow.focus();
         printWindow.print();
@@ -581,6 +594,7 @@ Total Items: ${totalItems}
 Total Quantity: ${totalQuantity}
 Total Value: ${formatCurrency(totalValue)}
 Received By: ${grn.received_by_name || "N/A"}
+Generated By: ${user?.full_name || user?.username || "System"}
       `.trim();
 
       await navigator.clipboard.writeText(details);
@@ -588,6 +602,65 @@ Received By: ${grn.received_by_name || "N/A"}
     } catch (error) {
       console.error("Error copying details:", error);
       toast.error("Failed to copy details");
+    }
+  };
+
+  const handleExport = async () => {
+    if (!grn || !hasPermission("grn.export")) return;
+
+    try {
+      setExportLoading(true);
+      
+      // Create CSV content
+      const headers = [
+        "GRN Number",
+        "PO Number",
+        "Receipt Date",
+        "Supplier",
+        "Item Size",
+        "Brand",
+        "Quantity",
+        "Unit Cost",
+        "Total Cost",
+        "Serial Numbers"
+      ];
+
+      const rows = grn.items?.flatMap(item => 
+        item.serial_numbers?.map((sn, idx) => [
+          grn.grn_number,
+          grn.po_number,
+          formatDate(grn.receipt_date),
+          grn.supplier_name,
+          item.size || "N/A",
+          item.brand || "N/A",
+          idx === 0 ? item.quantity_received.toString() : "", // Show quantity only on first row
+          idx === 0 ? formatCurrency(item.unit_cost).replace(/[^0-9,-]/g, '') : "",
+          idx === 0 ? formatCurrency(item.quantity_received * item.unit_cost).replace(/[^0-9,-]/g, '') : "",
+          sn
+        ].map(cell => `"${cell}"`).join(","))
+      ) || [];
+
+      const csvContent = [
+        headers.join(","),
+        ...rows
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `GRN-${grn.grn_number}-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast.success("GRN exported successfully");
+    } catch (error) {
+      console.error("Error exporting GRN:", error);
+      toast.error("Failed to export GRN");
+    } finally {
+      setExportLoading(false);
     }
   };
 
@@ -680,14 +753,18 @@ Received By: ${grn.received_by_name || "N/A"}
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">PO Number:</span>
-                    <Link
-                      href={`/purchases/orders/${grn.po_id}`}
-                      className="font-medium text-blue-600 hover:underline flex items-center gap-1"
-                      target="_blank"
-                    >
-                      {grn.po_number}
-                      <ExternalLink className="h-3 w-3" />
-                    </Link>
+                    <PermissionGuard permissionCode="po.view" action="view" fallback={
+                      <span className="font-medium">{grn.po_number}</span>
+                    }>
+                      <Link
+                        href={`/purchases/orders/${grn.po_id}`}
+                        className="font-medium text-blue-600 hover:underline flex items-center gap-1"
+                        target="_blank"
+                      >
+                        {grn.po_number}
+                        <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    </PermissionGuard>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Receipt Date:</span>
@@ -903,6 +980,22 @@ Received By: ${grn.received_by_name || "N/A"}
               <Copy className="mr-2 h-4 w-4" />
               Copy Details
             </Button>
+
+            <PermissionGuard permissionCode="grn.view" fallback={null}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExport}
+                disabled={exportLoading}
+              >
+                {exportLoading ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="mr-2 h-4 w-4" />
+                )}
+                {exportLoading ? "Exporting..." : "Export CSV"}
+              </Button>
+            </PermissionGuard>
 
             <Button
               size="sm"

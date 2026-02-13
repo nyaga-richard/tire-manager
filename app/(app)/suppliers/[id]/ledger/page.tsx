@@ -41,6 +41,7 @@ import {
   ChevronLast,
   ChevronLeft,
   ChevronRight,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -59,7 +60,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
-import { format, parseISO, isValid, compareAsc } from "date-fns";
+import { format, parseISO, isValid } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
+import { PermissionGuard } from "@/components/auth/PermissionGuard";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface SupplierLedgerEntry {
   id: number;
@@ -71,7 +78,7 @@ interface SupplierLedgerEntry {
   reference_number: string;
   created_by: string;
   created_at: string;
-  running_balance?: number; // From backend, but we'll recalculate
+  running_balance?: number;
 }
 
 interface Supplier {
@@ -85,6 +92,9 @@ interface Supplier {
   balance: number;
   created_at: string;
   ledger: SupplierLedgerEntry[];
+  tax_id?: string;
+  payment_terms?: string;
+  credit_limit?: number;
 }
 
 interface FilterOptions {
@@ -96,51 +106,44 @@ interface FilterOptions {
 
 interface ProcessedLedgerEntry extends SupplierLedgerEntry {
   running_balance: number;
-  dateTime: Date; // Date object for reliable operations
-  displayDate: string; // Formatted date for display
+  dateTime: Date;
+  displayDate: string;
+  sortKey: string;
 }
 
-// Helper function to safely parse dates with SQLite datetime format
+// Helper function to safely parse dates
 const safeParseDate = (dateString: string, timeString?: string): Date => {
   try {
-    // Handle SQLite datetime format "YYYY-MM-DD HH:MM:SS"
     if (timeString && timeString.includes(' ')) {
-      // Replace space with T for ISO format
       const isoString = timeString.replace(' ', 'T');
       const date = parseISO(isoString);
       if (isValid(date)) return date;
     }
     
-    // If we have just a date string, add default time
     if (dateString) {
       const date = parseISO(`${dateString}T00:00:00`);
       if (isValid(date)) return date;
     }
     
-    // Fallback
-    console.warn(`Invalid date string: ${dateString}`, timeString);
     return new Date();
-  } catch (error) {
-    console.warn(`Error parsing date: ${dateString}`, error);
+  } catch {
     return new Date();
   }
 };
 
-// Helper to create a consistent sort key from date and time
+// Helper to create sort key
 const createSortKey = (dateString: string, timeString?: string): string => {
-  try {
-    const date = safeParseDate(dateString, timeString);
-    return date.toISOString();
-  } catch (error) {
-    return new Date().toISOString();
-  }
+  const date = safeParseDate(dateString, timeString);
+  return date.toISOString();
 };
 
 export default function SupplierLedgerPage() {
   const params = useParams();
   const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
   const [supplier, setSupplier] = useState<Supplier | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
   const [filters, setFilters] = useState<FilterOptions>({
     searchQuery: "",
@@ -152,17 +155,23 @@ export default function SupplierLedgerPage() {
   
   const supplierId = params.id;
 
+  // Check authentication
   useEffect(() => {
-    if (supplierId) {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
+  useEffect(() => {
+    if (supplierId && isAuthenticated && hasPermission("supplier.view")) {
       fetchSupplierDetails();
     }
-  }, [supplierId]);
+  }, [supplierId, isAuthenticated, hasPermission]);
 
-  // Process ledger with proper running balance calculation
+  // Process ledger with running balance calculation
   const processedLedger = useMemo(() => {
     if (!supplier?.ledger || !Array.isArray(supplier.ledger)) return [];
 
-    // Create entries with proper date objects and sort keys
     const entriesWithDates = supplier.ledger
       .map(entry => {
         const dateTime = safeParseDate(entry.date, entry.created_at);
@@ -177,20 +186,15 @@ export default function SupplierLedgerPage() {
       })
       .filter(entry => isValid(entry.dateTime));
 
-    // Sort chronologically by sort key (oldest first)
     const sortedByDate = [...entriesWithDates].sort((a, b) => {
       return a.sortKey.localeCompare(b.sortKey);
     });
 
-    // Calculate running balance chronologically from OLDEST to NEWEST
     let runningBalance = 0;
     const withRunningBalance = sortedByDate.map(entry => {
-      // Update running balance based on transaction type
       if (entry.transaction_type === "PURCHASE" || entry.transaction_type === "RETREAD_SERVICE") {
-        // These increase what we owe (debit to us, credit to supplier)
         runningBalance += entry.amount;
       } else if (entry.transaction_type === "PAYMENT") {
-        // Payments decrease what we owe (credit to us, debit to supplier)
         runningBalance -= entry.amount;
       }
       
@@ -203,11 +207,10 @@ export default function SupplierLedgerPage() {
     return withRunningBalance;
   }, [supplier?.ledger]);
 
-  // Apply filters and final sorting for display
+  // Apply filters and final sorting
   const filteredLedger = useMemo(() => {
     let result = [...processedLedger];
 
-    // Apply search filter
     if (filters.searchQuery) {
       const query = filters.searchQuery.toLowerCase();
       result = result.filter(entry =>
@@ -218,7 +221,6 @@ export default function SupplierLedgerPage() {
       );
     }
 
-    // Apply date filter
     if (filters.startDate) {
       const startDate = new Date(filters.startDate);
       startDate.setHours(0, 0, 0, 0);
@@ -237,19 +239,17 @@ export default function SupplierLedgerPage() {
       });
     }
 
-    // Apply transaction type filter
     if (filters.transactionType && filters.transactionType !== "ALL") {
       result = result.filter(entry =>
         entry.transaction_type === filters.transactionType
       );
     }
 
-    // Apply final display sorting
     result.sort((a, b) => {
       if (sortOrder === "newest") {
-        return b.sortKey.localeCompare(a.sortKey); // Newest first
+        return b.sortKey.localeCompare(a.sortKey);
       } else {
-        return a.sortKey.localeCompare(b.sortKey); // Oldest first
+        return a.sortKey.localeCompare(b.sortKey);
       }
     });
 
@@ -263,7 +263,6 @@ export default function SupplierLedgerPage() {
     return filteredLedger.slice(startIndex, endIndex);
   }, [filteredLedger, currentPage, pageSize]);
 
-  // Calculate total pages
   const totalPages = useMemo(() => {
     return Math.ceil(filteredLedger.length / pageSize);
   }, [filteredLedger.length, pageSize]);
@@ -276,18 +275,30 @@ export default function SupplierLedgerPage() {
   const fetchSupplierDetails = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/accounting/suppliers/${supplierId}/ledger`);
+      setError(null);
+      
+      const response = await authFetch(`${API_BASE_URL}/api/accounting/suppliers/${supplierId}/ledger`);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        if (response.status === 404) {
+          throw new Error("Supplier not found");
+        }
+        throw new Error(`Failed to fetch ledger: ${response.status}`);
       }
       
       const data = await response.json();
       
       if (data.success) {
-        // Also fetch supplier details
-        const supplierResponse = await fetch(`http://localhost:5000/api/suppliers/${supplierId}`);
-        let supplierData = { name: "Unknown Supplier", type: "OTHER", contact_person: "", phone: "", email: "", address: "", created_at: new Date().toISOString() };
+        const supplierResponse = await authFetch(`${API_BASE_URL}/api/suppliers/${supplierId}`);
+        let supplierData = { 
+          name: "Unknown Supplier", 
+          type: "OTHER", 
+          contact_person: "", 
+          phone: "", 
+          email: "", 
+          address: "", 
+          created_at: new Date().toISOString() 
+        };
         
         if (supplierResponse.ok) {
           const supplierJson = await supplierResponse.json();
@@ -315,19 +326,9 @@ export default function SupplierLedgerPage() {
       }
     } catch (error) {
       console.error("Error fetching supplier ledger:", error);
-      toast.error("Failed to load supplier ledger");
-      // Set empty supplier to prevent breaking
-      setSupplier({
-        id: Number(supplierId),
-        name: "Unknown Supplier",
-        type: "OTHER",
-        contact_person: "",
-        phone: "",
-        email: "",
-        address: "",
-        balance: 0,
-        created_at: new Date().toISOString(),
-        ledger: []
+      setError(error instanceof Error ? error.message : "Failed to load supplier ledger");
+      toast.error("Failed to load supplier ledger", {
+        description: error instanceof Error ? error.message : "Please try again",
       });
     } finally {
       setLoading(false);
@@ -352,15 +353,15 @@ export default function SupplierLedgerPage() {
   const getSupplierTypeColor = (type: string) => {
     switch (type) {
       case "TIRE_SUPPLIER":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800";
       case "RETREAD_SUPPLIER":
-        return "bg-purple-100 text-purple-800 border-purple-200";
+        return "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800";
       case "SERVICE_PROVIDER":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
       case "OTHER":
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
@@ -381,18 +382,18 @@ export default function SupplierLedgerPage() {
     switch (type) {
       case "PURCHASE":
       case "RETREAD_SERVICE":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
       case "PAYMENT":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: "KES",
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(Math.abs(amount));
@@ -430,7 +431,7 @@ export default function SupplierLedgerPage() {
           `"${entry.description.replace(/"/g, '""')}"`,
           entry.transaction_type,
           `"${entry.reference_number || ""}"`,
-          entry.transaction_type === "PAYMENT" ? "" : entry.amount.toFixed(2),
+          entry.transaction_type !== "PAYMENT" ? entry.amount.toFixed(2) : "",
           entry.transaction_type === "PAYMENT" ? entry.amount.toFixed(2) : "",
           entry.running_balance.toFixed(2),
           `"${entry.created_by}"`,
@@ -443,7 +444,7 @@ export default function SupplierLedgerPage() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${supplier?.name.replace(/[^a-z0-9]/gi, '_')}_Ledger_${format(new Date(), "yyyy-MM-dd")}.csv`;
+    a.download = `${supplier?.name?.replace(/[^a-z0-9]/gi, '_')}_Ledger_${format(new Date(), "yyyy-MM-dd")}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -473,6 +474,7 @@ export default function SupplierLedgerPage() {
               .negative { color: #388e3c; }
               .footer { margin-top: 30px; font-size: 12px; color: #666; border-top: 1px solid #ddd; padding-top: 20px; }
               .page-info { float: right; font-size: 12px; color: #666; }
+              .generated-by { margin-top: 10px; font-size: 11px; color: #666; }
               @media print {
                 @page { margin: 0.5in; }
                 body { font-size: 12px; }
@@ -484,6 +486,7 @@ export default function SupplierLedgerPage() {
             <div class="header">
               <h1>${supplier?.name} - Transaction Ledger</h1>
               <p>Report generated on ${format(new Date(), "MMM d, yyyy HH:mm")}</p>
+              <p class="generated-by">Generated by: ${user?.full_name || user?.username || 'System'}</p>
             </div>
             
             <div class="supplier-info">
@@ -491,7 +494,7 @@ export default function SupplierLedgerPage() {
               ${supplier?.contact_person ? `<p><strong>Contact:</strong> ${supplier.contact_person}</p>` : ""}
               <p><strong>Current Balance:</strong> 
                 <span class="${supplier?.balance && supplier.balance > 0 ? 'positive' : 'negative'}">
-                  ${supplier?.balance && supplier.balance > 0 ? '+' : ''}KSH ${Math.abs(supplier?.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                  ${supplier?.balance && supplier.balance > 0 ? '+' : ''}KES ${Math.abs(supplier?.balance || 0).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}
                 </span>
               </p>
               <p><strong>Showing:</strong> ${filteredLedger.length} transactions (Page ${currentPage} of ${totalPages})</p>
@@ -526,13 +529,13 @@ export default function SupplierLedgerPage() {
                       <td>${getTransactionTypeLabel(entry.transaction_type)}</td>
                       <td>${entry.reference_number || "N/A"}</td>
                       <td style="text-align: right;" class="debit">
-                        ${debitAmount > 0 ? `KSH ${debitAmount.toFixed(2)}` : ""}
+                        ${debitAmount > 0 ? `KES ${debitAmount.toFixed(2)}` : ""}
                       </td>
                       <td style="text-align: right;" class="credit">
-                        ${creditAmount > 0 ? `KSH ${creditAmount.toFixed(2)}` : ""}
+                        ${creditAmount > 0 ? `KES ${creditAmount.toFixed(2)}` : ""}
                       </td>
                       <td style="text-align: right;" class="${entry.running_balance > 0 ? 'positive' : 'negative'}">
-                        KSH ${Math.abs(entry.running_balance).toFixed(2)}
+                        KES ${Math.abs(entry.running_balance).toFixed(2)}
                       </td>
                     </tr>
                   `;
@@ -543,6 +546,7 @@ export default function SupplierLedgerPage() {
             <div class="footer">
               <p>Total Transactions: ${filteredLedger.length} | Current Page: ${currentPage} of ${totalPages}</p>
               <p>Print Date: ${format(new Date(), "MMM d, yyyy HH:mm:ss")}</p>
+              <p>Report ID: LEDGER-${supplier?.id}-${Date.now().toString().slice(-6)}</p>
             </div>
           </body>
         </html>
@@ -581,37 +585,40 @@ export default function SupplierLedgerPage() {
   const goToNextPage = () => setCurrentPage(prev => Math.min(prev + 1, totalPages));
   const goToPrevPage = () => setCurrentPage(prev => Math.max(prev - 1, 1));
 
-  if (loading) {
+  // Show loading state
+  if (authLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-muted-foreground">Loading supplier ledger...</p>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-10 w-10" />
+            <div>
+              <Skeleton className="h-8 w-64 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Skeleton className="h-96 w-full" />
+          <Skeleton className="h-96 w-full lg:col-span-2" />
         </div>
       </div>
     );
   }
 
-  if (!supplier) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <div className="text-center">
-          <h3 className="text-lg font-medium">Supplier not found</h3>
-          <p className="text-muted-foreground mt-1">
-            The supplier you're looking for doesn't exist
-          </p>
-          <Button className="mt-4" asChild>
-            <Link href="/suppliers">Back to Suppliers</Link>
-          </Button>
-        </div>
-      </div>
-    );
+  // Show authentication error
+  if (!isAuthenticated) {
+    return null;
   }
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+  // Show permission denied
+  if (!hasPermission("supplier.view")) {
+    return (
+      <div className="space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/suppliers">
@@ -619,444 +626,592 @@ export default function SupplierLedgerPage() {
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              {supplier.name} - Transaction Ledger
-            </h1>
+            <h1 className="text-3xl font-bold tracking-tight">Supplier Ledger</h1>
+            <p className="text-muted-foreground">View supplier transaction history</p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You don't have permission to view supplier ledgers. Please contact your administrator.
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild>
+          <Link href="/suppliers">Return to Suppliers</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" asChild>
+              <Link href="/suppliers">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+            <div>
+              <Skeleton className="h-8 w-64 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-32 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <Skeleton className="h-6 w-32 mb-2" />
+              <Skeleton className="h-4 w-48" />
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/suppliers">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Supplier Ledger</h1>
+            <p className="text-muted-foreground">View supplier transaction history</p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+
+        <div className="flex gap-2">
+          <Button onClick={fetchSupplierDetails} variant="outline">
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Try Again
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/suppliers">Back to Suppliers</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!supplier) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/suppliers">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">Supplier Not Found</h1>
             <p className="text-muted-foreground">
-              Complete transaction history with running balance
+              The supplier you're looking for doesn't exist
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={printLedger}>
-            <Printer className="mr-2 h-4 w-4" />
-            Print
-          </Button>
-          <Button variant="outline" onClick={exportToCSV}>
-            <Download className="mr-2 h-4 w-4" />
-            Export CSV
-          </Button>
-          <Button variant="outline" asChild>
-            <Link href={`/suppliers/${supplier.id}/payment`}>
-              <CreditCard className="mr-2 h-4 w-4" />
-              Add Payment
-            </Link>
-          </Button>
-          <Button variant="outline" onClick={fetchSupplierDetails}>
-            <RefreshCw className="mr-2 h-4 w-4" />
-            Refresh
-          </Button>
-        </div>
-      </div>
 
-      {/* Filters */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">Filters & Search</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search transactions..."
-                className="pl-9"
-                value={filters.searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-              />
+        <Alert>
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            Supplier ID: {supplierId} not found
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild>
+          <Link href="/suppliers">Return to Suppliers</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <PermissionGuard permissionCode="supplier.view" action="view">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="icon" asChild>
+              <Link href="/suppliers">
+                <ArrowLeft className="h-4 w-4" />
+              </Link>
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">
+                {supplier.name} - Transaction Ledger
+              </h1>
+              <p className="text-muted-foreground">
+                Complete transaction history with running balance
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={printLedger}>
+              <Printer className="mr-2 h-4 w-4" />
+              Print
+            </Button>
+            <Button variant="outline" onClick={exportToCSV}>
+              <Download className="mr-2 h-4 w-4" />
+              Export CSV
+            </Button>
             
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button variant="outline" className="justify-start text-left">
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {filters.startDate && filters.endDate
-                    ? `${format(filters.startDate, "MMM d, yyyy")} - ${format(filters.endDate, "MMM d, yyyy")}`
-                    : "Date Range"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0" align="start">
-                <div className="p-4">
-                  <div className="space-y-2">
-                    <div>
-                      <Label>From Date</Label>
-                      <CalendarComponent
-                        mode="single"
-                        selected={filters.startDate}
-                        onSelect={(date) => handleDateFilter(date, filters.endDate)}
-                        className="rounded-md border"
-                        disabled={(date) => date > new Date()}
-                      />
-                    </div>
-                    <div>
-                      <Label>To Date</Label>
-                      <CalendarComponent
-                        mode="single"
-                        selected={filters.endDate}
-                        onSelect={(date) => handleDateFilter(filters.startDate, date)}
-                        className="rounded-md border"
-                        disabled={(date) => date > new Date()}
-                      />
+            <PermissionGuard permissionCode="accounting.create" action="create">
+              <Button variant="outline" asChild>
+                <Link href={`/suppliers/${supplier.id}/payment`}>
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Add Payment
+                </Link>
+              </Button>
+            </PermissionGuard>
+            
+            <Button variant="outline" onClick={fetchSupplierDetails}>
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-lg">Filters & Search</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search transactions..."
+                  className="pl-9"
+                  value={filters.searchQuery}
+                  onChange={(e) => handleSearch(e.target.value)}
+                />
+              </div>
+              
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="justify-start text-left">
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {filters.startDate && filters.endDate
+                      ? `${format(filters.startDate, "MMM d, yyyy")} - ${format(filters.endDate, "MMM d, yyyy")}`
+                      : "Date Range"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <div className="p-4">
+                    <div className="space-y-2">
+                      <div>
+                        <Label>From Date</Label>
+                        <CalendarComponent
+                          mode="single"
+                          selected={filters.startDate}
+                          onSelect={(date) => handleDateFilter(date, filters.endDate)}
+                          className="rounded-md border"
+                          disabled={(date) => date > new Date()}
+                        />
+                      </div>
+                      <div>
+                        <Label>To Date</Label>
+                        <CalendarComponent
+                          mode="single"
+                          selected={filters.endDate}
+                          onSelect={(date) => handleDateFilter(filters.startDate, date)}
+                          className="rounded-md border"
+                          disabled={(date) => date > new Date()}
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+                </PopoverContent>
+              </Popover>
 
-            <Select
-              value={filters.transactionType || "ALL"}
-              onValueChange={handleTransactionTypeFilter}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Transaction Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">All Types</SelectItem>
-                <SelectItem value="PURCHASE">Purchases</SelectItem>
-                <SelectItem value="RETREAD_SERVICE">Retread Services</SelectItem>
-                <SelectItem value="PAYMENT">Payments</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div className="flex items-center gap-2">
               <Select
-                value={sortOrder}
-                onValueChange={(value: "newest" | "oldest") => setSortOrder(value)}
+                value={filters.transactionType || "ALL"}
+                onValueChange={handleTransactionTypeFilter}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Sort Order" />
+                  <SelectValue placeholder="Transaction Type" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="newest">
-                    <div className="flex items-center gap-2">
-                      <ChevronDown className="h-4 w-4" />
-                      Newest First
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="oldest">
-                    <div className="flex items-center gap-2">
-                      <ChevronUp className="h-4 w-4" />
-                      Oldest First
-                    </div>
-                  </SelectItem>
+                  <SelectItem value="ALL">All Types</SelectItem>
+                  <SelectItem value="PURCHASE">Purchases</SelectItem>
+                  <SelectItem value="RETREAD_SERVICE">Retread Services</SelectItem>
+                  <SelectItem value="PAYMENT">Payments</SelectItem>
                 </SelectContent>
               </Select>
 
-              <Button variant="outline" onClick={clearFilters}>
-                Clear
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Supplier Info Card */}
-        <Card className="lg:col-span-1">
-          <CardHeader>
-            <CardTitle>Supplier Information</CardTitle>
-            <CardDescription>Supplier details and contact information</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center gap-2">
-              <Building className="h-4 w-4 text-muted-foreground" />
-              <span className="font-medium">Supplier Type: </span>
-              <Badge
-                variant="outline"
-                className={getSupplierTypeColor(supplier.type)}
-              >
-                {getSupplierTypeLabel(supplier.type)}
-              </Badge>
-            </div>
-            
-            {supplier.contact_person && (
               <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">
-                  <span className="font-medium">Contact: </span>
-                  {supplier.contact_person}
-                </span>
-              </div>
-            )}
-            
-            {supplier.phone && (
-              <div className="flex items-center gap-2">
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">
-                  <span className="font-medium">Phone: </span>
-                  {supplier.phone}
-                </span>
-              </div>
-            )}
-            
-            {supplier.email && (
-              <div className="flex items-center gap-2">
-                <Mail className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">
-                  <span className="font-medium">Email: </span>
-                  {supplier.email}
-                </span>
-              </div>
-            )}
-            
-            {supplier.address && (
-              <div className="flex items-start gap-2">
-                <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
-                <span className="text-sm">
-                  <span className="font-medium">Address: </span>
-                  {supplier.address}
-                </span>
-              </div>
-            )}
-            
-            <div className="pt-4 border-t">
-              <div className="text-center p-4 rounded-lg bg-muted">
-                <div className="text-sm font-medium mb-2">Current Balance</div>
-                <div className={`text-3xl font-bold ${
-                  supplier.balance > 0 
-                    ? "text-red-600" 
-                    : "text-green-600"
-                }`}>
-                  {supplier.balance > 0 ? "+" : ""}
-                  {formatCurrency(supplier.balance)}
-                </div>
-                <div className="text-xs text-muted-foreground mt-2">
-                  {supplier.balance > 0 
-                    ? "Amount owed to supplier"
-                    : "Credit balance with supplier"}
-                </div>
-              </div>
-            </div>
-            
-            <div className="pt-4 border-t">
-              <div className="text-sm space-y-1">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Added On:</span>
-                  <span>{formatDate(supplier.created_at)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Transactions:</span>
-                  <span>{supplier.ledger.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Showing:</span>
-                  <span>
-                    {filteredLedger.length} of {supplier.ledger.length} transactions
-                  </span>
-                </div>
-                {filteredLedger.length > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Page:</span>
-                    <span>
-                      {currentPage} of {totalPages}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Transaction Ledger Card */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Transaction History</CardTitle>
-              <CardDescription>
-                {filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType
-                  ? `Filtered results (${filteredLedger.length} transactions)`
-                  : `All transactions (${supplier.ledger.length} total)`}
-              </CardDescription>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Show:</span>
                 <Select
-                  value={pageSize.toString()}
-                  onValueChange={(value) => {
-                    setPageSize(parseInt(value));
-                    setCurrentPage(1);
-                  }}
+                  value={sortOrder}
+                  onValueChange={(value: "newest" | "oldest") => setSortOrder(value)}
                 >
-                  <SelectTrigger className="w-20">
-                    <SelectValue />
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sort Order" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="10">10</SelectItem>
-                    <SelectItem value="25">25</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
+                    <SelectItem value="newest">
+                      <div className="flex items-center gap-2">
+                        <ChevronDown className="h-4 w-4" />
+                        Newest First
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="oldest">
+                      <div className="flex items-center gap-2">
+                        <ChevronUp className="h-4 w-4" />
+                        Oldest First
+                      </div>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
+
+                <Button variant="outline" onClick={clearFilters}>
+                  Clear
+                </Button>
               </div>
             </div>
-          </CardHeader>
-          <CardContent id="ledger-content">
-            {filteredLedger.length === 0 ? (
-              <div className="text-center py-8">
-                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h4 className="font-medium">No transactions found</h4>
-                <p className="text-sm text-muted-foreground">
-                  {supplier.ledger.length === 0
-                    ? "Start by making a purchase or recording a payment"
-                    : "Try adjusting your filters or search terms"}
-                </p>
-                {(filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType) && (
-                  <Button variant="outline" onClick={clearFilters} className="mt-4">
-                    Clear filters
-                  </Button>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date & Time</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Reference</TableHead>
-                        <TableHead className="text-right">Debit</TableHead>
-                        <TableHead className="text-right">Credit</TableHead>
-                        <TableHead className="text-right">Balance</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedLedger.map((entry) => (
-                        <TableRow key={entry.id}>
-                          <TableCell>
-                            <div className="font-medium">
-                              {entry.displayDate}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div>{entry.description}</div>
-                            <div className="text-xs text-muted-foreground">
-                              By: {entry.created_by}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={getTransactionTypeColor(entry.transaction_type)}
-                            >
-                              {getTransactionTypeLabel(entry.transaction_type)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            {entry.reference_number || "N/A"}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {entry.transaction_type !== "PAYMENT" ? (
-                              <div className="text-red-600 font-medium">
-                                {formatCurrency(entry.amount)}
-                              </div>
-                            ) : (
-                              <div className="text-muted-foreground">-</div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right font-mono">
-                            {entry.transaction_type === "PAYMENT" ? (
-                              <div className="text-green-600 font-medium">
-                                {formatCurrency(entry.amount)}
-                              </div>
-                            ) : (
-                              <div className="text-muted-foreground">-</div>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className={`font-mono font-medium ${
-                              entry.running_balance > 0
-                                ? "text-red-600"
-                                : "text-green-600"
-                            }`}>
-                              {formatCurrency(entry.running_balance)}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-                
-                {/* Pagination */}
-                {filteredLedger.length > 0 && (
-                  <div className="flex items-center justify-between mt-6">
-                    <div className="text-sm text-muted-foreground">
-                      Showing {(currentPage - 1) * pageSize + 1} to{" "}
-                      {Math.min(currentPage * pageSize, filteredLedger.length)} of{" "}
-                      {filteredLedger.length} entries
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={goToFirstPage}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronFirst className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={goToPrevPage}
-                        disabled={currentPage === 1}
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </Button>
-                      
-                      <div className="flex items-center gap-1">
-                        {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                          let pageNum;
-                          if (totalPages <= 5) {
-                            pageNum = i + 1;
-                          } else if (currentPage <= 3) {
-                            pageNum = i + 1;
-                          } else if (currentPage >= totalPages - 2) {
-                            pageNum = totalPages - 4 + i;
-                          } else {
-                            pageNum = currentPage - 2 + i;
-                          }
-                          
-                          return (
-                            <Button
-                              key={pageNum}
-                              variant={currentPage === pageNum ? "default" : "outline"}
-                              size="sm"
-                              onClick={() => setCurrentPage(pageNum)}
-                              className="w-8 h-8 p-0"
-                            >
-                              {pageNum}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                      
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={goToNextPage}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={goToLastPage}
-                        disabled={currentPage === totalPages}
-                      >
-                        <ChevronLast className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                )}
-              </>
-            )}
           </CardContent>
         </Card>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Supplier Info Card */}
+          <Card className="lg:col-span-1">
+            <CardHeader>
+              <CardTitle>Supplier Information</CardTitle>
+              <CardDescription>Supplier details and contact information</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center gap-2">
+                <Building className="h-4 w-4 text-muted-foreground" />
+                <span className="font-medium">Supplier Type: </span>
+                <Badge
+                  variant="outline"
+                  className={getSupplierTypeColor(supplier.type)}
+                >
+                  {getSupplierTypeLabel(supplier.type)}
+                </Badge>
+              </div>
+              
+              {supplier.contact_person && (
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
+                    <span className="font-medium">Contact: </span>
+                    {supplier.contact_person}
+                  </span>
+                </div>
+              )}
+              
+              {supplier.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
+                    <span className="font-medium">Phone: </span>
+                    {supplier.phone}
+                  </span>
+                </div>
+              )}
+              
+              {supplier.email && (
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">
+                    <span className="font-medium">Email: </span>
+                    {supplier.email}
+                  </span>
+                </div>
+              )}
+              
+              {supplier.address && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <span className="text-sm">
+                    <span className="font-medium">Address: </span>
+                    {supplier.address}
+                  </span>
+                </div>
+              )}
+              
+              <div className="pt-4 border-t">
+                <div className="text-center p-4 rounded-lg bg-muted">
+                  <div className="text-sm font-medium mb-2">Current Balance</div>
+                  <div className={`text-3xl font-bold ${
+                    supplier.balance > 0 
+                      ? "text-red-600 dark:text-red-400" 
+                      : "text-green-600 dark:text-green-400"
+                  }`}>
+                    {supplier.balance > 0 ? "+" : ""}
+                    {formatCurrency(supplier.balance)}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    {supplier.balance > 0 
+                      ? "Amount owed to supplier"
+                      : "Credit balance with supplier"}
+                  </div>
+                </div>
+              </div>
+              
+              <div className="pt-4 border-t">
+                <div className="text-sm space-y-1">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Added On:</span>
+                    <span>{formatDate(supplier.created_at)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Total Transactions:</span>
+                    <span>{supplier.ledger.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Showing:</span>
+                    <span>
+                      {filteredLedger.length} of {supplier.ledger.length} transactions
+                    </span>
+                  </div>
+                  {filteredLedger.length > 0 && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Page:</span>
+                      <span>
+                        {currentPage} of {totalPages}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Transaction Ledger Card */}
+          <Card className="lg:col-span-2">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Transaction History</CardTitle>
+                <CardDescription>
+                  {filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType
+                    ? `Filtered results (${filteredLedger.length} transactions)`
+                    : `All transactions (${supplier.ledger.length} total)`}
+                </CardDescription>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Show:</span>
+                  <Select
+                    value={pageSize.toString()}
+                    onValueChange={(value) => {
+                      setPageSize(parseInt(value));
+                      setCurrentPage(1);
+                    }}
+                  >
+                    <SelectTrigger className="w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="10">10</SelectItem>
+                      <SelectItem value="25">25</SelectItem>
+                      <SelectItem value="50">50</SelectItem>
+                      <SelectItem value="100">100</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent id="ledger-content">
+              {filteredLedger.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                  <h4 className="font-medium">No transactions found</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {supplier.ledger.length === 0
+                      ? "Start by making a purchase or recording a payment"
+                      : "Try adjusting your filters or search terms"}
+                  </p>
+                  {(filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType) && (
+                    <Button variant="outline" onClick={clearFilters} className="mt-4">
+                      Clear filters
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Date & Time</TableHead>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Reference</TableHead>
+                          <TableHead className="text-right">Debit</TableHead>
+                          <TableHead className="text-right">Credit</TableHead>
+                          <TableHead className="text-right">Balance</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paginatedLedger.map((entry) => (
+                          <TableRow key={entry.id}>
+                            <TableCell>
+                              <div className="font-medium">
+                                {entry.displayDate}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div>{entry.description}</div>
+                              <div className="text-xs text-muted-foreground">
+                                By: {entry.created_by}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={getTransactionTypeColor(entry.transaction_type)}
+                              >
+                                {getTransactionTypeLabel(entry.transaction_type)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {entry.reference_number || "N/A"}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {entry.transaction_type !== "PAYMENT" ? (
+                                <div className="text-red-600 dark:text-red-400 font-medium">
+                                  {formatCurrency(entry.amount)}
+                                </div>
+                              ) : (
+                                <div className="text-muted-foreground">-</div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right font-mono">
+                              {entry.transaction_type === "PAYMENT" ? (
+                                <div className="text-green-600 dark:text-green-400 font-medium">
+                                  {formatCurrency(entry.amount)}
+                                </div>
+                              ) : (
+                                <div className="text-muted-foreground">-</div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className={`font-mono font-medium ${
+                                entry.running_balance > 0
+                                  ? "text-red-600 dark:text-red-400"
+                                  : "text-green-600 dark:text-green-400"
+                              }`}>
+                                {formatCurrency(entry.running_balance)}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                  
+                  {/* Pagination */}
+                  {filteredLedger.length > 0 && (
+                    <div className="flex items-center justify-between mt-6">
+                      <div className="text-sm text-muted-foreground">
+                        Showing {(currentPage - 1) * pageSize + 1} to{" "}
+                        {Math.min(currentPage * pageSize, filteredLedger.length)} of{" "}
+                        {filteredLedger.length} entries
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={goToFirstPage}
+                          disabled={currentPage === 1}
+                        >
+                          <ChevronFirst className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={goToPrevPage}
+                          disabled={currentPage === 1}
+                        >
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            let pageNum;
+                            if (totalPages <= 5) {
+                              pageNum = i + 1;
+                            } else if (currentPage <= 3) {
+                              pageNum = i + 1;
+                            } else if (currentPage >= totalPages - 2) {
+                              pageNum = totalPages - 4 + i;
+                            } else {
+                              pageNum = currentPage - 2 + i;
+                            }
+                            
+                            return (
+                              <Button
+                                key={pageNum}
+                                variant={currentPage === pageNum ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => setCurrentPage(pageNum)}
+                                className="w-8 h-8 p-0"
+                              >
+                                {pageNum}
+                              </Button>
+                            );
+                          })}
+                        </div>
+                        
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={goToNextPage}
+                          disabled={currentPage === totalPages}
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="icon"
+                          onClick={goToLastPage}
+                          disabled={currentPage === totalPages}
+                        >
+                          <ChevronLast className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
-    </div>
+    </PermissionGuard>
   );
 }

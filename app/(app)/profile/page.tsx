@@ -55,11 +55,13 @@ import {
   Lock,
   Settings,
   UserCog,
+  Loader2,
 } from "lucide-react";
-import { useAuth } from "@/components/providers/auth-provider";
+import { useAuth } from "@/contexts/AuthContext"; // ✅ Fixed import
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
 
-// API base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 // Interfaces
 interface UserProfile {
@@ -108,7 +110,7 @@ interface Session {
 
 export default function MyProfilePage() {
   const router = useRouter();
-  const { token, user, logout } = useAuth();
+  const { user: currentUser, isAuthenticated, isLoading: authLoading, logout, authFetch } = useAuth(); // ✅ Use authFetch
   
   const [loading, setLoading] = useState({
     profile: true,
@@ -118,6 +120,7 @@ export default function MyProfilePage() {
     changingPassword: false
   });
   
+  const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -144,48 +147,28 @@ export default function MyProfilePage() {
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
 
+  // Check authentication
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push("/login");
+    }
+  }, [authLoading, isAuthenticated, router]);
+
   // Fetch profile data
   useEffect(() => {
-    if (token) {
+    if (isAuthenticated) {
       fetchProfile();
     }
-  }, [token]);
-
-  // Fetch data helper
-  const fetchWithAuth = async (url: string, options: RequestInit = {}) => {
-    if (!token) {
-      throw new Error("No authentication token");
-    }
-
-    const response = await fetch(`${API_BASE_URL}${url}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-        ...options.headers,
-      },
-      credentials: "include",
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        toast.error("Session Expired", {
-          description: "Please login again"
-        });
-        logout();
-        throw new Error("Authentication required");
-      }
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || `API error: ${response.status}`);
-    }
-
-    return response.json();
-  };
+  }, [isAuthenticated]);
 
   const fetchProfile = async () => {
     try {
       setLoading(prev => ({ ...prev, profile: true }));
-      const data = await fetchWithAuth("/api/auth/profile");
+      setError(null);
+      
+      const response = await authFetch(`${API_BASE_URL}/api/auth/profile`);
+      const data = await response.json();
+      
       if (data.success) {
         setProfile(data.user);
         setFormData({
@@ -193,9 +176,12 @@ export default function MyProfilePage() {
           email: data.user.email || "",
           department: data.user.department || "",
         });
+      } else {
+        throw new Error(data.message || "Failed to load profile");
       }
     } catch (error: any) {
       console.error("Error fetching profile:", error);
+      setError(error.message || "Failed to load profile");
       toast.error("Failed to load profile", {
         description: error.message
       });
@@ -205,11 +191,17 @@ export default function MyProfilePage() {
   };
 
   const fetchActivities = async () => {
+    if (!currentUser?.id) return;
+    
     try {
       setLoading(prev => ({ ...prev, activities: true }));
-      const data = await fetchWithAuth(`/api/users/${user?.id}/activity?limit=20`);
+      const response = await authFetch(`${API_BASE_URL}/api/users/${currentUser.id}/activity?limit=20`);
+      const data = await response.json();
+      
       if (data.success) {
-        setActivities(data.activities);
+        setActivities(data.activities || []);
+      } else {
+        throw new Error(data.message || "Failed to load activities");
       }
     } catch (error: any) {
       console.error("Error fetching activities:", error);
@@ -222,11 +214,17 @@ export default function MyProfilePage() {
   };
 
   const fetchSessions = async () => {
+    if (!currentUser?.id) return;
+    
     try {
       setLoading(prev => ({ ...prev, sessions: true }));
-      const data = await fetchWithAuth(`/api/users/${user?.id}/sessions`);
+      const response = await authFetch(`${API_BASE_URL}/api/users/${currentUser.id}/sessions`);
+      const data = await response.json();
+      
       if (data.success) {
-        setSessions(data.sessions);
+        setSessions(data.sessions || []);
+      } else {
+        throw new Error(data.message || "Failed to load sessions");
       }
     } catch (error: any) {
       console.error("Error fetching sessions:", error);
@@ -268,7 +266,7 @@ export default function MyProfilePage() {
     setLoading(prev => ({ ...prev, saving: true }));
 
     try {
-      const response = await fetchWithAuth("/api/auth/profile", {
+      const response = await authFetch(`${API_BASE_URL}/api/auth/profile`, {
         method: "PUT",
         body: JSON.stringify({
           full_name: formData.full_name,
@@ -277,9 +275,13 @@ export default function MyProfilePage() {
         }),
       });
 
-      if (response.success) {
+      const data = await response.json();
+
+      if (data.success) {
         toast.success("Profile updated successfully");
         fetchProfile();
+      } else {
+        throw new Error(data.message || "Failed to update profile");
       }
     } catch (error: any) {
       console.error("Error updating profile:", error);
@@ -326,7 +328,7 @@ export default function MyProfilePage() {
     setLoading(prev => ({ ...prev, changingPassword: true }));
 
     try {
-      const response = await fetchWithAuth("/api/auth/change-password", {
+      const response = await authFetch(`${API_BASE_URL}/api/auth/change-password`, {
         method: "POST",
         body: JSON.stringify({
           currentPassword: passwordData.current_password,
@@ -335,7 +337,9 @@ export default function MyProfilePage() {
         }),
       });
 
-      if (response.success) {
+      const data = await response.json();
+
+      if (data.success) {
         toast.success("Password changed successfully", {
           description: "You will be logged out of all other devices"
         });
@@ -353,6 +357,8 @@ export default function MyProfilePage() {
           description: "For security, please login again with your new password",
           duration: 5000,
         });
+      } else {
+        throw new Error(data.message || "Failed to change password");
       }
     } catch (error: any) {
       console.error("Error changing password:", error);
@@ -377,14 +383,20 @@ export default function MyProfilePage() {
   };
 
   const handleForceLogoutAll = async () => {
+    if (!currentUser?.id) return;
+    
     try {
-      const response = await fetchWithAuth(`/api/users/${user?.id}/sessions`, {
+      const response = await authFetch(`${API_BASE_URL}/api/users/${currentUser.id}/sessions`, {
         method: "DELETE",
       });
+      
+      const data = await response.json();
 
-      if (response.success) {
+      if (data.success) {
         toast.success("Logged out from all devices");
         fetchSessions();
+      } else {
+        throw new Error(data.message || "Failed to force logout");
       }
     } catch (error: any) {
       console.error("Error forcing logout:", error);
@@ -395,17 +407,23 @@ export default function MyProfilePage() {
   };
 
   const handleForceLogoutSingle = async (sessionId: string) => {
+    if (!currentUser?.id) return;
+    
     try {
-      const response = await fetchWithAuth(`/api/users/${user?.id}/sessions`, {
+      const response = await authFetch(`${API_BASE_URL}/api/users/${currentUser.id}/sessions`, {
         method: "DELETE",
         body: JSON.stringify({
           except_session_token: sessionId
         }),
       });
+      
+      const data = await response.json();
 
-      if (response.success) {
+      if (data.success) {
         toast.success("Logged out from other devices");
         fetchSessions();
+      } else {
+        throw new Error(data.message || "Failed to force logout");
       }
     } catch (error: any) {
       console.error("Error forcing logout:", error);
@@ -425,15 +443,19 @@ export default function MyProfilePage() {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    });
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      });
+    } catch {
+      return "Invalid date";
+    }
   };
 
   const formatActivityAction = (action: string) => {
@@ -448,7 +470,7 @@ export default function MyProfilePage() {
       'UPDATE_USER': 'Updated user',
       'DELETE_USER': 'Deleted user'
     };
-    return actions[action] || action.replace('_', ' ');
+    return actions[action] || action.replace(/_/g, ' ');
   };
 
   const togglePasswordVisibility = (field: keyof typeof showPasswords) => {
@@ -461,6 +483,27 @@ export default function MyProfilePage() {
   const activeSessions = sessions.filter(s => s.is_active === 1);
   const inactiveSessions = sessions.filter(s => s.is_active === 0);
 
+  // Show auth loading state
+  if (authLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+        </div>
+        <Skeleton className="h-32 w-full" />
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
+
+  // Show not authenticated
+  if (!isAuthenticated) {
+    return null;
+  }
+
   if (loading.profile) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
@@ -472,7 +515,8 @@ export default function MyProfilePage() {
     );
   }
 
-  if (!profile) {
+  // Show error state
+  if (error && !profile) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="max-w-md">
@@ -482,17 +526,24 @@ export default function MyProfilePage() {
               Profile Not Found
             </CardTitle>
             <CardDescription className="text-center">
-              Unable to load your profile. Please try logging in again.
+              {error || "Unable to load your profile. Please try logging in again."}
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button onClick={() => router.push("/login")}>
+            <Button onClick={() => {
+              logout();
+              router.push("/login");
+            }}>
               Go to Login
             </Button>
           </CardContent>
         </Card>
       </div>
     );
+  }
+
+  if (!profile) {
+    return null;
   }
 
   return (
@@ -616,8 +667,8 @@ export default function MyProfilePage() {
               </Label>
             </div>
 
-            <div className="bg-yellow-50 border border-yellow-200 rounded-md p-3 mt-4">
-              <div className="text-sm text-yellow-800">
+            <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800 rounded-md p-3 mt-4">
+              <div className="text-sm text-yellow-800 dark:text-yellow-300">
                 <strong className="font-medium">Security Notice:</strong>
                 <ul className="list-disc pl-4 mt-1 space-y-1">
                   <li>Password must be at least 8 characters long</li>
@@ -643,7 +694,7 @@ export default function MyProfilePage() {
               >
                 {loading.changingPassword ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Changing...
                   </>
                 ) : (
@@ -700,7 +751,7 @@ export default function MyProfilePage() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-blue-50">
+                  <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950">
                     <Shield className="h-3 w-3 mr-1" />
                     {profile.role_name}
                   </Badge>
@@ -805,7 +856,7 @@ export default function MyProfilePage() {
                   <Button type="submit" disabled={loading.saving}>
                     {loading.saving ? (
                       <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Saving...
                       </>
                     ) : (
@@ -966,8 +1017,8 @@ export default function MyProfilePage() {
                         {activeSessions.map((session) => (
                           <div key={session.id} className="flex items-center justify-between p-3 border rounded-md">
                             <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
-                                <CheckCircle className="h-4 w-4 text-green-600" />
+                              <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center">
+                                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
                               </div>
                               <div>
                                 <div className="font-medium">Active Session</div>
@@ -1007,8 +1058,8 @@ export default function MyProfilePage() {
                         {inactiveSessions.map((session) => (
                           <div key={session.id} className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
                             <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center">
-                                <XCircle className="h-4 w-4 text-gray-400" />
+                              <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
+                                <XCircle className="h-4 w-4 text-gray-400 dark:text-gray-500" />
                               </div>
                               <div>
                                 <div className="font-medium">Inactive Session</div>
@@ -1038,14 +1089,14 @@ export default function MyProfilePage() {
                 )}
 
                 {activeSessions.length > 1 && (
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800 rounded-md p-4">
                     <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                      <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-yellow-800">
+                        <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
                           Multiple Active Sessions
                         </p>
-                        <p className="text-sm text-yellow-700 mt-1">
+                        <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-1">
                           You are currently logged in on {activeSessions.length} devices.
                           If you see unfamiliar sessions, logout from all devices.
                         </p>
@@ -1203,37 +1254,37 @@ export default function MyProfilePage() {
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {perm.can_view ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 mx-auto" />
+                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {perm.can_create ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 mx-auto" />
+                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {perm.can_edit ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 mx-auto" />
+                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {perm.can_delete ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 mx-auto" />
+                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
                                     )}
                                   </TableCell>
                                   <TableCell className="text-center">
                                     {perm.can_approve ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
                                     ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 mx-auto" />
+                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
                                     )}
                                   </TableCell>
                                 </TableRow>

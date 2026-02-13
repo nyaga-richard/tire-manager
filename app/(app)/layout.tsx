@@ -1,7 +1,6 @@
+// app/(app)/layout.tsx
 import Link from "next/link";
 import AppNavbar from "@/components/app-navbar";
-
-
 
 export default function AppLayout({
   children,
@@ -9,11 +8,11 @@ export default function AppLayout({
   children: React.ReactNode;
 }) {
   return (
-    <>
-        <AppNavbar />
-      <main className="container mx-auto px-4 py-8">
+    <div className="min-h-screen flex flex-col bg-background">
+      <AppNavbar />
+      <main className="flex-1 container mx-auto px-4 py-8">
         {children}
       </main>
-    </>
+    </div>
   );
 }
