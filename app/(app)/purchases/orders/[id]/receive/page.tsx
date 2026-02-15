@@ -77,6 +77,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -125,6 +126,8 @@ interface PurchaseOrder {
   items: PurchaseOrderItem[];
   created_by_name?: string;
   approved_by_name?: string | null;
+  tax_rate?: number;
+  tax_name?: string;
 }
 
 interface ReceivingItem {
@@ -166,6 +169,7 @@ export default function ReceiveGoodsPage() {
   const params = useParams();
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
   const orderId = params.id as string;
 
   const [grnDetailsOpen, setGrnDetailsOpen] = useState(false);
@@ -186,6 +190,14 @@ export default function ReceiveGoodsPage() {
     receiving_notes: "",
     inspection_notes: "",
   });
+
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+
+  // Get tax info from order or settings
+  const taxName = order?.tax_name || 'VAT';
+  const taxRate = order?.tax_rate || systemSettings?.vat_rate || 16;
 
   // Check authentication
   useEffect(() => {
@@ -378,21 +390,40 @@ export default function ReceiveGoodsPage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KES",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Not set";
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+      const format = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (format === "dd/MM/yyyy") {
+        return date.toLocaleDateString("en-GB");
+      } else if (format === "MM/dd/yyyy") {
+        return date.toLocaleDateString("en-US");
+      } else if (format === "yyyy-MM-dd") {
+        return date.toISOString().split('T')[0];
+      } else if (format === "dd-MM-yyyy") {
+        return date.toLocaleDateString("en-GB").replace(/\//g, '-');
+      } else if (format === "dd MMM yyyy") {
+        return date.toLocaleDateString("en-US", { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+      } else {
+        return date.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
     } catch {
       return "Invalid date";
     }
@@ -548,7 +579,7 @@ export default function ReceiveGoodsPage() {
   };
 
   // Show auth loading state
-  if (authLoading) {
+  if (authLoading || settingsLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -653,6 +684,11 @@ export default function ReceiveGoodsPage() {
               <p className="text-muted-foreground">
                 PO: {order.po_number} • {order.supplier_name}
               </p>
+              {systemSettings?.company_name && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Company: {systemSettings.company_name} • Currency: {currencySymbol} ({currency})
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -707,6 +743,11 @@ export default function ReceiveGoodsPage() {
                     <div className="text-sm text-muted-foreground">
                       {order.items?.length || 0} items • {totalOrdered} units total
                     </div>
+                    {order.tax_name && (
+                      <div className="text-xs text-muted-foreground">
+                        {order.tax_name} rate: {order.tax_rate || taxRate}%
+                      </div>
+                    )}
                   </div>
                 </div>
                 {order.notes && (
@@ -933,7 +974,7 @@ export default function ReceiveGoodsPage() {
                             <TableHead className="text-center">Remaining</TableHead>
                             <TableHead className="text-center">Receive Now</TableHead>
                             <TableHead>Condition</TableHead>
-                            <TableHead className="text-right">Value</TableHead>
+                            <TableHead className="text-right">Value ({currencySymbol})</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1399,6 +1440,11 @@ export default function ReceiveGoodsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Footer */}
+        <div className="text-xs text-muted-foreground border-t pt-4">
+          Logged in as: {user?.full_name || user?.username} • Role: {user?.role}
+        </div>
       </div>
     </PermissionGuard>
   );
