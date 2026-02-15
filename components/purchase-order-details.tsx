@@ -39,6 +39,8 @@ import {
 import Link from "next/link";
 import { useReactToPrint } from "react-to-print";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { useSettings } from "@/hooks/useSettings";
 
 export interface PurchaseOrder {
   id: number;
@@ -56,6 +58,8 @@ export interface PurchaseOrder {
   status: "DRAFT" | "PENDING" | "APPROVED" | "ORDERED" | "PARTIALLY_RECEIVED" | "RECEIVED" | "CANCELLED" | "CLOSED";
   total_amount: number; // Subtotal EXCLUDING VAT
   tax_amount: number; // Total VAT amount
+  tax_rate?: number; // Tax rate percentage
+  tax_name?: string; // Tax name (e.g., VAT)
   shipping_amount: number;
   final_amount: number; // Total INCLUDING VAT + shipping
   notes: string | null;
@@ -97,13 +101,22 @@ interface PurchaseOrderModalProps {
   onClose: () => void;
 }
 
-const VAT_RATE = 0.16; // 16% VAT
-
 export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: PurchaseOrderModalProps) {
+  const { user } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
   const [order, setOrder] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(false);
   const printRef = useRef<HTMLDivElement>(null);
   
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+  
+  // Get tax rate from order or use settings default
+  const taxRate = order?.tax_rate !== undefined ? order.tax_rate / 100 : (systemSettings?.vat_rate || 16) / 100;
+  const taxName = order?.tax_name || 'VAT';
+  const taxRatePercent = order?.tax_rate !== undefined ? order.tax_rate : (systemSettings?.vat_rate || 16);
+
   useEffect(() => {
     if (orderId && isOpen) {
       fetchOrderDetails();
@@ -236,38 +249,70 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    try {
+      const date = new Date(dateString);
+      const format = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (format === "dd/MM/yyyy") {
+        return date.toLocaleDateString("en-GB");
+      } else if (format === "MM/dd/yyyy") {
+        return date.toLocaleDateString("en-US");
+      } else if (format === "yyyy-MM-dd") {
+        return date.toISOString().split('T')[0];
+      } else if (format === "dd-MM-yyyy") {
+        return date.toLocaleDateString("en-GB").replace(/\//g, '-');
+      } else if (format === "dd MMM yyyy") {
+        return date.toLocaleDateString("en-US", { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+      } else {
+        return date.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
+    } catch {
+      return "Invalid date";
+    }
   };
 
   const formatDateTime = (dateString: string | null) => {
     if (!dateString) return "Not set";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    try {
+      const date = new Date(dateString);
+      const dateFormat = systemSettings?.date_format || "MMM dd, yyyy";
+      const timeFormat = systemSettings?.time_format || "HH:mm:ss";
+      
+      const dateStr = formatDate(dateString);
+      const timeStr = date.toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: timeFormat.includes("ss") ? "2-digit" : undefined,
+        hour12: timeFormat.includes("a")
+      });
+      
+      return `${dateStr} ${timeStr}`;
+    } catch {
+      return "Invalid date";
+    }
   };
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
-  // Calculate exclusive price from inclusive price
+  // Calculate exclusive price from inclusive price using order's tax rate
   const calculateExclusivePrice = (inclusivePrice: number): number => {
-    return inclusivePrice / (1 + VAT_RATE);
+    return inclusivePrice / (1 + taxRate);
   };
 
   // Calculate VAT amount from inclusive price
@@ -278,7 +323,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
 
   // Calculate line total excluding VAT
   const calculateLineTotalExcludingVAT = (lineTotalInclusive: number): number => {
-    return lineTotalInclusive / (1 + VAT_RATE);
+    return lineTotalInclusive / (1 + taxRate);
   };
 
   // Calculate line VAT amount
@@ -297,8 +342,8 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
     const subtotalInclusive = calculateSubtotalInclusive();
     if (subtotalInclusive === 0) return 0;
     
-    // Working backwards: VAT = (subtotalInclusive * VAT_RATE) / (1 + VAT_RATE)
-    return (subtotalInclusive * VAT_RATE) / (1 + VAT_RATE);
+    // Working backwards: VAT = (subtotalInclusive * taxRate) / (1 + taxRate)
+    return (subtotalInclusive * taxRate) / (1 + taxRate);
   };
 
   // Calculate subtotal excluding VAT
@@ -313,20 +358,20 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
       case "COMPLETED":
       case "RECEIVED":
       case "CLOSED":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
       case "PENDING":
       case "DRAFT":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+        return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
       case "APPROVED":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800";
       case "ORDERED":
-        return "bg-indigo-100 text-indigo-800 border-indigo-200";
+        return "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-950 dark:text-indigo-300 dark:border-indigo-800";
       case "PARTIALLY_RECEIVED":
-        return "bg-orange-100 text-orange-800 border-orange-200";
+        return "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800";
       case "CANCELLED":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
@@ -458,12 +503,27 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                         </div>
                         
                         <div className="text-sm">
-                          <p className="font-bold mb-1">Fleet Management System</p>
-                          <p className="text-xs">123 Fleet Street</p>
-                          <p className="text-xs">Industrial Area</p>
-                          <p className="text-xs">City, State 12345</p>
-                          <p className="text-xs">Phone: (555) 123-4567</p>
-                          <p className="text-xs">Email: info@fleetmanagement.com</p>
+                          <p className="font-bold mb-1">{systemSettings?.company_name || 'Fleet Management System'}</p>
+                          {systemSettings?.company_address ? (
+                            systemSettings.company_address.split('\n').map((line, i) => (
+                              <p key={i} className="text-xs">{line}</p>
+                            ))
+                          ) : (
+                            <>
+                              <p className="text-xs">123 Fleet Street</p>
+                              <p className="text-xs">Industrial Area</p>
+                              <p className="text-xs">City, State 12345</p>
+                            </>
+                          )}
+                          {systemSettings?.company_phone && (
+                            <p className="text-xs">Phone: {systemSettings.company_phone}</p>
+                          )}
+                          {systemSettings?.company_email && (
+                            <p className="text-xs">Email: {systemSettings.company_email}</p>
+                          )}
+                          {systemSettings?.company_tax_id && (
+                            <p className="text-xs">Tax ID: {systemSettings.company_tax_id}</p>
+                          )}
                         </div>
                       </div>
                       
@@ -490,7 +550,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                             </p>
                           )}
                           <div className="mt-2">
-                            <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden inline-block">
+                            <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden inline-block">
                               <div 
                                 className="h-full bg-green-500 rounded-full"
                                 style={{ width: `${getProgress()}%` }}
@@ -578,7 +638,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                     
                     <div className="border rounded overflow-hidden">
                       <Table className="print-table">
-                        <TableHeader className="bg-gray-50 print-padding">
+                        <TableHeader className="bg-gray-50 dark:bg-gray-800 print-padding">
                           <TableRow>
                             <TableHead className="font-semibold text-xs w-8 p-2">#</TableHead>
                             <TableHead className="font-semibold text-xs p-2">Size</TableHead>
@@ -586,11 +646,11 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                             <TableHead className="font-semibold text-xs text-right p-2">Qty</TableHead>
                             <TableHead className="font-semibold text-xs text-right p-2">
                               <div>Unit Price</div>
-                              <div className="text-xs text-muted-foreground font-normal">(Inc. VAT)</div>
+                              <div className="text-xs text-muted-foreground font-normal">(Inc. {taxName})</div>
                             </TableHead>
                             <TableHead className="font-semibold text-xs text-right p-2">
                               <div>Total</div>
-                              <div className="text-xs text-muted-foreground font-normal">(Inc. VAT)</div>
+                              <div className="text-xs text-muted-foreground font-normal">(Inc. {taxName})</div>
                             </TableHead>
                             <TableHead className="font-semibold text-xs text-right p-2">Received</TableHead>
                           </TableRow>
@@ -631,7 +691,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                           
                           {/* Summary Rows */}
                           {/* First show the calculated subtotal from items (VAT inclusive) */}
-                          <TableRow className="bg-gray-50 print-padding">
+                          <TableRow className="bg-gray-50 dark:bg-gray-800 print-padding">
                             <TableCell colSpan={4} className="p-2"></TableCell>
                             <TableCell className="text-xs font-semibold text-right p-2">Subtotal:</TableCell>
                             <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
@@ -639,11 +699,11 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                             </TableCell>
                           </TableRow>
                           
-                          {/* Calculate and show VAT (16%) */}
-                          <TableRow className="bg-gray-50 print-padding">
+                          {/* Calculate and show VAT */}
+                          <TableRow className="bg-gray-50 dark:bg-gray-800 print-padding">
                             <TableCell colSpan={4} className="p-2"></TableCell>
                             <TableCell className="text-xs font-semibold text-right p-2">
-                              <div>VAT (16%):</div>
+                              <div>{taxName} ({taxRatePercent}%):</div>
                               <div className="text-[10px] text-muted-foreground font-normal">
                                 Calculated on {formatCurrency(calculateSubtotalExcludingVAT())}
                               </div>
@@ -654,16 +714,16 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                           </TableRow>
                           
                           {/* Show subtotal excluding VAT */}
-                          <TableRow className="bg-gray-50 print-padding">
+                          <TableRow className="bg-gray-50 dark:bg-gray-800 print-padding">
                             <TableCell colSpan={4} className="p-2"></TableCell>
-                            <TableCell className="text-xs font-semibold text-right p-2">Subtotal (Ex VAT):</TableCell>
+                            <TableCell className="text-xs font-semibold text-right p-2">Subtotal (Ex {taxName}):</TableCell>
                             <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
                               {formatCurrency(calculateSubtotalExcludingVAT())}
                             </TableCell>
                           </TableRow>
                           
                           {/* Show shipping */}
-                          <TableRow className="bg-gray-50 print-padding">
+                          <TableRow className="bg-gray-50 dark:bg-gray-800 print-padding">
                             <TableCell colSpan={4} className="p-2"></TableCell>
                             <TableCell className="text-xs font-semibold text-right p-2">Shipping:</TableCell>
                             <TableCell className="text-xs font-semibold text-right p-2" colSpan={2}>
@@ -691,17 +751,17 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                     </div>
                     
                     {/* VAT Calculation Summary */}
-                    <div className="mt-4 p-3 bg-gray-50 rounded text-xs">
-                      <p className="font-semibold mb-1">VAT Calculation Summary:</p>
+                    <div className="mt-4 p-3 bg-gray-50 dark:bg-gray-800 rounded text-xs">
+                      <p className="font-semibold mb-1">{taxName} Calculation Summary:</p>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <span className="text-muted-foreground">Subtotal (Inc VAT):</span> {formatCurrency(calculateSubtotalInclusive())}
+                          <span className="text-muted-foreground">Subtotal (Inc {taxName}):</span> {formatCurrency(calculateSubtotalInclusive())}
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Subtotal (Ex VAT):</span> {formatCurrency(calculateSubtotalExcludingVAT())}
+                          <span className="text-muted-foreground">Subtotal (Ex {taxName}):</span> {formatCurrency(calculateSubtotalExcludingVAT())}
                         </div>
                         <div>
-                          <span className="text-muted-foreground">VAT Amount (16%):</span> {formatCurrency(calculateVATFromSubtotal())}
+                          <span className="text-muted-foreground">{taxName} Amount ({taxRatePercent}%):</span> {formatCurrency(calculateVATFromSubtotal())}
                         </div>
                         <div>
                           <span className="text-muted-foreground">Shipping:</span> {formatCurrency(order.shipping_amount)}
@@ -723,7 +783,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                         {order.notes && (
                           <div>
                             <h4 className="text-xs font-semibold mb-1">Special Instructions</h4>
-                            <div className="text-xs p-2 bg-yellow-50 border border-yellow-200 rounded">
+                            <div className="text-xs p-2 bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded">
                               <p className="whitespace-pre-line">{order.notes}</p>
                             </div>
                           </div>
@@ -735,7 +795,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                               <CreditCard className="h-3 w-3" />
                               Billing Address
                             </h4>
-                            <div className="text-xs p-2 bg-blue-50 border border-blue-200 rounded">
+                            <div className="text-xs p-2 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded">
                               <p className="whitespace-pre-line">{order.billing_address}</p>
                             </div>
                           </div>
@@ -748,7 +808,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                   <div className="print-section border-t pt-4">
                     <div className="text-center text-xs text-muted-foreground">
                       <p>Thank you for your business!</p>
-                      <p className="mt-0.5">This is an automatically generated purchase order from Fleet Management System</p>
+                      <p className="mt-0.5">This is an automatically generated purchase order from {systemSettings?.company_name || 'Fleet Management System'}</p>
                       <div className="mt-2 flex justify-between items-center text-xs">
                         <div className="text-left">
                           <p>Page 1 of 1</p>
@@ -757,10 +817,11 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
                         <div className="text-right">
                           <p>Generated on {formatDateTime(new Date().toISOString())}</p>
                           <p>Document ID: PO-{order.po_number}</p>
+                          <p>Generated by: {user?.full_name || user?.username || 'System'}</p>
                         </div>
                       </div>
                       <div className="mt-3 pt-2 border-t text-[10px]">
-                        <p>For inquiries, please contact: procurement@fleetmanagement.com | Phone: (555) 123-4567</p>
+                        <p>For inquiries, please contact: {systemSettings?.company_email || 'procurement@fleetmanagement.com'} | Phone: {systemSettings?.company_phone || '(555) 123-4567'}</p>
                       </div>
                     </div>
                   </div>

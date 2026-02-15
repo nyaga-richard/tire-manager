@@ -27,6 +27,7 @@ import {
   Cell,
   LineChart,
 } from "recharts";
+import { useSettings } from "@/hooks/useSettings";
 
 interface TireStatus {
   status: string;
@@ -62,10 +63,35 @@ interface ChartsSectionProps {
   loading?: boolean;
 }
 
+// Custom tooltip component for better formatting
+const CustomTooltip = ({ active, payload, label, currencySymbol }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-background border rounded-lg shadow-lg p-3">
+        <p className="font-medium mb-2">{label}</p>
+        {payload.map((entry: any, index: number) => (
+          <div key={index} className="flex items-center justify-between gap-4 text-sm">
+            <span style={{ color: entry.color }}>{entry.name}:</span>
+            <span className="font-mono font-medium">
+              {entry.name.toLowerCase().includes('amount') || entry.dataKey === 'total'
+                ? `${currencySymbol} ${Number(entry.value).toLocaleString()}`
+                : entry.value.toLocaleString()}
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
 export default function ChartsSection({ 
   charts, 
   loading = false 
 }: ChartsSectionProps) {
+  const { settings: systemSettings } = useSettings();
+  const currencySymbol = systemSettings?.currency_symbol || "KSH";
+  
   const statusData = charts?.tire_status_distribution ?? [];
   const typeData = charts?.tire_type_distribution ?? [];
   const movementData = charts?.movement_trends ?? [];
@@ -73,9 +99,28 @@ export default function ChartsSection({
 
   // Calculate summary metrics from existing data
   const totalTires = statusData.reduce((sum, item) => sum + item.count, 0);
-  const criticalTires = statusData.find(h => h.status.toLowerCase().includes('critical') || h.status.toLowerCase().includes('bad'))?.count || 0;
-  const installedTires = statusData.find(h => h.status.toLowerCase().includes('installed') || h.status.toLowerCase().includes('active'))?.count || 0;
-  const inStockTires = statusData.find(h => h.status.toLowerCase().includes('stock') || h.status.toLowerCase().includes('available'))?.count || 0;
+  const criticalTires = statusData.find(h => 
+    h.status.toLowerCase().includes('critical') || 
+    h.status.toLowerCase().includes('bad') ||
+    h.status.toLowerCase().includes('disposed')
+  )?.count || 0;
+  
+  const installedTires = statusData.find(h => 
+    h.status.toLowerCase().includes('installed') || 
+    h.status.toLowerCase().includes('active') ||
+    h.status.toLowerCase().includes('on_vehicle')
+  )?.count || 0;
+  
+  const inStockTires = statusData.find(h => 
+    h.status.toLowerCase().includes('stock') || 
+    h.status.toLowerCase().includes('available') ||
+    h.status.toLowerCase().includes('in_store')
+  )?.count || 0;
+  
+  const awaitingRetread = statusData.find(h => 
+    h.status.toLowerCase().includes('awaiting') || 
+    h.status.toLowerCase().includes('retread')
+  )?.count || 0;
   
   // Calculate totals from movements
   const totalInstallations = movementData.reduce((sum, item) => sum + item.installations, 0);
@@ -85,6 +130,19 @@ export default function ChartsSection({
   // Calculate purchase totals
   const totalPurchaseAmount = purchaseData.reduce((sum, item) => sum + item.total, 0);
   const totalPurchaseCount = purchaseData.reduce((sum, item) => sum + item.count, 0);
+  const averagePurchase = totalPurchaseCount > 0 ? totalPurchaseAmount / totalPurchaseCount : 0;
+
+  // Calculate trends
+  const getTrend = (data: PurchaseTrend[]) => {
+    if (data.length < 2) return null;
+    const last = data[data.length - 1]?.total || 0;
+    const prev = data[data.length - 2]?.total || 0;
+    const change = last - prev;
+    const percentChange = prev !== 0 ? (change / prev) * 100 : 0;
+    return { change, percentChange };
+  };
+
+  const purchaseTrend = getTrend(purchaseData);
 
   // Loading skeleton
   if (loading) {
@@ -147,19 +205,40 @@ export default function ChartsSection({
           </div>
           
           {/* Quick Stats Summary */}
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
             {criticalTires > 0 && (
               <div className="flex items-center gap-1 bg-red-50 dark:bg-red-900/20 px-3 py-1 rounded-md">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-400" />
                 <span className="font-medium">{criticalTires}</span>
                 <span className="text-muted-foreground">Critical</span>
               </div>
             )}
+            {awaitingRetread > 0 && (
+              <div className="flex items-center gap-1 bg-yellow-50 dark:bg-yellow-900/20 px-3 py-1 rounded-md">
+                <RefreshCw className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+                <span className="font-medium">{awaitingRetread}</span>
+                <span className="text-muted-foreground">Retread</span>
+              </div>
+            )}
             {totalPurchaseAmount > 0 && (
               <div className="flex items-center gap-1 bg-green-50 dark:bg-green-900/20 px-3 py-1 rounded-md">
-                <DollarSign className="h-4 w-4 text-green-600" />
-                <span className="font-medium">KSH {(totalPurchaseAmount/1000).toFixed(0)}K</span>
+                <span className="font-medium">{currencySymbol} {(totalPurchaseAmount/1000).toFixed(0)}K</span>
                 <span className="text-muted-foreground">Spent</span>
+              </div>
+            )}
+            {netChange !== 0 && (
+              <div className={`flex items-center gap-1 px-3 py-1 rounded-md ${
+                netChange > 0 
+                  ? 'bg-green-50 dark:bg-green-900/20' 
+                  : 'bg-red-50 dark:bg-red-900/20'
+              }`}>
+                <TrendingUp className={`h-4 w-4 ${
+                  netChange > 0 
+                    ? 'text-green-600 dark:text-green-400' 
+                    : 'text-red-600 dark:text-red-400'
+                }`} />
+                <span className="font-medium">{Math.abs(netChange)}</span>
+                <span className="text-muted-foreground">Net</span>
               </div>
             )}
           </div>
@@ -204,7 +283,6 @@ export default function ChartsSection({
                         outerRadius={80}
                         innerRadius={40}
                         paddingAngle={2}
-                        // Removed the label prop entirely - no labels on the pie itself
                       >
                         {statusData.map((entry, index) => (
                           <Cell key={index} fill={entry.color} />
@@ -214,7 +292,12 @@ export default function ChartsSection({
                         formatter={(value, name) => [value, name]}
                         labelFormatter={(label) => `Status: ${label}`}
                       />
-                      <Legend />
+                      <Legend 
+                        layout="vertical" 
+                        align="right" 
+                        verticalAlign="middle"
+                        wrapperStyle={{ fontSize: '12px' }}
+                      />
                     </PieChart>
                   </ResponsiveContainer>
                 </div>
@@ -228,7 +311,7 @@ export default function ChartsSection({
                           className="h-2 w-2 rounded-full" 
                           style={{ backgroundColor: status.color }}
                         />
-                        <span className="text-sm truncate">{status.status}</span>
+                        <span className="text-sm truncate">{status.status.replace(/_/g, ' ')}</span>
                       </div>
                       <span className="text-sm font-medium">{status.count}</span>
                     </div>
@@ -250,7 +333,7 @@ export default function ChartsSection({
                         dataKey="type" 
                         angle={-45}
                         textAnchor="end"
-                        height={40}
+                        height={60}
                         fontSize={12}
                       />
                       <YAxis fontSize={12} />
@@ -258,7 +341,7 @@ export default function ChartsSection({
                       <Bar 
                         dataKey="count" 
                         name="Count" 
-                        radius={[2, 2, 0, 0]}
+                        radius={[4, 4, 0, 0]}
                       >
                         {typeData.map((entry, index) => (
                           <Cell key={index} fill={entry.color} />
@@ -273,7 +356,7 @@ export default function ChartsSection({
                   <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-medium">Most Common Type</span>
-                      <span className="text-sm">
+                      <span className="text-sm font-bold">
                         {typeData.reduce((max, current) => current.count > max.count ? current : max).type}
                       </span>
                     </div>
@@ -315,6 +398,8 @@ export default function ChartsSection({
                         name="Installations"
                         stroke="#10B981"
                         strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
                       />
                       <Line
                         type="monotone"
@@ -322,6 +407,8 @@ export default function ChartsSection({
                         name="Removals"
                         stroke="#EF4444"
                         strokeWidth={2}
+                        dot={{ r: 3 }}
+                        activeDot={{ r: 5 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -330,12 +417,17 @@ export default function ChartsSection({
 
               {/* Movement Summary */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="p-4 border rounded-lg">
+                <div className="p-4 border rounded-lg bg-gradient-to-br from-blue-50 to-transparent dark:from-blue-950/20">
                   <div className="flex items-center gap-2 mb-2">
-                    <RefreshCw className="h-4 w-4 text-blue-600" />
+                    <RefreshCw className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                     <h4 className="font-medium">Net Change</h4>
                   </div>
-                  <p className="text-2xl font-bold">{netChange}</p>
+                  <p className={`text-2xl font-bold ${
+                    netChange > 0 ? 'text-green-600' : 
+                    netChange < 0 ? 'text-red-600' : ''
+                  }`}>
+                    {netChange > 0 ? '+' : ''}{netChange}
+                  </p>
                   <p className="text-sm text-muted-foreground">
                     {netChange > 0 ? 'More installations than removals' : 
                      netChange < 0 ? 'More removals than installations' : 
@@ -343,25 +435,29 @@ export default function ChartsSection({
                   </p>
                 </div>
                 
-                <div className="p-4 border rounded-lg">
+                <div className="p-4 border rounded-lg bg-gradient-to-br from-green-50 to-transparent dark:from-green-950/20">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="h-2 w-2 rounded-full bg-green-500" />
                     <h4 className="font-medium">Total Installations</h4>
                   </div>
-                  <p className="text-2xl font-bold">{totalInstallations}</p>
+                  <p className="text-2xl font-bold text-green-600 dark:text-green-400">
+                    {totalInstallations}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    {movementData.length > 0 ? 'Last ' + movementData.length + ' periods' : 'No data'}
+                    {movementData.length > 0 ? `Last ${movementData.length} periods` : 'No data'}
                   </p>
                 </div>
                 
-                <div className="p-4 border rounded-lg">
+                <div className="p-4 border rounded-lg bg-gradient-to-br from-red-50 to-transparent dark:from-red-950/20">
                   <div className="flex items-center gap-2 mb-2">
                     <div className="h-2 w-2 rounded-full bg-red-500" />
                     <h4 className="font-medium">Total Removals</h4>
                   </div>
-                  <p className="text-2xl font-bold">{totalRemovals}</p>
+                  <p className="text-2xl font-bold text-red-600 dark:text-red-400">
+                    {totalRemovals}
+                  </p>
                   <p className="text-sm text-muted-foreground">
-                    {movementData.length > 0 ? 'Last ' + movementData.length + ' periods' : 'No data'}
+                    {movementData.length > 0 ? `Last ${movementData.length} periods` : 'No data'}
                   </p>
                 </div>
               </div>
@@ -377,12 +473,11 @@ export default function ChartsSection({
                   <h3 className="font-medium">Purchase Trends</h3>
                   <div className="flex items-center gap-4 text-sm">
                     <div className="flex items-center gap-1">
-                      <DollarSign className="h-4 w-4 text-green-600" />
-                      <span>Total: KSH {totalPurchaseAmount.toLocaleString()}</span>
+                      <span>Total: {currencySymbol} {totalPurchaseAmount.toLocaleString()}</span>
                     </div>
                     <div className="flex items-center gap-1">
                       <span className="font-medium">{totalPurchaseCount}</span>
-                      <span className="text-muted-foreground">purchases</span>
+                      <span className="text-muted-foreground">orders</span>
                     </div>
                   </div>
                 </div>
@@ -391,29 +486,36 @@ export default function ChartsSection({
                     <LineChart data={purchaseData}>
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                       <XAxis dataKey="month" fontSize={12} />
-                      <YAxis fontSize={12} />
-                      <Tooltip
-                        formatter={(value, name) => [
-                          name === 'total' ? `KSH ${Number(value).toLocaleString()}` : value,
-                          name === 'total' ? 'Amount' : 'Count'
-                        ]}
-                        labelFormatter={(value) => `Month: ${value}`}
+                      <YAxis 
+                        yAxisId="left"
+                        fontSize={12}
+                        tickFormatter={(value) => `${currencySymbol}${(value/1000).toFixed(0)}K`}
                       />
+                      <YAxis 
+                        yAxisId="right" 
+                        orientation="right" 
+                        fontSize={12}
+                      />
+                      <Tooltip content={<CustomTooltip currencySymbol={currencySymbol} />} />
                       <Legend />
                       <Line
+                        yAxisId="left"
                         type="monotone"
                         dataKey="total"
-                        name="Amount (KSH)"
+                        name={`Amount (${currencySymbol})`}
                         stroke="#3B82F6"
                         strokeWidth={2}
+                        dot={{ r: 3 }}
                       />
                       <Line
+                        yAxisId="right"
                         type="monotone"
                         dataKey="count"
-                        name="Purchase Count"
+                        name="Order Count"
                         stroke="#8B5CF6"
                         strokeWidth={2}
                         strokeDasharray="5 5"
+                        dot={{ r: 3 }}
                       />
                     </LineChart>
                   </ResponsiveContainer>
@@ -423,56 +525,103 @@ export default function ChartsSection({
               {/* Purchase Summary */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 border rounded-lg">
-                  <h4 className="font-medium mb-2">Purchase Summary</h4>
+                  <h4 className="font-medium mb-3">Purchase Summary</h4>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center">
                       <span className="text-sm text-muted-foreground">Total Spent</span>
-                      <span className="font-medium">KSH {totalPurchaseAmount.toLocaleString()}</span>
+                      <span className="font-medium">{currencySymbol} {totalPurchaseAmount.toLocaleString()}</span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-sm text-muted-foreground">Total Purchases</span>
+                      <span className="text-sm text-muted-foreground">Total Orders</span>
                       <span className="font-medium">{totalPurchaseCount}</span>
                     </div>
                     {totalPurchaseCount > 0 && (
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Average per Purchase</span>
-                        <span className="font-medium">KSH {(totalPurchaseAmount / totalPurchaseCount).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
-                      </div>
+                      <>
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm text-muted-foreground">Average per Order</span>
+                          <span className="font-medium">
+                            {currencySymbol} {averagePurchase.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                          </span>
+                        </div>
+                        <div className="pt-2 mt-2 border-t">
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Items per Order</span>
+                            <span className="font-medium">
+                              {(totalPurchaseCount > 0 ? (totalPurchaseCount / purchaseData.length).toFixed(1) : 0)}
+                            </span>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
                 
                 <div className="p-4 border rounded-lg">
-                  <h4 className="font-medium mb-2">Recent Activity</h4>
+                  <h4 className="font-medium mb-3">Recent Activity</h4>
                   {purchaseData.length > 0 ? (
-                    <div className="space-y-2">
+                    <div className="space-y-3">
                       <div className="flex justify-between items-center">
                         <span className="text-sm text-muted-foreground">Last Month</span>
                         <span className="font-medium">
-                          KSH {purchaseData[purchaseData.length - 1]?.total.toLocaleString() || 0}
+                          {currencySymbol} {purchaseData[purchaseData.length - 1]?.total.toLocaleString() || 0}
                         </span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">Month-over-Month</span>
-                        <span className={`text-sm font-medium ${
-                          purchaseData.length > 1 && 
-                          purchaseData[purchaseData.length - 1]?.total > purchaseData[purchaseData.length - 2]?.total 
-                            ? 'text-green-600' 
-                            : 'text-red-600'
-                        }`}>
-                          {purchaseData.length > 1 ? (
-                            purchaseData[purchaseData.length - 1]?.total > purchaseData[purchaseData.length - 2]?.total 
-                              ? '▲ Increase' 
-                              : '▼ Decrease'
-                          ) : '—'}
-                        </span>
-                      </div>
+                      {purchaseTrend && (
+                        <>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Month-over-Month</span>
+                            <div className="flex items-center gap-1">
+                              <span className={`text-sm font-medium ${
+                                purchaseTrend.change > 0 ? 'text-green-600' : 
+                                purchaseTrend.change < 0 ? 'text-red-600' : ''
+                              }`}>
+                                {purchaseTrend.change > 0 ? '▲' : purchaseTrend.change < 0 ? '▼' : '•'}
+                              </span>
+                              <span className="font-medium">
+                                {currencySymbol} {Math.abs(purchaseTrend.change).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-sm text-muted-foreground">Change %</span>
+                            <span className={`text-sm font-medium ${
+                              purchaseTrend.percentChange > 0 ? 'text-green-600' : 
+                              purchaseTrend.percentChange < 0 ? 'text-red-600' : ''
+                            }`}>
+                              {purchaseTrend.percentChange > 0 ? '+' : ''}
+                              {purchaseTrend.percentChange.toFixed(1)}%
+                            </span>
+                          </div>
+                        </>
+                      )}
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground">No purchase data available</p>
                   )}
                 </div>
               </div>
+
+              {/* Monthly Breakdown */}
+              {purchaseData.length > 0 && (
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="bg-muted/50 px-4 py-2 font-medium text-sm">
+                    Monthly Breakdown
+                  </div>
+                  <div className="divide-y">
+                    {purchaseData.slice(-5).reverse().map((item, index) => (
+                      <div key={index} className="flex items-center justify-between px-4 py-2 text-sm">
+                        <span className="text-muted-foreground">{item.month}</span>
+                        <div className="flex items-center gap-4">
+                          <span className="font-mono">{item.count} orders</span>
+                          <span className="font-medium min-w-[100px] text-right">
+                            {currencySymbol} {item.total.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

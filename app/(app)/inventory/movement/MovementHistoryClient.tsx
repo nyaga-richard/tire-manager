@@ -53,6 +53,10 @@ import {
   Building2,
   Printer,
   AlertCircle,
+  TrendingDown,
+  Gauge,
+  Clock,
+  MapPin,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -78,13 +82,16 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
-  PaginationEllipsis,
 } from "@/components/ui/pagination";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -122,6 +129,7 @@ interface Movement {
   removal_odometer?: number;
   document_number?: string;
   reference_number?: string;
+  tire_condition?: string;
 }
 
 interface StockLedgerEntry {
@@ -150,6 +158,8 @@ export default function MovementHistoryClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [ledgerEntries, setLedgerEntries] = useState<StockLedgerEntry[]>([]);
   const [filteredLedger, setFilteredLedger] = useState<StockLedgerEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,10 +174,16 @@ export default function MovementHistoryClient() {
   const [totalPages, setTotalPages] = useState(1);
   const [itemsPerPage] = useState(50);
   const [totalEntries, setTotalEntries] = useState(0);
+  const [sortBy, setSortBy] = useState<string>("date");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const printRef = useRef<HTMLDivElement>(null);
 
   const tireId = searchParams.get("tire");
   const size = searchParams.get("size");
+
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
 
   // Check authentication
   useEffect(() => {
@@ -199,7 +215,8 @@ export default function MovementHistoryClient() {
           entry.document_no.toLowerCase().includes(search.toLowerCase()) ||
           entry.type.toLowerCase().includes(search.toLowerCase()) ||
           entry.movement.serial_number.toLowerCase().includes(search.toLowerCase()) ||
-          entry.movement.size.toLowerCase().includes(search.toLowerCase())
+          entry.movement.size.toLowerCase().includes(search.toLowerCase()) ||
+          entry.movement.brand.toLowerCase().includes(search.toLowerCase())
       );
       setFilteredLedger(filtered);
     } else {
@@ -213,8 +230,8 @@ export default function MovementHistoryClient() {
       setError(null);
       
       const params = new URLSearchParams({
-        startDate: startDate?.toISOString().split("T")[0] || "",
-        endDate: endDate?.toISOString().split("T")[0] || "",
+        startDate: startDate ? format(startDate, "yyyy-MM-dd") : "",
+        endDate: endDate ? format(endDate, "yyyy-MM-dd") : "",
         details: "true",
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
@@ -419,35 +436,95 @@ export default function MovementHistoryClient() {
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
+      const dateFormat = systemSettings?.date_format || "MMM dd, yyyy";
+      const timeFormat = systemSettings?.time_format || "HH:mm:ss";
+      
+      const dateStr = formatDateOnly(dateString);
+      const timeStr = date.toLocaleTimeString("en-US", {
         hour: "2-digit",
         minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).replace(",", "");
+        second: timeFormat.includes("ss") ? "2-digit" : undefined,
+        hour12: timeFormat.includes("a")
+      });
+      
+      return `${dateStr} ${timeStr}`;
+    } catch {
+      return "Invalid date";
+    }
+  };
+
+  const formatDateOnly = (dateString: string) => {
+    if (!dateString) return "Not set";
+    try {
+      const date = new Date(dateString);
+      const format = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (format === "dd/MM/yyyy") {
+        return date.toLocaleDateString("en-GB");
+      } else if (format === "MM/dd/yyyy") {
+        return date.toLocaleDateString("en-US");
+      } else if (format === "yyyy-MM-dd") {
+        return date.toISOString().split('T')[0];
+      } else if (format === "dd-MM-yyyy") {
+        return date.toLocaleDateString("en-GB").replace(/\//g, '-');
+      } else if (format === "dd MMM yyyy") {
+        return date.toLocaleDateString("en-US", { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+      } else {
+        return date.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
     } catch {
       return "Invalid date";
     }
   };
 
   const formatCurrency = (amount?: number) => {
-    if (!amount) return "";
+    if (!amount) return "-";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KES",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   const formatNumber = (num: number) => {
     return new Intl.NumberFormat("en-US").format(num);
   };
 
+  const getSortedLedger = () => {
+    return [...filteredLedger].sort((a, b) => {
+      if (sortBy === "date") {
+        return sortOrder === "asc"
+          ? new Date(a.date).getTime() - new Date(b.date).getTime()
+          : new Date(b.date).getTime() - new Date(a.date).getTime();
+      } else if (sortBy === "type") {
+        return sortOrder === "asc"
+          ? a.type.localeCompare(b.type)
+          : b.type.localeCompare(a.type);
+      } else if (sortBy === "user") {
+        return sortOrder === "asc"
+          ? a.user_name.localeCompare(b.user_name)
+          : b.user_name.localeCompare(a.user_name);
+      }
+      return 0;
+    });
+  };
+
   const exportToCSV = () => {
+    if (!hasPermission("inventory.export")) {
+      toast.error("You don't have permission to export inventory movements");
+      return;
+    }
+
     if (!filteredLedger.length) {
       toast.error("No data to export");
       return;
@@ -461,46 +538,52 @@ export default function MovementHistoryClient() {
       "Qty In",
       "Qty Out",
       "Closing Stock",
-      "Price",
+      `Price (${currencySymbol})`,
       "Reference",
       "Document No",
       "Type",
       "Serial Number",
       "Size",
       "Brand",
+      "From Location",
+      "To Location",
+      "Condition",
     ];
 
     const csvContent = [
       headers.join(","),
-      ...filteredLedger.map((entry) =>
+      ...getSortedLedger().map((entry) =>
         [
-          formatDate(entry.date),
+          formatDateOnly(entry.date),
           entry.user_name,
           entry.location,
           formatNumber(entry.opening_stock),
           formatNumber(entry.quantity_in),
           formatNumber(entry.quantity_out),
           formatNumber(entry.closing_stock),
-          entry.price ? formatCurrency(entry.price).replace(/[^0-9,-]/g, '') : "",
+          entry.price ? entry.price : "",
           `"${entry.reference.replace(/"/g, '""')}"`,
           entry.document_no,
           entry.type,
           entry.movement.serial_number,
           entry.movement.size,
           entry.movement.brand,
-        ].join(",")
+          entry.movement.from_location || "",
+          entry.movement.to_location || "",
+          entry.movement.tire_condition || "",
+        ].map(cell => `"${cell}"`).join(",")
       ),
     ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `tire-stock-ledger-${startDate?.toISOString().split("T")[0] || "start"}-to-${endDate?.toISOString().split("T")[0] || "end"}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `tire-stock-ledger-${startDate ? format(startDate, "yyyy-MM-dd") : "start"}-to-${endDate ? format(endDate, "yyyy-MM-dd") : "end"}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     
     toast.success("CSV export started");
   };
@@ -512,7 +595,8 @@ export default function MovementHistoryClient() {
       return;
     }
 
-    const printDate = new Date().toLocaleString();
+    const printDate = format(new Date(), "MMMM dd, yyyy HH:mm:ss");
+    const sortedLedger = getSortedLedger();
     
     const printContent = `
       <!DOCTYPE html>
@@ -632,6 +716,10 @@ export default function MovementHistoryClient() {
               font-size: 10px;
               color: #666;
             }
+            .company-info {
+              font-size: 11px;
+              margin-bottom: 10px;
+            }
           }
         </style>
       </head>
@@ -639,12 +727,15 @@ export default function MovementHistoryClient() {
         <div class="print-header">
           <div class="print-title">Tire Stock Ledger Report</div>
           <div class="print-subtitle">Complete Stock Movement History</div>
+          <div class="company-info">
+            <strong>${systemSettings?.company_name || 'Fleet Management System'}</strong>
+          </div>
           <div class="print-meta">
             <div>
               <strong>Date Range:</strong> 
-              ${startDate ? startDate.toLocaleDateString() : 'All Dates'} 
+              ${startDate ? formatDateOnly(startDate.toISOString()) : 'All Dates'} 
               to 
-              ${endDate ? endDate.toLocaleDateString() : 'Current Date'}
+              ${endDate ? formatDateOnly(endDate.toISOString()) : 'Current Date'}
             </div>
             <div>
               <strong>Generated:</strong> ${printDate}
@@ -664,19 +755,19 @@ export default function MovementHistoryClient() {
           </div>
           <div class="summary-item">
             <div style="font-size: 18px; font-weight: bold; color: #059669;">
-              ${formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
+              ${formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
             </div>
             <div style="font-size: 11px; color: #666;">Total Quantity In</div>
           </div>
           <div class="summary-item">
             <div style="font-size: 18px; font-weight: bold; color: #dc2626;">
-              ${formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
+              ${formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
             </div>
             <div style="font-size: 11px; color: #666;">Total Quantity Out</div>
           </div>
           <div class="summary-item">
             <div style="font-size: 18px; font-weight: bold; color: #2563eb;">
-              ${filteredLedger.length > 0 ? formatNumber(filteredLedger[filteredLedger.length - 1].closing_stock) : '0'}
+              ${sortedLedger.length > 0 ? formatNumber(sortedLedger[sortedLedger.length - 1].closing_stock) : '0'}
             </div>
             <div style="font-size: 11px; color: #666;">Current Stock</div>
           </div>
@@ -701,7 +792,7 @@ export default function MovementHistoryClient() {
             </tr>
           </thead>
           <tbody>
-            ${filteredLedger.map(entry => `
+            ${sortedLedger.map(entry => `
               <tr>
                 <td>${formatDate(entry.date)}</td>
                 <td>${entry.user_name}</td>
@@ -714,7 +805,7 @@ export default function MovementHistoryClient() {
                   ${entry.quantity_out > 0 ? `<span class="badge badge-out">-${formatNumber(entry.quantity_out)}</span>` : '0'}
                 </td>
                 <td class="text-right font-mono">${formatNumber(entry.closing_stock)}</td>
-                <td class="text-right font-mono">${entry.price ? formatCurrency(entry.price) : '-'}</td>
+                <td class="text-right font-mono">${entry.price ? formatCurrency(entry.price).replace(/[^0-9.,]/g, '') : '-'}</td>
                 <td>${entry.reference.replace(/"/g, '&quot;')}</td>
                 <td class="font-mono">${entry.document_no}</td>
                 <td>${entry.type}</td>
@@ -726,8 +817,8 @@ export default function MovementHistoryClient() {
         </table>
 
         <div class="print-footer">
-          <div>Page 1 of 1 • Total Records: ${filteredLedger.length}</div>
-          <div>Generated by Tire Management System</div>
+          <div>Page 1 of 1 • Total Records: ${sortedLedger.length}</div>
+          <div>Generated by ${systemSettings?.company_name || 'Tire Management System'}</div>
           <div>Report ID: STOCK-LEDGER-${Date.now().toString().slice(-6)}</div>
         </div>
       </body>
@@ -745,7 +836,7 @@ export default function MovementHistoryClient() {
   };
 
   // Show auth loading state
-  if (authLoading) {
+  if (authLoading || settingsLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -834,6 +925,8 @@ export default function MovementHistoryClient() {
     );
   }
 
+  const sortedLedger = getSortedLedger();
+
   return (
     <PermissionGuard permissionCode="inventory.view" action="view">
       <div className="space-y-6">
@@ -883,6 +976,11 @@ export default function MovementHistoryClient() {
                   ? `Viewing stock movements for size: ${size}`
                   : "Complete stock movement ledger"}
               </p>
+              {systemSettings?.company_name && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {systemSettings.company_name} • Currency: {currencySymbol} ({currency})
+                </p>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -896,10 +994,12 @@ export default function MovementHistoryClient() {
               />
               Refresh
             </Button>
-            <Button variant="outline" onClick={exportToCSV} disabled={filteredLedger.length === 0}>
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
+            <PermissionGuard permissionCode="inventory.view" action="view" fallback={null}>
+              <Button variant="outline" onClick={exportToCSV} disabled={filteredLedger.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </PermissionGuard>
           </div>
         </div>
 
@@ -934,21 +1034,40 @@ export default function MovementHistoryClient() {
         </Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <div className="flex items-center justify-between no-print">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
             <TabsList>
               <TabsTrigger value="ledger">Stock Ledger</TabsTrigger>
               <TabsTrigger value="summary">Summary View</TabsTrigger>
             </TabsList>
             
-            <div className="relative w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search transactions..."
-                className="pl-8"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+            <div className="flex items-center gap-2">
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="date">Date</SelectItem>
+                  <SelectItem value="type">Transaction Type</SelectItem>
+                  <SelectItem value="user">User</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              >
+                {sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+              </Button>
+              <div className="relative w-64">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search transactions..."
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -996,12 +1115,12 @@ export default function MovementHistoryClient() {
                           <TableRow>
                             <TableHead className="w-[180px]">Date</TableHead>
                             <TableHead className="w-[140px]">User Name</TableHead>
-                            <TableHead className="w-[140px]">Store Location</TableHead>
+                            <TableHead className="w-[140px]">Location</TableHead>
                             <TableHead className="w-[120px] text-right">Opening Stock</TableHead>
                             <TableHead className="w-[100px] text-right">Qty In</TableHead>
                             <TableHead className="w-[100px] text-right">Qty Out</TableHead>
                             <TableHead className="w-[120px] text-right">Closing Stock</TableHead>
-                            <TableHead className="w-[100px] text-right">Price</TableHead>
+                            <TableHead className="w-[100px] text-right">Price ({currencySymbol})</TableHead>
                             <TableHead className="w-[200px]">Reference</TableHead>
                             <TableHead className="w-[120px]">Document No</TableHead>
                             <TableHead className="w-[140px]">Type</TableHead>
@@ -1009,7 +1128,7 @@ export default function MovementHistoryClient() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {filteredLedger.map((entry) => (
+                          {sortedLedger.map((entry) => (
                             <TableRow key={entry.id} className="hover:bg-accent/50">
                               <TableCell className="font-medium text-xs">
                                 {formatDate(entry.date)}
@@ -1025,6 +1144,12 @@ export default function MovementHistoryClient() {
                                   <Building2 className="h-3 w-3 text-muted-foreground" />
                                   <span>{entry.location}</span>
                                 </div>
+                                {entry.movement.from_location && entry.movement.to_location && (
+                                  <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <MapPin className="h-2 w-2" />
+                                    {entry.movement.from_location} → {entry.movement.to_location}
+                                  </div>
+                                )}
                               </TableCell>
                               <TableCell className="text-right font-mono">
                                 <span className="text-muted-foreground">
@@ -1221,7 +1346,7 @@ export default function MovementHistoryClient() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                    {formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
+                    {formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Tires added to stock
@@ -1235,7 +1360,7 @@ export default function MovementHistoryClient() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-                    {formatNumber(filteredLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
+                    {formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Tires removed from stock
@@ -1249,8 +1374,8 @@ export default function MovementHistoryClient() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {filteredLedger.length > 0 
-                      ? formatNumber(filteredLedger[filteredLedger.length - 1].closing_stock)
+                    {sortedLedger.length > 0 
+                      ? formatNumber(sortedLedger[sortedLedger.length - 1].closing_stock)
                       : "0"}
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -1268,17 +1393,17 @@ export default function MovementHistoryClient() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                {filteredLedger.length === 0 ? (
+                {sortedLedger.length === 0 ? (
                   <div className="text-center py-8">
                     <Receipt className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
                     <p className="text-muted-foreground">No transaction data available</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {Array.from(new Set(filteredLedger.map(e => e.type))).map((type) => {
-                      const count = filteredLedger.filter(e => e.type === type).length;
-                      const percentage = (count / filteredLedger.length) * 100;
-                      const totalQty = filteredLedger
+                    {Array.from(new Set(sortedLedger.map(e => e.type))).map((type) => {
+                      const count = sortedLedger.filter(e => e.type === type).length;
+                      const percentage = (count / sortedLedger.length) * 100;
+                      const totalQty = sortedLedger
                         .filter(e => e.type === type)
                         .reduce((sum, e) => sum + e.quantity_in + e.quantity_out, 0);
                       
@@ -1313,8 +1438,59 @@ export default function MovementHistoryClient() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Value Summary */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Value Summary</CardTitle>
+                <CardDescription>
+                  Financial impact of inventory movements
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="p-4 border rounded-lg">
+                    <p className="text-sm text-muted-foreground">Total Purchase Value</p>
+                    <p className="text-2xl font-bold text-green-600">
+                      {formatCurrency(
+                        sortedLedger
+                          .filter(e => e.type.includes("Purchase"))
+                          .reduce((sum, e) => sum + (e.price || 0), 0)
+                      )}
+                    </p>
+                  </div>
+                  <div className="p-4 border rounded-lg">
+                    <p className="text-sm text-muted-foreground">Total Retread Value</p>
+                    <p className="text-2xl font-bold text-blue-600">
+                      {formatCurrency(
+                        sortedLedger
+                          .filter(e => e.type.includes("Retreading"))
+                          .reduce((sum, e) => sum + (e.price || 0), 0)
+                      )}
+                    </p>
+                  </div>
+                  <div className="p-4 border rounded-lg">
+                    <p className="text-sm text-muted-foreground">Net Inventory Value</p>
+                    <p className="text-2xl font-bold text-purple-600">
+                      {formatCurrency(
+                        sortedLedger.length > 0
+                          ? (sortedLedger[sortedLedger.length - 1].closing_stock * 
+                             (sortedLedger.find(e => e.price)?.price || 0))
+                          : 0
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Footer */}
+        <div className="text-xs text-muted-foreground border-t pt-4 no-print">
+          Logged in as: {user?.full_name || user?.username} • Role: {user?.role}
+          {systemSettings?.company_name && ` • ${systemSettings.company_name}`}
+        </div>
       </div>
     </PermissionGuard>
   );

@@ -35,6 +35,11 @@ import {
   Clock,
   Filter,
   FileText,
+  Download,
+  DollarSign,
+  TrendingUp,
+  TrendingDown,
+  Gauge,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -65,6 +70,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { cn } from "@/lib/utils";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -74,6 +81,8 @@ interface InventoryBySize {
   retreaded_count: number;
   used_count: number;
   retread_candidates_count: number;
+  total_value?: number;
+  average_cost?: number;
 }
 
 interface Tire {
@@ -98,6 +107,8 @@ interface Tire {
   last_movement_date?: string;
   vehicle_id?: number;
   vehicle_number?: string;
+  current_odometer?: number;
+  retread_count?: number;
 }
 
 interface DashboardStats {
@@ -110,11 +121,16 @@ interface DashboardStats {
   new_tires: number;
   retreaded_tires: number;
   total_value: number;
+  average_tire_age?: number;
+  utilization_rate?: number;
+  retread_rate?: number;
 }
 
 export default function InventoryPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [inventoryBySize, setInventoryBySize] = useState<InventoryBySize[]>([]);
   const [storeTires, setStoreTires] = useState<Tire[]>([]);
   const [retreadCandidates, setRetreadCandidates] = useState<Tire[]>([]);
@@ -125,7 +141,13 @@ export default function InventoryPage() {
   const [activeTab, setActiveTab] = useState("overview");
   const [search, setSearch] = useState("");
   const [storeFilter, setStoreFilter] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<string>("size");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [isAddTireModalOpen, setIsAddTireModalOpen] = useState(false);
+
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
 
   // Check authentication
   useEffect(() => {
@@ -293,6 +315,50 @@ export default function InventoryPage() {
     }
   };
 
+  const exportInventory = () => {
+    try {
+      const headers = [
+        "Size",
+        "New",
+        "Retreaded",
+        "Used",
+        "Retread Candidates",
+        "Total",
+        "Estimated Value"
+      ];
+
+      const rows = inventoryBySize.map(item => [
+        item.size,
+        item.new_count,
+        item.retreaded_count,
+        item.used_count,
+        item.retread_candidates_count,
+        item.new_count + item.retreaded_count + item.used_count,
+        `${currencySymbol} ${((item.new_count + item.retreaded_count + item.used_count) * (item.average_cost || 10000)).toLocaleString()}`
+      ]);
+
+      const csvContent = [
+        headers.join(","),
+        ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
+      ].join("\n");
+
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `inventory-export-${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      toast.success("Inventory exported successfully");
+    } catch (error) {
+      console.error("Error exporting inventory:", error);
+      toast.error("Failed to export inventory");
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "IN_STORE":
@@ -328,35 +394,73 @@ export default function InventoryPage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KES",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Not set";
     try {
       const date = new Date(dateString);
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+      const format = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (format === "dd/MM/yyyy") {
+        return date.toLocaleDateString("en-GB");
+      } else if (format === "MM/dd/yyyy") {
+        return date.toLocaleDateString("en-US");
+      } else if (format === "yyyy-MM-dd") {
+        return date.toISOString().split('T')[0];
+      } else if (format === "dd-MM-yyyy") {
+        return date.toLocaleDateString("en-GB").replace(/\//g, '-');
+      } else if (format === "dd MMM yyyy") {
+        return date.toLocaleDateString("en-US", { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+      } else {
+        return date.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
     } catch {
       return "Invalid date";
     }
   };
 
-  const filteredInventory = inventoryBySize.filter(
-    (item) =>
-      item.size.toLowerCase().includes(search.toLowerCase()) ||
-      item.new_count.toString().includes(search) ||
-      item.retreaded_count.toString().includes(search)
-  );
+  const filteredInventory = inventoryBySize
+    .filter(
+      (item) =>
+        item.size.toLowerCase().includes(search.toLowerCase()) ||
+        item.new_count.toString().includes(search) ||
+        item.retreaded_count.toString().includes(search)
+    )
+    .sort((a, b) => {
+      if (sortBy === "size") {
+        return sortOrder === "asc" 
+          ? a.size.localeCompare(b.size) 
+          : b.size.localeCompare(a.size);
+      } else if (sortBy === "total") {
+        const totalA = a.new_count + a.retreaded_count + a.used_count;
+        const totalB = b.new_count + b.retreaded_count + b.used_count;
+        return sortOrder === "asc" ? totalA - totalB : totalB - totalA;
+      }
+      return 0;
+    });
+
+  const totalTires = (stats?.in_store || 0) +
+    (stats?.on_vehicle || 0) +
+    (stats?.used_store || 0) +
+    (stats?.awaiting_retread || 0) +
+    (stats?.at_retreader || 0);
 
   // Show auth loading state
-  if (authLoading) {
+  if (authLoading || settingsLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -422,8 +526,19 @@ export default function InventoryPage() {
             <p className="text-muted-foreground">
               Manage tire inventory, track retreads, and monitor disposals
             </p>
+            {systemSettings?.company_name && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {systemSettings.company_name} • Currency: {currencySymbol} ({currency})
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
+            <PermissionGuard permissionCode="inventory.view" action="view" fallback={null}>
+              <Button variant="outline" onClick={exportInventory} disabled={inventoryBySize.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+            </PermissionGuard>
             <Button variant="outline" onClick={refreshAll} disabled={loading}>
               <RefreshCw
                 className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
@@ -463,16 +578,9 @@ export default function InventoryPage() {
               <Package className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">
-                {(stats?.in_store || 0) +
-                  (stats?.on_vehicle || 0) +
-                  (stats?.used_store || 0) +
-                  (stats?.awaiting_retread || 0) +
-                  (stats?.at_retreader || 0)}
-              </div>
+              <div className="text-2xl font-bold">{totalTires}</div>
               <p className="text-xs text-muted-foreground">
-                {stats?.new_tires || 0} new • {stats?.retreaded_tires || 0}{" "}
-                retreaded
+                {stats?.new_tires || 0} new • {stats?.retreaded_tires || 0} retreaded
               </p>
             </CardContent>
           </Card>
@@ -490,15 +598,15 @@ export default function InventoryPage() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Retread Queue</CardTitle>
-              <RefreshCw className="h-4 w-4 text-orange-500 dark:text-orange-400" />
+              <CardTitle className="text-sm font-medium">Utilization</CardTitle>
+              <Gauge className="h-4 w-4 text-blue-500 dark:text-blue-400" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                {(stats?.awaiting_retread || 0) + (stats?.at_retreader || 0)}
+                {stats?.utilization_rate ? `${stats.utilization_rate}%` : '0%'}
               </div>
               <p className="text-xs text-muted-foreground">
-                Awaiting or at retreader
+                {stats?.on_vehicle || 0} on vehicles
               </p>
             </CardContent>
           </Card>
@@ -528,22 +636,40 @@ export default function InventoryPage() {
           <TabsContent value="overview" className="space-y-4">
             <Card>
               <CardHeader>
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
                     <CardTitle>Inventory by Size</CardTitle>
                     <CardDescription>
                       View tire inventory grouped by size
                     </CardDescription>
                   </div>
-                  <div className="relative w-64">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="search"
-                      placeholder="Search sizes..."
-                      className="pl-8"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
+                  <div className="flex items-center gap-2">
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger className="w-[130px]">
+                        <SelectValue placeholder="Sort by" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="size">Size</SelectItem>
+                        <SelectItem value="total">Total Count</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                    >
+                      {sortOrder === "asc" ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+                    </Button>
+                    <div className="relative w-64">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="search"
+                        placeholder="Search sizes..."
+                        className="pl-8"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
               </CardHeader>
@@ -576,6 +702,7 @@ export default function InventoryPage() {
                             Retread Candidates
                           </TableHead>
                           <TableHead className="text-center">Total</TableHead>
+                          <TableHead className="text-center">Est. Value</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -619,6 +746,9 @@ export default function InventoryPage() {
                               </TableCell>
                               <TableCell className="text-center">
                                 <Badge variant="secondary">{total}</Badge>
+                              </TableCell>
+                              <TableCell className="text-center font-mono text-sm">
+                                {formatCurrency(total * (item.average_cost || 10000))}
                               </TableCell>
                               <TableCell className="text-right">
                                 <div className="flex justify-end gap-2">
@@ -745,14 +875,15 @@ export default function InventoryPage() {
                           <TableHead>Type</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead>Purchase Date</TableHead>
-                          <TableHead>Cost</TableHead>
+                          <TableHead>Cost ({currencySymbol})</TableHead>
+                          <TableHead>Depth</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {storeTires.map((tire) => (
                           <TableRow key={tire.id}>
-                            <TableCell className="font-mono">
+                            <TableCell className="font-mono text-xs">
                               {tire.serial_number}
                             </TableCell>
                             <TableCell>{tire.size}</TableCell>
@@ -776,8 +907,19 @@ export default function InventoryPage() {
                             <TableCell>
                               {formatDate(tire.purchase_date)}
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="font-mono">
                               {formatCurrency(tire.purchase_cost)}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                                  <div 
+                                    className="h-full bg-green-500 rounded-full"
+                                    style={{ width: `${Math.min(100, (tire.depth_remaining / 12) * 100)}%` }}
+                                  />
+                                </div>
+                                <span className="text-xs">{tire.depth_remaining}mm</span>
+                              </div>
                             </TableCell>
                             <TableCell className="text-right">
                               <DropdownMenu>
@@ -797,6 +939,7 @@ export default function InventoryPage() {
                                   <PermissionGuard permissionCode="tire.edit" action="edit">
                                     <DropdownMenuItem asChild>
                                       <Link href={`/inventory/${tire.id}/edit`}>
+                                        <Edit className="mr-2 h-4 w-4" />
                                         Edit Tire
                                       </Link>
                                     </DropdownMenuItem>
@@ -810,7 +953,7 @@ export default function InventoryPage() {
                                   <PermissionGuard permissionCode="tire.dispose" action="create">
                                     <DropdownMenuSeparator />
                                     <DropdownMenuItem 
-                                      className="text-red-600"
+                                      className="text-red-600 focus:text-red-600 focus:bg-red-50 dark:focus:bg-red-950"
                                       onClick={() => handleDisposeTire(tire.id)}
                                     >
                                       <Trash2 className="mr-2 h-4 w-4" />
@@ -867,6 +1010,7 @@ export default function InventoryPage() {
                           <TableHead>Brand</TableHead>
                           <TableHead>Position</TableHead>
                           <TableHead>Remaining Depth</TableHead>
+                          <TableHead>Retread Count</TableHead>
                           <TableHead>Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -874,7 +1018,7 @@ export default function InventoryPage() {
                       <TableBody>
                         {retreadCandidates.map((tire) => (
                           <TableRow key={tire.id}>
-                            <TableCell className="font-mono">
+                            <TableCell className="font-mono text-xs">
                               {tire.serial_number}
                             </TableCell>
                             <TableCell>{tire.size}</TableCell>
@@ -890,6 +1034,11 @@ export default function InventoryPage() {
                                 }
                               >
                                 {tire.depth_remaining} mm
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary">
+                                {tire.retread_count || 0}
                               </Badge>
                             </TableCell>
                             <TableCell>
@@ -977,6 +1126,7 @@ export default function InventoryPage() {
                           <TableHead>Brand</TableHead>
                           <TableHead>Last Used Date</TableHead>
                           <TableHead>Days Since Last Use</TableHead>
+                          <TableHead>Current Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -992,7 +1142,7 @@ export default function InventoryPage() {
                           );
                           return (
                             <TableRow key={tire.id}>
-                              <TableCell className="font-mono">
+                              <TableCell className="font-mono text-xs">
                                 {tire.serial_number}
                               </TableCell>
                               <TableCell>{tire.size}</TableCell>
@@ -1012,6 +1162,14 @@ export default function InventoryPage() {
                                   }
                                 >
                                   {daysSince} days
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge
+                                  variant="outline"
+                                  className={getStatusColor(tire.status)}
+                                >
+                                  {tire.status.replace("_", " ")}
                                 </Badge>
                               </TableCell>
                               <TableCell className="text-right">
@@ -1057,7 +1215,16 @@ export default function InventoryPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Footer */}
+        <div className="text-xs text-muted-foreground border-t pt-4">
+          Logged in as: {user?.full_name || user?.username} • Role: {user?.role}
+          {systemSettings?.company_name && ` • ${systemSettings.company_name}`}
+        </div>
       </div>
     </PermissionGuard>
   );
 }
+
+// Import missing components
+import { Edit } from "lucide-react";

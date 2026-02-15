@@ -40,6 +40,12 @@ import {
   Edit,
   Trash2,
   Info,
+  Gauge,
+  DollarSign,
+  TrendingDown,
+  Activity,
+  Calendar,
+  MapPin,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -62,6 +68,10 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -94,17 +104,23 @@ interface Tire {
   tread_depth_new: number;
   retread_count: number;
   last_retread_date?: string;
+  location?: string;
+  supplier_id?: number;
 }
 
 export default function TireSizePage() {
   const params = useParams();
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [tires, setTires] = useState<Tire[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [sortBy, setSortBy] = useState<string>("serial");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [stats, setStats] = useState({
     total: 0,
     new: 0,
@@ -114,9 +130,17 @@ export default function TireSizePage() {
     onVehicle: 0,
     awaitingRetread: 0,
     atRetreader: 0,
+    totalValue: 0,
+    avgDepth: 0,
+    totalDistance: 0,
+    avgAge: 0,
   });
 
   const size = decodeURIComponent(params.size as string);
+  
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
 
   // Check authentication
   useEffect(() => {
@@ -156,8 +180,9 @@ export default function TireSizePage() {
       }
       
       const data = await response.json();
-      setTires(Array.isArray(data) ? data : []);
-      calculateStats(Array.isArray(data) ? data : []);
+      const tireList = Array.isArray(data) ? data : [];
+      setTires(tireList);
+      calculateStats(tireList);
     } catch (error) {
       console.error("Error fetching tires:", error);
       setError(error instanceof Error ? error.message : "Failed to load tires");
@@ -170,6 +195,18 @@ export default function TireSizePage() {
   };
 
   const calculateStats = (tireList: Tire[]) => {
+    const totalValue = tireList.reduce((sum, tire) => sum + tire.purchase_cost, 0);
+    const totalDepth = tireList.reduce((sum, tire) => sum + tire.depth_remaining, 0);
+    const totalDistance = tireList.reduce((sum, tire) => sum + tire.total_distance, 0);
+    
+    // Calculate average age in days
+    const now = new Date();
+    const totalAge = tireList.reduce((sum, tire) => {
+      const purchaseDate = new Date(tire.purchase_date);
+      const ageInDays = Math.floor((now.getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24));
+      return sum + ageInDays;
+    }, 0);
+
     const stats = {
       total: tireList.length,
       new: tireList.filter((t) => t.type === "NEW").length,
@@ -183,6 +220,10 @@ export default function TireSizePage() {
       atRetreader: tireList.filter(
         (t) => t.status === "AT_RETREAD_SUPPLIER"
       ).length,
+      totalValue,
+      avgDepth: tireList.length > 0 ? totalDepth / tireList.length : 0,
+      totalDistance,
+      avgAge: tireList.length > 0 ? totalAge / tireList.length : 0,
     };
     setStats(stats);
   };
@@ -254,20 +295,40 @@ export default function TireSizePage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KES",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return "N/A";
     try {
-      return new Date(dateString).toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+      const date = new Date(dateString);
+      const format = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (format === "dd/MM/yyyy") {
+        return date.toLocaleDateString("en-GB");
+      } else if (format === "MM/dd/yyyy") {
+        return date.toLocaleDateString("en-US");
+      } else if (format === "yyyy-MM-dd") {
+        return date.toISOString().split('T')[0];
+      } else if (format === "dd-MM-yyyy") {
+        return date.toLocaleDateString("en-GB").replace(/\//g, '-');
+      } else if (format === "dd MMM yyyy") {
+        return date.toLocaleDateString("en-US", { 
+          day: '2-digit', 
+          month: 'short', 
+          year: 'numeric' 
+        });
+      } else {
+        return date.toLocaleDateString("en-US", {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        });
+      }
     } catch {
       return "Invalid date";
     }
@@ -278,14 +339,44 @@ export default function TireSizePage() {
     return distance.toLocaleString() + " km";
   };
 
-  const filteredTires = tires.filter(
-    (tire) =>
-      tire.serial_number.toLowerCase().includes(search.toLowerCase()) ||
-      tire.brand.toLowerCase().includes(search.toLowerCase()) ||
-      tire.pattern.toLowerCase().includes(search.toLowerCase())
-  );
+  const formatNumber = (num: number) => {
+    return new Intl.NumberFormat("en-US").format(num);
+  };
+
+  const filteredTires = tires
+    .filter(
+      (tire) =>
+        tire.serial_number.toLowerCase().includes(search.toLowerCase()) ||
+        tire.brand.toLowerCase().includes(search.toLowerCase()) ||
+        tire.pattern.toLowerCase().includes(search.toLowerCase())
+    )
+    .sort((a, b) => {
+      if (sortBy === "serial") {
+        return sortOrder === "asc" 
+          ? a.serial_number.localeCompare(b.serial_number)
+          : b.serial_number.localeCompare(a.serial_number);
+      } else if (sortBy === "brand") {
+        return sortOrder === "asc"
+          ? a.brand.localeCompare(b.brand)
+          : b.brand.localeCompare(a.brand);
+      } else if (sortBy === "depth") {
+        return sortOrder === "asc"
+          ? a.depth_remaining - b.depth_remaining
+          : b.depth_remaining - a.depth_remaining;
+      } else if (sortBy === "distance") {
+        return sortOrder === "asc"
+          ? a.total_distance - b.total_distance
+          : b.total_distance - a.total_distance;
+      }
+      return 0;
+    });
 
   const exportToCSV = () => {
+    if (!hasPermission("inventory.export")) {
+      toast.error("You don't have permission to export inventory");
+      return;
+    }
+
     const headers = [
       "Serial Number",
       "Brand",
@@ -293,13 +384,15 @@ export default function TireSizePage() {
       "Type",
       "Status",
       "Position",
+      "Location",
       "Purchase Date",
-      "Purchase Cost",
+      `Purchase Cost (${currencySymbol})`,
       "Supplier",
-      "Depth Remaining",
+      "Depth Remaining (mm)",
       "Installation Count",
-      "Total Distance",
+      `Total Distance (km)`,
       "Retread Count",
+      "Last Retread Date",
     ];
 
     const csvContent = [
@@ -312,6 +405,7 @@ export default function TireSizePage() {
           tire.type,
           tire.status,
           tire.position || "N/A",
+          tire.location || "N/A",
           formatDate(tire.purchase_date),
           tire.purchase_cost,
           tire.purchase_supplier,
@@ -319,25 +413,26 @@ export default function TireSizePage() {
           tire.installation_count,
           tire.total_distance,
           tire.retread_count,
-        ].join(",")
+          formatDate(tire.last_retread_date),
+        ].map(cell => `"${cell}"`).join(",")
       ),
     ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `tires-${size.replace(/\//g, "-")}-${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `tires-${size.replace(/\//g, "-")}-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
     
     toast.success("CSV export started");
   };
 
   // Show auth loading state
-  if (authLoading) {
+  if (authLoading || settingsLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center gap-4">
@@ -440,6 +535,11 @@ export default function TireSizePage() {
             <p className="text-muted-foreground">
               All tires of size {size} in inventory
             </p>
+            {systemSettings?.company_name && (
+              <p className="text-xs text-muted-foreground mt-1">
+                {systemSettings.company_name} • Currency: {currencySymbol} ({currency})
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={refreshData} disabled={loading}>
@@ -448,10 +548,12 @@ export default function TireSizePage() {
               />
               Refresh
             </Button>
-            <Button variant="outline" onClick={exportToCSV}>
-              <Download className="mr-2 h-4 w-4" />
-              Export CSV
-            </Button>
+            <PermissionGuard permissionCode="inventory.view" action="view" fallback={null}>
+              <Button variant="outline" onClick={exportToCSV} disabled={filteredTires.length === 0}>
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+            </PermissionGuard>
             <PermissionGuard permissionCode="tire.create" action="create">
               <Button asChild>
                 <Link href={`/inventory/add?size=${encodeURIComponent(size)}`}>
@@ -464,7 +566,7 @@ export default function TireSizePage() {
         </div>
 
         {/* Stats Overview */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Tires</CardTitle>
@@ -515,27 +617,61 @@ export default function TireSizePage() {
               </p>
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+              <DollarSign className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {formatCurrency(stats.totalValue)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {stats.total} tires
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <div className="flex items-center justify-between">
-            <TabsList>
-              <TabsTrigger value="all">All Tires</TabsTrigger>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <TabsList className="grid grid-cols-2 sm:grid-cols-5 w-full sm:w-auto">
+              <TabsTrigger value="all">All</TabsTrigger>
               <TabsTrigger value="IN_STORE">In Store</TabsTrigger>
               <TabsTrigger value="ON_VEHICLE">On Vehicle</TabsTrigger>
               <TabsTrigger value="USED_STORE">Used Store</TabsTrigger>
-              <TabsTrigger value="AWAITING_RETREAD">Retread Queue</TabsTrigger>
+              <TabsTrigger value="AWAITING_RETREAD">Retread</TabsTrigger>
             </TabsList>
             
-            <div className="relative w-64">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                type="search"
-                placeholder="Search tires..."
-                className="pl-8"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
+            <div className="flex items-center gap-2">
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="serial">Serial</SelectItem>
+                  <SelectItem value="brand">Brand</SelectItem>
+                  <SelectItem value="depth">Depth</SelectItem>
+                  <SelectItem value="distance">Distance</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+              >
+                {sortOrder === "asc" ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}
+              </Button>
+              <div className="relative w-64">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search tires..."
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
             </div>
           </div>
 
@@ -556,7 +692,7 @@ export default function TireSizePage() {
                     <p className="text-muted-foreground mt-1">
                       {search
                         ? "Try a different search term"
-                        : `No tires found with status: ${activeTab}`}
+                        : `No tires found with status: ${activeTab.replace("_", " ")}`}
                     </p>
                     {activeTab === "all" && (
                       <PermissionGuard permissionCode="tire.create" action="create">
@@ -570,7 +706,7 @@ export default function TireSizePage() {
                     )}
                   </div>
                 ) : (
-                  <div className="rounded-md border">
+                  <div className="rounded-md border overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -588,14 +724,14 @@ export default function TireSizePage() {
                       </TableHeader>
                       <TableBody>
                         {filteredTires.map((tire) => (
-                          <TableRow key={tire.id}>
-                            <TableCell className="font-mono font-medium">
+                          <TableRow key={tire.id} className="hover:bg-accent/50">
+                            <TableCell className="font-mono font-medium text-xs">
                               {tire.serial_number}
                             </TableCell>
                             <TableCell>
                               <div>
                                 <div className="font-medium">{tire.brand}</div>
-                                <div className="text-sm text-muted-foreground">
+                                <div className="text-xs text-muted-foreground">
                                   {tire.pattern}
                                 </div>
                               </div>
@@ -619,50 +755,63 @@ export default function TireSizePage() {
                             <TableCell>
                               {tire.status === "ON_VEHICLE" ? (
                                 <div>
-                                  <div className="font-medium">
+                                  <div className="font-medium text-xs">
                                     {tire.position || "N/A"}
                                   </div>
-                                  <div className="text-sm text-muted-foreground">
+                                  <div className="text-xs text-muted-foreground">
                                     {tire.current_vehicle || "Unknown Vehicle"}
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-muted-foreground">
+                                <span className="text-xs text-muted-foreground">
                                   {tire.position || "N/A"}
                                 </span>
+                              )}
+                              {tire.location && tire.status !== "ON_VEHICLE" && (
+                                <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <MapPin className="h-3 w-3" />
+                                  {tire.location}
+                                </div>
                               )}
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <div
-                                  className="h-2 rounded-full bg-gray-200 dark:bg-gray-700 flex-1 min-w-[40px]"
-                                >
+                                <div className="relative w-16 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                                   <div
-                                    className="h-full rounded-full bg-green-500 dark:bg-green-600"
+                                    className="absolute h-full rounded-full bg-green-500 dark:bg-green-600"
                                     style={{
                                       width: `${Math.min(
                                         100,
-                                        (tire.depth_remaining /
-                                          tire.tread_depth_new) *
-                                          100
+                                        (tire.depth_remaining / (tire.tread_depth_new || 12)) * 100
                                       )}%`,
                                     }}
                                   />
                                 </div>
-                                <span className="text-sm font-medium">
+                                <span className="text-xs font-medium">
                                   {tire.depth_remaining}mm
                                 </span>
                               </div>
                             </TableCell>
-                            <TableCell>
-                              {formatDistance(tire.total_distance)}
+                            <TableCell className="text-xs">
+                              {tire.total_distance ? (
+                                <div>
+                                  <div>{formatDistance(tire.total_distance)}</div>
+                                  {tire.installation_count > 1 && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {tire.installation_count} installs
+                                    </div>
+                                  )}
+                                </div>
+                              ) : "N/A"}
                             </TableCell>
                             <TableCell>
-                              <Badge variant="outline">
+                              <Badge variant="outline" className="text-xs">
                                 {tire.retread_count}
                               </Badge>
                             </TableCell>
-                            <TableCell>{formatDate(tire.purchase_date)}</TableCell>
+                            <TableCell className="text-xs">
+                              {formatDate(tire.purchase_date)}
+                            </TableCell>
                             <TableCell className="text-right">
                               <div className="flex justify-end gap-2">
                                 <TooltipProvider>
@@ -784,8 +933,12 @@ export default function TireSizePage() {
                     <div className="text-sm text-muted-foreground">
                       Showing {filteredTires.length} of {tires.length} tires
                     </div>
-                    <div className="text-sm text-muted-foreground">
-                      {stats.inStore} in store, {stats.onVehicle} on vehicles
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span>{stats.inStore} in store</span>
+                      <span>•</span>
+                      <span>{stats.onVehicle} on vehicles</span>
+                      <span>•</span>
+                      <span>Value: {formatCurrency(stats.totalValue)}</span>
                     </div>
                   </div>
                 </CardFooter>
@@ -826,6 +979,11 @@ export default function TireSizePage() {
                   <History className="mr-2 h-4 w-4" />
                   View Movement History
                 </Link>
+              </Button>
+
+              <Button variant="outline" className="w-full justify-start" onClick={exportToCSV}>
+                <Download className="mr-2 h-4 w-4" />
+                Export to CSV
               </Button>
             </CardContent>
           </Card>
@@ -910,20 +1068,37 @@ export default function TireSizePage() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-medium">Total Value:</span>
                     <span className="text-lg font-bold">
-                      {formatCurrency(
-                        tires.reduce((sum, tire) => sum + tire.purchase_cost, 0)
-                      )}
+                      {formatCurrency(stats.totalValue)}
                     </span>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Based on purchase cost • Does not account for retreading costs
+                    Based on purchase cost • Avg. {formatCurrency(stats.total > 0 ? stats.totalValue / stats.total : 0)} per tire
                   </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 pt-2">
+                  <div className="p-2 bg-muted/30 rounded">
+                    <p className="text-xs text-muted-foreground">Total Distance</p>
+                    <p className="text-sm font-bold">{formatNumber(Math.round(stats.totalDistance))} km</p>
+                  </div>
+                  <div className="p-2 bg-muted/30 rounded">
+                    <p className="text-xs text-muted-foreground">Avg. Depth</p>
+                    <p className="text-sm font-bold">{stats.avgDepth.toFixed(1)} mm</p>
+                  </div>
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
+
+        {/* Footer */}
+        <div className="text-xs text-muted-foreground border-t pt-4">
+          Logged in as: {user?.full_name || user?.username} • Role: {user?.role}
+          {systemSettings?.company_name && ` • ${systemSettings.company_name}`}
+        </div>
       </div>
     </PermissionGuard>
   );
 }
+
+
