@@ -38,6 +38,10 @@ import {
   TrendingUp,
   BarChart3,
   DollarSign,
+  Building,
+  Calendar,
+  XCircle,
+  Plus,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -97,6 +101,27 @@ interface RetreadMovement {
   processed_by: string;
 }
 
+interface RetreadOrder {
+  id: number;
+  order_number: string;
+  supplier_id: number;
+  supplier_name: string;
+  status: "DRAFT" | "SENT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "RECEIVED";
+  total_tires: number;
+  total_cost: number;
+  expected_completion_date?: string;
+  sent_date?: string;
+  received_date?: string;
+  created_at: string;
+  tires: Array<{
+    id: number;
+    serial_number: string;
+    size: string;
+    brand: string;
+    status: string;
+  }>;
+}
+
 interface Supplier {
   id: number;
   name: string;
@@ -120,11 +145,13 @@ export default function RetreadsPage() {
   // Data states
   const [eligibleTires, setEligibleTires] = useState<Tire[]>([]);
   const [retreadMovements, setRetreadMovements] = useState<RetreadMovement[]>([]);
+  const [retreadOrders, setRetreadOrders] = useState<RetreadOrder[]>([]);
   const [supplierStats, setSupplierStats] = useState<Supplier[]>([]);
   
   // Filters
   const [sizeFilter, setSizeFilter] = useState("all");
   const [supplierFilter, setSupplierFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
 
   useEffect(() => {
     fetchData();
@@ -141,11 +168,19 @@ export default function RetreadsPage() {
         if (data.success) {
           setEligibleTires(data.data);
         }
-      } else if (activeTab === "active") {
-        const response = await fetch("http://localhost:5000/api/tires/retread/status");
-        const data = await response.json();
-        if (data.success) {
-          setRetreadMovements(data.data);
+      } else if (activeTab === "orders") {
+        // Fetch retread orders
+        const ordersResponse = await fetch("http://localhost:5000/api/retread-orders");
+        const ordersData = await ordersResponse.json();
+        if (ordersData.success) {
+          setRetreadOrders(ordersData.data);
+        }
+
+        // Also fetch movements for the summary
+        const movementsResponse = await fetch("http://localhost:5000/api/tires/retread/status");
+        const movementsData = await movementsResponse.json();
+        if (movementsData.success) {
+          setRetreadMovements(movementsData.data);
         }
       } else if (activeTab === "suppliers") {
         const response = await fetch("http://localhost:5000/api/tires/retread/cost-analysis");
@@ -200,7 +235,7 @@ export default function RetreadsPage() {
       return;
     }
 
-    router.push(`/retreads/send?tires=${selectedTires.join(",")}`);
+    router.push(`/retreads/create?tires=${selectedTires.join(",")}`);
   };
 
   const handleMarkForRetreading = async () => {
@@ -233,6 +268,18 @@ export default function RetreadsPage() {
     }
   };
 
+  const handleCreateOrder = () => {
+    router.push("/retreads/create-batch");
+  };
+
+  const handleViewOrder = (orderId: number) => {
+    router.push(`/retreads/${orderId}`);
+  };
+
+  const handleReceiveOrder = (orderId: number) => {
+    router.push(`/retreads/${orderId}/receive`);
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "USED_STORE":
@@ -246,6 +293,27 @@ export default function RetreadsPage() {
     }
   };
 
+  const getOrderStatusBadge = (status: string) => {
+    const statusConfig = {
+      DRAFT: { color: "bg-gray-100 text-gray-800 border-gray-200", icon: Clock },
+      SENT: { color: "bg-blue-100 text-blue-800 border-blue-200", icon: Truck },
+      IN_PROGRESS: { color: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: Package },
+      COMPLETED: { color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle },
+      CANCELLED: { color: "bg-red-100 text-red-800 border-red-200", icon: XCircle },
+      RECEIVED: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: CheckCircle },
+    };
+    
+    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.DRAFT;
+    const Icon = config.icon;
+    
+    return (
+      <Badge variant="outline" className={config.color}>
+        <Icon className="h-3 w-3 mr-1" />
+        {status.replace("_", " ")}
+      </Badge>
+    );
+  };
+
   const getMovementTypeColor = (type: string) => {
     switch (type) {
       case "STORE_TO_RETREAD_SUPPLIER":
@@ -257,7 +325,8 @@ export default function RetreadsPage() {
     }
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return "N/A";
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
@@ -272,9 +341,8 @@ export default function RetreadsPage() {
     }).format(amount);
   };
 
-    const formatDistance = (distance?: number) =>
+  const formatDistance = (distance?: number) =>
     distance ? `${distance.toLocaleString()} km` : "Not recorded";
-
 
   // Filter eligible tires
   const filteredEligibleTires = eligibleTires.filter(tire =>
@@ -283,12 +351,17 @@ export default function RetreadsPage() {
     tire.size.toLowerCase().includes(search.toLowerCase())
   );
 
-  // Filter movements
-  const filteredMovements = retreadMovements.filter(movement =>
-    movement.serial_number.toLowerCase().includes(search.toLowerCase()) &&
-    (supplierFilter === "all" || movement.supplier_id.toString() === supplierFilter) &&
-    (sizeFilter === "all" || movement.size === sizeFilter)
-  );
+  // Filter orders
+  const filteredOrders = retreadOrders.filter(order => {
+    const matchesSearch = 
+      order.order_number.toLowerCase().includes(search.toLowerCase()) ||
+      order.supplier_name.toLowerCase().includes(search.toLowerCase());
+    
+    const matchesStatus = statusFilter === "all" || order.status === statusFilter;
+    const matchesSupplier = supplierFilter === "all" || order.supplier_id.toString() === supplierFilter;
+    
+    return matchesSearch && matchesStatus && matchesSupplier;
+  });
 
   // Calculate summary stats
   const summaryStats = {
@@ -296,6 +369,8 @@ export default function RetreadsPage() {
     atSupplier: retreadMovements.filter(m => m.status === "AT_RETREAD_SUPPLIER").length,
     returned: retreadMovements.filter(m => m.type === "RETREADED").length,
     suppliers: suppliers.length,
+    pendingOrders: retreadOrders.filter(o => o.status === "SENT" || o.status === "IN_PROGRESS").length,
+    totalOrders: retreadOrders.length,
   };
 
   return (
@@ -313,15 +388,15 @@ export default function RetreadsPage() {
             <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          <Button onClick={() => router.push("/retreads/create-batch")}>
-            <Truck className="mr-2 h-4 w-4" />
-            New Retread Batch
+          <Button onClick={handleCreateOrder}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Retread Order
           </Button>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Eligible Tires</CardTitle>
@@ -332,6 +407,18 @@ export default function RetreadsPage() {
             <p className="text-xs text-muted-foreground">Ready for retreading</p>
           </CardContent>
         </Card>
+        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Orders</CardTitle>
+            <Truck className="h-4 w-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{summaryStats.pendingOrders}</div>
+            <p className="text-xs text-muted-foreground">In progress</p>
+          </CardContent>
+        </Card>
+        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">At Retreader</CardTitle>
@@ -342,6 +429,7 @@ export default function RetreadsPage() {
             <p className="text-xs text-muted-foreground">Currently being retreaded</p>
           </CardContent>
         </Card>
+        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Returned</CardTitle>
@@ -352,10 +440,11 @@ export default function RetreadsPage() {
             <p className="text-xs text-muted-foreground">Successfully retreaded</p>
           </CardContent>
         </Card>
+        
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Active Suppliers</CardTitle>
-            <Truck className="h-4 w-4 text-blue-500" />
+            <Building className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{summaryStats.suppliers}</div>
@@ -369,7 +458,7 @@ export default function RetreadsPage() {
         <div className="flex items-center justify-between">
           <TabsList>
             <TabsTrigger value="eligible">Eligible Tires</TabsTrigger>
-            <TabsTrigger value="active">Active Retreads</TabsTrigger>
+            <TabsTrigger value="orders">Purchase Orders</TabsTrigger>
             <TabsTrigger value="suppliers">Supplier Analysis</TabsTrigger>
           </TabsList>
           
@@ -384,17 +473,54 @@ export default function RetreadsPage() {
                 onChange={(e) => setSearch(e.target.value)}
               />
             </div>
-            <Select value={sizeFilter} onValueChange={setSizeFilter}>
-              <SelectTrigger className="w-32">
-                <SelectValue placeholder="Size" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sizes</SelectItem>
-                {Array.from(new Set(eligibleTires.map(t => t.size))).map(size => (
-                  <SelectItem key={size} value={size}>{size}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            
+            {activeTab === "eligible" && (
+              <Select value={sizeFilter} onValueChange={setSizeFilter}>
+                <SelectTrigger className="w-32">
+                  <SelectValue placeholder="Size" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sizes</SelectItem>
+                  {Array.from(new Set(eligibleTires.map(t => t.size))).map(size => (
+                    <SelectItem key={size} value={size}>{size}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            
+            {activeTab === "orders" && (
+              <>
+                <Select value={statusFilter} onValueChange={setStatusFilter}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="SENT">Sent</SelectItem>
+                    <SelectItem value="IN_PROGRESS">In Progress</SelectItem>
+                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                    <SelectItem value="RECEIVED">Received</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+                
+                <Select value={supplierFilter} onValueChange={setSupplierFilter}>
+                  <SelectTrigger className="w-40">
+                    <Building className="h-4 w-4 mr-2" />
+                    <SelectValue placeholder="Supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Suppliers</SelectItem>
+                    {suppliers.map(supplier => (
+                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
+                        {supplier.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
+            )}
           </div>
         </div>
 
@@ -583,39 +709,21 @@ export default function RetreadsPage() {
           </Card>
         </TabsContent>
 
-        {/* Active Retreads Tab */}
-        <TabsContent value="active">
+        {/* Purchase Orders Tab */}
+        <TabsContent value="orders">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Active Retreading Operations</CardTitle>
+                  <CardTitle>Retread Purchase Orders</CardTitle>
                   <CardDescription>
-                    Tires currently at retread suppliers or in process
+                    Manage and track all retread orders
                   </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Select value={supplierFilter} onValueChange={setSupplierFilter}>
-                    <SelectTrigger className="w-48">
-                      <SelectValue placeholder="Filter by supplier" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Suppliers</SelectItem>
-                      {suppliers.map(supplier => (
-                        <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                          {supplier.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="outline"
-                    onClick={() => router.push("/retreads/return")}
-                  >
-                    <CheckCircle className="mr-2 h-4 w-4" />
-                    Return Tires
-                  </Button>
-                </div>
+                <Button onClick={handleCreateOrder} size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Order
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -623,18 +731,122 @@ export default function RetreadsPage() {
                 <div className="flex items-center justify-center h-64">
                   <div className="text-center">
                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                    <p className="mt-2 text-muted-foreground">Loading retread operations...</p>
+                    <p className="mt-2 text-muted-foreground">Loading orders...</p>
                   </div>
                 </div>
-              ) : filteredMovements.length === 0 ? (
+              ) : filteredOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center">
-                  <Truck className="h-12 w-12 text-muted-foreground mb-4" />
-                  <h3 className="text-lg font-medium">No active retread operations</h3>
+                  <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                  <h3 className="text-lg font-medium">No retread orders found</h3>
                   <p className="text-muted-foreground mt-1">
-                    {search ? "Try a different search term" : "No tires currently at retread suppliers"}
+                    {search ? "Try a different search term" : "Create your first retread order to get started"}
                   </p>
+                  {!search && (
+                    <Button onClick={handleCreateOrder} className="mt-4">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Order
+                    </Button>
+                  )}
                 </div>
               ) : (
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Order #</TableHead>
+                        <TableHead>Supplier</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Tires</TableHead>
+                        <TableHead>Total Cost</TableHead>
+                        <TableHead>Sent Date</TableHead>
+                        <TableHead>Expected Completion</TableHead>
+                        <TableHead>Received Date</TableHead>
+                        <TableHead className="text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredOrders.map((order) => (
+                        <TableRow key={order.id}>
+                          <TableCell className="font-mono font-medium">
+                            {order.order_number}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Building className="h-4 w-4 text-muted-foreground" />
+                              <span className="truncate max-w-[150px]">
+                                {order.supplier_name}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{getOrderStatusBadge(order.status)}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline">{order.total_tires}</Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {formatCurrency(order.total_cost)}
+                          </TableCell>
+                          <TableCell>{formatDate(order.sent_date)}</TableCell>
+                          <TableCell>{formatDate(order.expected_completion_date)}</TableCell>
+                          <TableCell>{formatDate(order.received_date)}</TableCell>
+                          <TableCell className="text-right">
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                <DropdownMenuItem onClick={() => handleViewOrder(order.id)}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  View Details
+                                </DropdownMenuItem>
+                                {order.status === "COMPLETED" && (
+                                  <DropdownMenuItem onClick={() => handleReceiveOrder(order.id)}>
+                                    <CheckCircle className="mr-2 h-4 w-4" />
+                                    Receive Order
+                                  </DropdownMenuItem>
+                                )}
+                                {(order.status === "SENT" || order.status === "IN_PROGRESS") && (
+                                  <DropdownMenuItem>
+                                    <Truck className="mr-2 h-4 w-4" />
+                                    Track Order
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                {order.status === "DRAFT" && (
+                                  <DropdownMenuItem>
+                                    <Package className="mr-2 h-4 w-4" />
+                                    Edit Order
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+            <CardFooter className="border-t px-6 py-4">
+              <div className="text-sm text-muted-foreground">
+                Showing {filteredOrders.length} of {retreadOrders.length} orders
+              </div>
+            </CardFooter>
+          </Card>
+
+          {/* Recent Movements Card */}
+          {retreadMovements.length > 0 && (
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle>Recent Movements</CardTitle>
+                <CardDescription>
+                  Latest tire movements to/from retread suppliers
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
@@ -642,16 +854,12 @@ export default function RetreadsPage() {
                         <TableHead>Date</TableHead>
                         <TableHead>Type</TableHead>
                         <TableHead>Serial #</TableHead>
-                        <TableHead>Size</TableHead>
                         <TableHead>Supplier</TableHead>
-                        <TableHead>Current Status</TableHead>
-                        <TableHead>Processed By</TableHead>
-                        <TableHead>Notes</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
+                        <TableHead>Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredMovements.map((movement) => (
+                      {retreadMovements.slice(0, 5).map((movement) => (
                         <TableRow key={movement.id}>
                           <TableCell>{formatDate(movement.movement_date)}</TableCell>
                           <TableCell>
@@ -667,17 +875,7 @@ export default function RetreadsPage() {
                           <TableCell className="font-mono font-medium">
                             {movement.serial_number}
                           </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{movement.size}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{movement.supplier_name}</div>
-                              <div className="text-xs text-muted-foreground">
-                                ID: {movement.supplier_id}
-                              </div>
-                            </div>
-                          </TableCell>
+                          <TableCell>{movement.supplier_name}</TableCell>
                           <TableCell>
                             <Badge
                               variant="outline"
@@ -686,51 +884,14 @@ export default function RetreadsPage() {
                               {movement.status.replace("_", " ")}
                             </Badge>
                           </TableCell>
-                          <TableCell>{movement.processed_by}</TableCell>
-                          <TableCell className="max-w-xs truncate">
-                            {movement.notes}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuItem asChild>
-                                  <Button
-                                    variant="ghost"
-                                    className="w-full justify-start"
-                                    onClick={() => router.push(`/inventory/${movement.tire_id}`)}
-                                  >
-                                    <Eye className="mr-2 h-4 w-4" />
-                                    View Tire Details
-                                  </Button>
-                                </DropdownMenuItem>
-                                {movement.status === "AT_RETREAD_SUPPLIER" && (
-                                  <DropdownMenuItem asChild>
-                                    <Button
-                                      variant="ghost"
-                                      className="w-full justify-start"
-                                      onClick={() => router.push(`/retreads/return?tires=${movement.tire_id}`)}
-                                    >
-                                      <CheckCircle className="mr-2 h-4 w-4" />
-                                      Mark as Returned
-                                    </Button>
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
                         </TableRow>
                       ))}
                     </TableBody>
                   </Table>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* Supplier Analysis Tab */}
@@ -764,12 +925,13 @@ export default function RetreadsPage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>Supplier</TableHead>
+                        <TableHead>Contact Person</TableHead>
                         <TableHead>Jobs Completed</TableHead>
-                        <TableHead>Tires Returned</TableHead>
+                        <TableHead>Tires Retreaded</TableHead>
                         <TableHead>Total Cost</TableHead>
-                        <TableHead>Avg Cost per Job</TableHead>
                         <TableHead>Avg Cost per Tire</TableHead>
-                        <TableHead>Contact Info</TableHead>
+                        <TableHead>Avg Turnaround (days)</TableHead>
+                        <TableHead>Phone</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -778,11 +940,12 @@ export default function RetreadsPage() {
                           <TableCell>
                             <div>
                               <div className="font-medium">{supplier.name}</div>
-                              <div className="text-sm text-muted-foreground">
+                              <div className="text-xs text-muted-foreground">
                                 {supplier.address}
                               </div>
                             </div>
                           </TableCell>
+                          <TableCell>{supplier.contact_person}</TableCell>
                           <TableCell>
                             <Badge variant="outline">
                               {supplier.total_jobs || 0}
@@ -790,28 +953,24 @@ export default function RetreadsPage() {
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline">
-                              {supplier.total_jobs ? Math.round(supplier.total_jobs * 1.2) : 0}
-                              {/* Note: This would come from actual data */}
+                              {supplier.total_jobs ? Math.round(supplier.total_jobs * 8) : 0}
                             </Badge>
                           </TableCell>
                           <TableCell className="font-medium">
-                            {formatCurrency(supplier.total_jobs ? (supplier.total_jobs * (supplier.average_cost || 0)) : 0)}
+                            {formatCurrency(supplier.total_jobs ? (supplier.total_jobs * (supplier.average_cost || 0) * 8) : 0)}
                           </TableCell>
                           <TableCell>
                             {formatCurrency(supplier.average_cost || 0)}
                           </TableCell>
                           <TableCell>
-                            {formatCurrency((supplier.average_cost || 0) / 1.2)}
+                            <Badge variant="outline" className="bg-blue-50">
+                              {supplier.total_jobs ? "7-10" : "N/A"}
+                            </Badge>
                           </TableCell>
                           <TableCell>
-                            <div className="space-y-1">
-                              <div className="text-sm">{supplier.contact_person}</div>
-                              <div className="text-sm text-muted-foreground">
-                                {supplier.phone}
-                              </div>
-                              <div className="text-sm text-muted-foreground">
-                                {supplier.email}
-                              </div>
+                            <div className="text-sm">{supplier.phone}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {supplier.email}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -840,10 +999,10 @@ export default function RetreadsPage() {
             <Button
               variant="outline"
               className="w-full justify-start"
-              onClick={() => router.push("/retreads/create-batch")}
+              onClick={handleCreateOrder}
             >
-              <Truck className="mr-2 h-4 w-4" />
-              Create New Retread Batch
+              <Plus className="mr-2 h-4 w-4" />
+              Create New Retread Order
             </Button>
             <Button
               variant="outline"
@@ -858,7 +1017,7 @@ export default function RetreadsPage() {
               className="w-full justify-start"
               onClick={() => router.push("/suppliers?type=RETREAD")}
             >
-              <DollarSign className="mr-2 h-4 w-4" />
+              <Building className="mr-2 h-4 w-4" />
               Manage Retread Suppliers
             </Button>
           </CardContent>
@@ -879,11 +1038,25 @@ export default function RetreadsPage() {
                       <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-yellow-500"
-                          style={{ width: `${(summaryStats.eligible / 100) * 100}%` }}
+                          style={{ width: `${(summaryStats.eligible / 50) * 100}%` }}
                         />
                       </div>
                       <span className="text-sm font-medium">
                         {summaryStats.eligible}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm">Active Orders</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500"
+                          style={{ width: `${(summaryStats.pendingOrders / 20) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-medium">
+                        {summaryStats.pendingOrders}
                       </span>
                     </div>
                   </div>
@@ -893,7 +1066,7 @@ export default function RetreadsPage() {
                       <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-purple-500"
-                          style={{ width: `${(summaryStats.atSupplier / 100) * 100}%` }}
+                          style={{ width: `${(summaryStats.atSupplier / 30) * 100}%` }}
                         />
                       </div>
                       <span className="text-sm font-medium">
@@ -907,13 +1080,37 @@ export default function RetreadsPage() {
                       <div className="w-32 h-2 bg-gray-200 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-green-500"
-                          style={{ width: `${(summaryStats.returned / 100) * 100}%` }}
+                          style={{ width: `${(summaryStats.returned / 40) * 100}%` }}
                         />
                       </div>
                       <span className="text-sm font-medium">
                         {summaryStats.returned}
                       </span>
                     </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="text-sm font-medium mb-2">Order Summary</h4>
+                <div className="grid grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {retreadOrders.filter(o => o.status === "SENT").length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Sent</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-yellow-600">
+                      {retreadOrders.filter(o => o.status === "IN_PROGRESS").length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">In Progress</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {retreadOrders.filter(o => o.status === "COMPLETED" || o.status === "RECEIVED").length}
+                    </div>
+                    <div className="text-xs text-muted-foreground">Completed</div>
                   </div>
                 </div>
               </div>

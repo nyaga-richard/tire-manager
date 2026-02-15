@@ -779,7 +779,7 @@ export default function ReceiveGoodsPage() {
                   />
                 </div>
 
-                <div className="space-y-2">
+                {/* <div className="space-y-2">
                   <Label htmlFor="supplier_invoice_number">Supplier Invoice No</Label>
                   <Input
                     id="supplier_invoice_number"
@@ -788,7 +788,7 @@ export default function ReceiveGoodsPage() {
                     placeholder="e.g., INV-2024-001"
                     disabled={submitting}
                   />
-                </div>
+                </div> */}
 
                 <div className="space-y-2">
                   <Label htmlFor="delivery_note_number">Delivery Note No</Label>

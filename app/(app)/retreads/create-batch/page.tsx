@@ -38,6 +38,7 @@ import {
   Phone,
   Mail,
   MapPin,
+  ArrowLeft,
 } from "lucide-react";
 import {
   Select,
@@ -60,6 +61,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import Link from "next/link";
 
 interface Tire {
   id: number;
@@ -103,6 +105,11 @@ export default function CreateRetreadBatchPage() {
   // Filters
   const [search, setSearch] = useState("");
   const [sizeFilter, setSizeFilter] = useState("all");
+  
+  // Review tab state
+  const [expectedDate, setExpectedDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetchEligibleTires();
@@ -128,7 +135,8 @@ export default function CreateRetreadBatchPage() {
       setLoading(false);
     }
   };
-    const fetchSuppliers = async () => {
+  
+  const fetchSuppliers = async () => {
     try {
         const response = await fetch("http://localhost:5000/api/suppliers");
         const data: Supplier[] = await response.json(); // raw array from API
@@ -144,8 +152,7 @@ export default function CreateRetreadBatchPage() {
     } catch (error) {
         console.error("Error fetching suppliers:", error);
     }
-    };
-
+  };
 
   const handleSelectTire = (tireId: number) => {
     setSelectedTires(prev =>
@@ -163,18 +170,58 @@ export default function CreateRetreadBatchPage() {
     }
   };
 
-  const handleNext = () => {
-    if (selectedTires.length === 0) {
-      alert("Please select at least one tire");
-      return;
-    }
+  const handleNext = async () => {
+  if (selectedTires.length === 0) {
+    alert("Please select at least one tire");
+    return;
+  }
 
-    if (!selectedSupplier) {
-      alert("Please select a retread supplier");
-      return;
-    }
+  if (!selectedSupplier) {
+    alert("Please select a retread supplier");
+    return;
+  }
 
-    router.push(`/retreads/send?tires=${selectedTires.join(",")}&supplier=${selectedSupplier.id}`);
+  if (activeTab === "review") {
+    // Create the retread order
+    try {
+      setSubmitting(true);
+      const response = await fetch("http://localhost:5000/api/retread-orders", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          supplier_id: selectedSupplier.id,
+          tire_ids: selectedTires,
+          expected_completion_date: expectedDate,
+          notes,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        router.push(`/retreads/${data.data.id}`);
+      } else {
+        alert(data.message || "Error creating retread order");
+      }
+    } catch (error) {
+      console.error("Error creating retread order:", error);
+      alert("Error creating retread order");
+    } finally {
+      setSubmitting(false);
+    }
+  } else {
+    // Move to next tab
+    if (activeTab === "tires") {
+      setActiveTab("supplier");
+    } else if (activeTab === "supplier") {
+      setActiveTab("review");
+    }
+  }
+};
+
+  const handleBack = () => {
+    router.push('/retreads');
   };
 
   const formatDistance = (distance?: number) => {
@@ -232,7 +279,15 @@ export default function CreateRetreadBatchPage() {
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-6xl">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center gap-4">
+        <Button 
+          variant="outline" 
+          size="icon"
+          onClick={handleBack}
+          className="cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Create Retread Batch</h1>
           <p className="text-muted-foreground">
@@ -240,7 +295,7 @@ export default function CreateRetreadBatchPage() {
           </p>
         </div>
         {selectedTires.length > 0 && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 ml-auto">
             <span className="text-sm text-muted-foreground">
               {selectedTires.length} tires selected
             </span>
@@ -540,32 +595,6 @@ export default function CreateRetreadBatchPage() {
                         </div>
                       </CardContent>
                     </Card>
-
-                    <Card>
-                      <CardContent className="pt-6">
-                        <h4 className="font-medium mb-2">Cost Estimate</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span>Average cost per tire:</span>
-                            <span className="font-medium">
-                              {formatCurrency(selectedSupplier.average_retread_cost)}
-                            </span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Number of tires:</span>
-                            <span className="font-medium">{selectedTires.length}</span>
-                          </div>
-                          <div className="border-t pt-2">
-                            <div className="flex justify-between font-bold">
-                              <span>Estimated Total:</span>
-                              <span>
-                                {formatCurrency((selectedSupplier.average_retread_cost || 0) * selectedTires.length)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
                   </>
                 )}
 
@@ -635,12 +664,12 @@ export default function CreateRetreadBatchPage() {
                           <span>Total Tires:</span>
                           <span className="font-medium">{selectedTires.length}</span>
                         </div>
-                        <div className="flex justify-between">
+                        {/* <div className="flex justify-between">
                           <span>Estimated Cost:</span>
                           <span className="font-medium">
                             {formatCurrency((selectedSupplier?.average_retread_cost || 0) * selectedTires.length)}
                           </span>
-                        </div>
+                        </div> */}
                       </div>
                     </CardContent>
                   </Card>
@@ -660,6 +689,28 @@ export default function CreateRetreadBatchPage() {
                   </Card>
                 </div>
 
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="expected-date">Expected Completion Date</Label>
+                    <Input
+                      id="expected-date"
+                      type="date"
+                      value={expectedDate}
+                      onChange={(e) => setExpectedDate(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes</Label>
+                    <Input
+                      id="notes"
+                      placeholder="Add any additional notes..."
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                    />
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2">
                   <Button
                     variant="outline"
@@ -667,8 +718,8 @@ export default function CreateRetreadBatchPage() {
                   >
                     Back
                   </Button>
-                  <Button onClick={handleNext}>
-                    Continue to Send Details
+                  <Button onClick={handleNext} disabled={submitting}>
+                    {submitting ? "Sending..." : "Send for Retreading"}
                   </Button>
                 </div>
               </div>
@@ -679,3 +730,4 @@ export default function CreateRetreadBatchPage() {
     </div>
   );
 }
+

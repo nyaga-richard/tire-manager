@@ -183,6 +183,15 @@ export default function GRNsPage() {
         setGrns(data.data || []);
         setTotal(data.pagination?.total || 0);
         setTotalPages(data.pagination?.total_pages || 1);
+        
+        // Debug: Log all GRNs and their invoiced status
+        console.log("Fetched GRNs:", data.data.map((grn: GRN) => ({
+          id: grn.id,
+          grn_number: grn.grn_number,
+          supplier_invoice_number: grn.supplier_invoice_number,
+          accounting_transaction_id: grn.accounting_transaction_id,
+          isInvoiced: !!(grn.supplier_invoice_number || grn.accounting_transaction_id)
+        })));
       } else {
         throw new Error(data.message || "Failed to load GRNs");
       }
@@ -202,24 +211,14 @@ export default function GRNsPage() {
   };
 
   const handleInvoiceSupplier = (grn: GRN) => {
-    if (!hasPermission("accounting.create")) {
-      toast.error("You don't have permission to record supplier invoices");
+    if (!hasPermission("accounting.create") && !hasPermission("accounting.view")) {
+      toast.error("You don't have permission to access invoice information");
       return;
     }
 
-    if (grn.supplier_invoice_number) {
-      toast.info(`GRN ${grn.grn_number} already invoiced (${grn.supplier_invoice_number})`);
-      setSelectedGrnForInvoice(grn);
-      setShowInvoiceModal(true);
-      return;
-    }
-    
-    if (grn.accounting_transaction_id) {
-      toast.info(`GRN ${grn.grn_number} already has accounting entries`);
-      setSelectedGrnForInvoice(grn);
-      setShowInvoiceModal(true);
-      return;
-    }
+    // Check if GRN is already invoiced
+    const invoiced = isGRNInvoiced(grn);
+    console.log("Opening invoice modal for GRN:", grn.grn_number, "Invoiced:", invoiced);
     
     setSelectedGrnForInvoice(grn);
     setShowInvoiceModal(true);
@@ -293,9 +292,29 @@ export default function GRNsPage() {
     }
   };
 
-  // Check if GRN is invoiced
+  // Check if GRN is invoiced - IMPROVED WITH DEBUGGING
   const isGRNInvoiced = (grn: GRN) => {
-    return !!grn.supplier_invoice_number || !!grn.accounting_transaction_id;
+    // Check multiple conditions
+    const hasInvoiceNumber = grn.supplier_invoice_number !== null && 
+                             grn.supplier_invoice_number !== undefined && 
+                             grn.supplier_invoice_number !== "";
+    
+    const hasAccountingTransaction = grn.accounting_transaction_id !== null && 
+                                     grn.accounting_transaction_id !== undefined && 
+                                     grn.accounting_transaction_id !== "";
+    
+    const invoiced = hasInvoiceNumber || hasAccountingTransaction;
+    
+    // Debug log for this specific GRN
+    console.log(`GRN ${grn.grn_number} (ID: ${grn.id}) - Invoice check:`, {
+      supplier_invoice_number: grn.supplier_invoice_number,
+      accounting_transaction_id: grn.accounting_transaction_id,
+      hasInvoiceNumber,
+      hasAccountingTransaction,
+      invoiced
+    });
+    
+    return invoiced;
   };
 
   const getInvoiceStatusBadge = (grn: GRN) => {
@@ -303,7 +322,7 @@ export default function GRNsPage() {
       return (
         <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800 text-xs">
           <CheckCircle className="h-3 w-3 mr-1" />
-          Invoiced
+          Invoiced: {grn.supplier_invoice_number}
         </Badge>
       );
     } else if (grn.accounting_transaction_id) {
@@ -698,6 +717,15 @@ export default function GRNsPage() {
                     {grns.map((grn) => {
                       const invoiced = isGRNInvoiced(grn);
                       
+                      // Debug log for each row
+                      console.log(`Rendering GRN ${grn.grn_number}:`, {
+                        invoiced,
+                        supplier_invoice_number: grn.supplier_invoice_number,
+                        accounting_transaction_id: grn.accounting_transaction_id,
+                        showCreateButton: !invoiced && grn.status === "COMPLETED",
+                        showViewButton: invoiced
+                      });
+                      
                       return (
                         <TableRow key={grn.id}>
                           <TableCell className="font-medium">
@@ -756,7 +784,7 @@ export default function GRNsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex justify-end gap-1">
-                              {/* View Details Button */}
+                              {/* View Details Button - Always shown */}
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -775,8 +803,11 @@ export default function GRNsPage() {
                                 </Tooltip>
                               </TooltipProvider>
 
-                              {/* Invoice Button - Conditionally shown */}
-                              {!invoiced && grn.status === "COMPLETED" && (
+                              {/* 
+                                INVOICE BUTTONS - IMPROVED LOGIC WITH STRICT CHECKING
+                              */}
+                              {!invoiced && grn.status === "COMPLETED" ? (
+                                // Show "Create Invoice" button for COMPLETED, non-invoiced GRNs
                                 <PermissionGuard permissionCode="accounting.create" action="create" fallback={null}>
                                   <TooltipProvider>
                                     <Tooltip>
@@ -785,7 +816,7 @@ export default function GRNsPage() {
                                           variant="outline"
                                           size="icon"
                                           onClick={() => handleInvoiceSupplier(grn)}
-                                          className="h-8 w-8"
+                                          className="h-8 w-8 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
                                           title="Record Supplier Invoice"
                                         >
                                           <Receipt className="h-4 w-4 text-blue-600" />
@@ -797,10 +828,8 @@ export default function GRNsPage() {
                                     </Tooltip>
                                   </TooltipProvider>
                                 </PermissionGuard>
-                              )}
-
-                              {/* View Invoice Button - for already invoiced GRNs */}
-                              {invoiced && (
+                              ) : invoiced ? (
+                                // Show "View Invoice" button for invoiced GRNs
                                 <PermissionGuard permissionCode="accounting.view" action="view" fallback={null}>
                                   <TooltipProvider>
                                     <Tooltip>
@@ -809,7 +838,7 @@ export default function GRNsPage() {
                                           variant="outline"
                                           size="icon"
                                           onClick={() => handleInvoiceSupplier(grn)}
-                                          className="h-8 w-8"
+                                          className="h-8 w-8 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
                                           title={getInvoiceButtonTooltip(grn)}
                                         >
                                           <Calculator className="h-4 w-4 text-green-600" />
@@ -821,7 +850,7 @@ export default function GRNsPage() {
                                     </Tooltip>
                                   </TooltipProvider>
                                 </PermissionGuard>
-                              )}
+                              ) : null}
                             </div>
                           </TableCell>
                         </TableRow>
