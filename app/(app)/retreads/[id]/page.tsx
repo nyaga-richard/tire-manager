@@ -6,7 +6,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -42,8 +41,13 @@ import {
   Printer,
   Edit,
   AlertCircle,
+  Loader2,
+  Send,
 } from "lucide-react";
-import Link from "next/link";
+import { toast } from "sonner";
+
+// API Base URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/retread";
 
 interface RetreadOrder {
   id: number;
@@ -57,7 +61,7 @@ interface RetreadOrder {
     email: string;
     address: string;
   };
-  status: "DRAFT" | "SENT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "RECEIVED";
+  status: "DRAFT" | "SENT" | "IN_PROGRESS" | "COMPLETED" | "CANCELLED" | "RECEIVED" | "PARTIALLY_RECEIVED";
   total_tires: number;
   total_cost: number;
   expected_completion_date?: string;
@@ -73,17 +77,20 @@ interface RetreadOrder {
     brand: string;
     model: string;
     depth_remaining: number;
-    previous_retread_count: number;
+    retread_count: number; // Changed from previous_retread_count
     status: string;
     notes?: string;
+    item_status?: string; // Status in the order (PENDING, RECEIVED, REJECTED)
+    cost?: number; // Added cost field
   }>;
   timeline: Array<{
     id: number;
     status: string;
-    date: string;
+    created_at: string; // Changed from date to match DB
     note?: string;
     user: string;
   }>;
+  received_tires?: number; // Added for summary
 }
 
 export default function RetreadOrderDetailsPage() {
@@ -91,6 +98,7 @@ export default function RetreadOrderDetailsPage() {
   const params = useParams();
   const [order, setOrder] = useState<RetreadOrder | null>(null);
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (params.id) {
@@ -100,35 +108,100 @@ export default function RetreadOrderDetailsPage() {
 
   const fetchOrderDetails = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/retread-orders/${params.id}`);
+      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${params.id}`);
       const data = await response.json();
       if (data.success) {
         setOrder(data.data);
+      } else {
+        toast.error(data.error || "Failed to fetch order details");
       }
     } catch (error) {
       console.error("Error fetching order details:", error);
+      toast.error("Failed to fetch order details");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleSendOrder = async () => {
+    if (!confirm("Are you sure you want to mark this order as sent? This will update tire statuses to 'At Retread Supplier'.")) {
+      return;
+    }
+
+    try {
+      setSending(true);
+      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${params.id}/send`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: 1, // Get from auth context
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Order marked as sent successfully");
+        fetchOrderDetails(); // Refresh data
+      } else {
+        toast.error(data.error || "Failed to send order");
+      }
+    } catch (error) {
+      console.error("Error sending order:", error);
+      toast.error("Failed to send order");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleCancelOrder = async () => {
+    if (!confirm("Are you sure you want to cancel this order? This action cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/retread-orders/${params.id}/cancel`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          user_id: 1, // Get from auth context
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        toast.success("Order cancelled successfully");
+        fetchOrderDetails();
+      } else {
+        toast.error(data.error || "Failed to cancel order");
+      }
+    } catch (error) {
+      console.error("Error cancelling order:", error);
+      toast.error("Failed to cancel order");
+    }
+  };
+
   const getStatusBadge = (status: string) => {
-    const statusConfig = {
+    const statusConfig: Record<string, { color: string; icon: any }> = {
       DRAFT: { color: "bg-gray-100 text-gray-800 border-gray-200", icon: Clock },
       SENT: { color: "bg-blue-100 text-blue-800 border-blue-200", icon: Truck },
       IN_PROGRESS: { color: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: Package },
       COMPLETED: { color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle },
       CANCELLED: { color: "bg-red-100 text-red-800 border-red-200", icon: XCircle },
       RECEIVED: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: CheckCircle },
+      PARTIALLY_RECEIVED: { color: "bg-orange-100 text-orange-800 border-orange-200", icon: AlertCircle },
     };
     
-    const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.DRAFT;
+    const config = statusConfig[status] || statusConfig.DRAFT;
     const Icon = config.icon;
     
     return (
       <Badge variant="outline" className={config.color}>
         <Icon className="h-3 w-3 mr-1" />
-        {status.replace("_", " ")}
+        {status.replace(/_/g, " ")}
       </Badge>
     );
   };
@@ -140,7 +213,7 @@ export default function RetreadOrderDetailsPage() {
       currency: "KSH",
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount).replace("KSH", "KSH");
+    }).format(amount);
   };
 
   const formatDate = (date?: string) => {
@@ -172,8 +245,12 @@ export default function RetreadOrderDetailsPage() {
   };
 
   const handleDownloadPDF = () => {
-    // Implement PDF download
-    console.log("Download PDF");
+    // You can implement PDF download here
+    toast.info("PDF download feature coming soon");
+  };
+
+  const handleEditOrder = () => {
+    router.push(`/retreads/${params.id}/edit`);
   };
 
   if (loading) {
@@ -181,7 +258,7 @@ export default function RetreadOrderDetailsPage() {
       <div className="container mx-auto py-6 max-w-7xl">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
             <p className="mt-2 text-muted-foreground">Loading order details...</p>
           </div>
         </div>
@@ -206,6 +283,11 @@ export default function RetreadOrderDetailsPage() {
     );
   }
 
+  // Calculate received tires count
+  const receivedTiresCount = order.tires?.filter(t => t.item_status === "RECEIVED").length || 0;
+  const rejectedTiresCount = order.tires?.filter(t => t.item_status === "REJECTED").length || 0;
+  const pendingTiresCount = order.tires?.filter(t => !t.item_status || t.item_status === "PENDING").length || 0;
+
   return (
     <div className="container mx-auto py-6 space-y-6 max-w-7xl">
       {/* Header */}
@@ -227,24 +309,55 @@ export default function RetreadOrderDetailsPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={handlePrint}>
+          <Button variant="outline" onClick={handlePrint} size="sm">
             <Printer className="mr-2 h-4 w-4" />
             Print
           </Button>
-          <Button variant="outline" onClick={handleDownloadPDF}>
+          <Button variant="outline" onClick={handleDownloadPDF} size="sm">
             <Download className="mr-2 h-4 w-4" />
             PDF
           </Button>
-          {order.status === "COMPLETED" && (
-            <Button onClick={handleReceiveOrder}>
+          
+          {/* Status-based actions */}
+          {order.status === "DRAFT" && (
+            <>
+              <Button 
+                onClick={handleSendOrder} 
+                disabled={sending}
+                size="sm"
+              >
+                {sending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="mr-2 h-4 w-4" />
+                )}
+                Send Order
+              </Button>
+              <Button variant="outline" onClick={handleEditOrder} size="sm">
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </Button>
+            </>
+          )}
+          
+          {order.status === "SENT" && (
+            <Button onClick={handleReceiveOrder} size="sm">
               <CheckCircle className="mr-2 h-4 w-4" />
               Receive Order
             </Button>
           )}
-          {order.status === "DRAFT" && (
-            <Button>
-              <Edit className="mr-2 h-4 w-4" />
-              Edit Order
+          
+          {order.status === "IN_PROGRESS" && (
+            <Button onClick={handleReceiveOrder} size="sm">
+              <CheckCircle className="mr-2 h-4 w-4" />
+              Complete Receiving
+            </Button>
+          )}
+          
+          {(order.status === "COMPLETED" || order.status === "PARTIALLY_RECEIVED") && (
+            <Button onClick={handleReceiveOrder} size="sm">
+              <CheckCircle className="mr-2 h-4 w-4" />
+              {order.status === "COMPLETED" ? "Receive Order" : "Continue Receiving"}
             </Button>
           )}
         </div>
@@ -266,15 +379,31 @@ export default function RetreadOrderDetailsPage() {
                     <dd className="text-sm font-medium">{order.total_tires}</dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-sm">Total Cost:</dt>
-                    <dd className="text-sm font-medium">{formatCurrency(order.total_cost)}</dd>
+                    <dt className="text-sm">Received:</dt>
+                    <dd className="text-sm font-medium text-green-600">{receivedTiresCount}</dd>
                   </div>
                   <div className="flex justify-between">
-                    <dt className="text-sm">Cost per Tire:</dt>
-                    <dd className="text-sm font-medium">
-                      {formatCurrency(order.total_cost / order.total_tires)}
-                    </dd>
+                    <dt className="text-sm">Rejected:</dt>
+                    <dd className="text-sm font-medium text-red-600">{rejectedTiresCount}</dd>
                   </div>
+                  <div className="flex justify-between">
+                        <dt className="text-sm">Pending:</dt>
+                    <dd className="text-sm font-medium text-yellow-600">{pendingTiresCount}</dd>
+                  </div>
+                  {order.total_cost > 0 && (
+                    <>
+                      <div className="flex justify-between border-t pt-2 mt-2">
+                        <dt className="text-sm font-medium">Total Cost:</dt>
+                        <dd className="text-sm font-bold">{formatCurrency(order.total_cost)}</dd>
+                      </div>
+                      <div className="flex justify-between">
+                        <dt className="text-sm">Cost per Tire:</dt>
+                        <dd className="text-sm font-medium">
+                          {formatCurrency(order.total_cost / order.total_tires)}
+                        </dd>
+                      </div>
+                    </>
+                  )}
                 </dl>
               </div>
               
@@ -326,25 +455,33 @@ export default function RetreadOrderDetailsPage() {
                 <Building className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 <div>
                   <h4 className="font-medium">{order.supplier.name}</h4>
-                  <p className="text-sm text-muted-foreground">{order.supplier.contact_person}</p>
+                  {order.supplier.contact_person && (
+                    <p className="text-sm text-muted-foreground">{order.supplier.contact_person}</p>
+                  )}
                 </div>
               </div>
               
               <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm">{order.supplier.phone}</span>
-                </div>
+                {order.supplier.phone && (
+                  <div className="flex items-center gap-3">
+                    <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm">{order.supplier.phone}</span>
+                  </div>
+                )}
                 
-                <div className="flex items-center gap-3">
-                  <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="text-sm truncate">{order.supplier.email}</span>
-                </div>
+                {order.supplier.email && (
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm truncate">{order.supplier.email}</span>
+                  </div>
+                )}
                 
-                <div className="flex items-start gap-3">
-                  <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
-                  <span className="text-sm">{order.supplier.address}</span>
-                </div>
+                {order.supplier.address && (
+                  <div className="flex items-start gap-3">
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <span className="text-sm">{order.supplier.address}</span>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -360,7 +497,7 @@ export default function RetreadOrderDetailsPage() {
           </TabsTrigger>
           <TabsTrigger value="timeline">
             <Calendar className="mr-2 h-4 w-4" />
-            Timeline
+            Timeline ({order.timeline.length})
           </TabsTrigger>
         </TabsList>
 
@@ -381,8 +518,10 @@ export default function RetreadOrderDetailsPage() {
                       <TableHead>Size</TableHead>
                       <TableHead>Brand</TableHead>
                       <TableHead>Model</TableHead>
-                      <TableHead>Depth Remaining</TableHead>
+                      <TableHead>Depth</TableHead>
                       <TableHead>Prev Retreads</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Cost</TableHead>
                       <TableHead>Notes</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -394,12 +533,30 @@ export default function RetreadOrderDetailsPage() {
                         </TableCell>
                         <TableCell>{tire.size}</TableCell>
                         <TableCell>{tire.brand}</TableCell>
-                        <TableCell>{tire.model}</TableCell>
+                        <TableCell>{tire.model || "-"}</TableCell>
                         <TableCell>{tire.depth_remaining}mm</TableCell>
                         <TableCell>
-                          <Badge variant="outline">{tire.previous_retread_count}</Badge>
+                          <Badge variant="outline">{tire.retread_count || 0}</Badge>
                         </TableCell>
-                        <TableCell className="max-w-[200px] truncate">
+                        <TableCell>
+                          {tire.item_status ? (
+                            <Badge variant="outline" className={
+                              tire.item_status === "RECEIVED" ? "bg-green-100 text-green-800" :
+                              tire.item_status === "REJECTED" ? "bg-red-100 text-red-800" :
+                              "bg-yellow-100 text-yellow-800"
+                            }>
+                              {tire.item_status}
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-gray-100">
+                              Pending
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {tire.cost ? formatCurrency(tire.cost) : "-"}
+                        </TableCell>
+                        <TableCell className="max-w-[150px] truncate">
                           {tire.notes || "-"}
                         </TableCell>
                       </TableRow>
@@ -421,35 +578,82 @@ export default function RetreadOrderDetailsPage() {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {order.timeline.map((event, index) => (
-                  <div key={event.id} className="flex gap-4">
-                    <div className="relative">
-                      <div className="w-2 h-2 mt-2 rounded-full bg-primary" />
-                      {index < order.timeline.length - 1 && (
-                        <div className="absolute top-4 left-1 w-0.5 h-full -translate-x-1/2 bg-border" />
-                      )}
-                    </div>
-                    <div className="flex-1 pb-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        {getStatusBadge(event.status)}
-                        <span className="text-sm text-muted-foreground">
-                          {formatDateTime(event.date)}
-                        </span>
-                      </div>
-                      {event.note && (
-                        <p className="text-sm text-muted-foreground mt-1">{event.note}</p>
-                      )}
-                      <p className="text-xs text-muted-foreground mt-1">
-                        by {event.user}
-                      </p>
-                    </div>
+                {order.timeline.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No timeline events yet
                   </div>
-                ))}
+                ) : (
+                  order.timeline.map((event, index) => (
+                    <div key={event.id} className="flex gap-4">
+                      <div className="relative">
+                        <div className="w-2 h-2 mt-2 rounded-full bg-primary" />
+                        {index < order.timeline.length - 1 && (
+                          <div className="absolute top-4 left-1 w-0.5 h-full -translate-x-1/2 bg-border" />
+                        )}
+                      </div>
+                      <div className="flex-1 pb-4">
+                        <div className="flex items-center gap-2 mb-1">
+                          {getStatusBadge(event.status)}
+                          <span className="text-sm text-muted-foreground">
+                            {formatDateTime(event.created_at)}
+                          </span>
+                        </div>
+                        {event.note && (
+                          <p className="text-sm text-muted-foreground mt-1">{event.note}</p>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          by {event.user}
+                        </p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Summary Cards for Received/Rejected */}
+      {(order.status === "RECEIVED" || order.status === "PARTIALLY_RECEIVED") && (
+        <div className="grid gap-4 md:grid-cols-3">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Received Tires</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-green-600">{receivedTiresCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {((receivedTiresCount / order.total_tires) * 100).toFixed(0)}% of order
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Rejected Tires</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-600">{rejectedTiresCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {((rejectedTiresCount / order.total_tires) * 100).toFixed(0)}% of order
+              </p>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Pending Tires</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-600">{pendingTiresCount}</div>
+              <p className="text-xs text-muted-foreground">
+                {((pendingTiresCount / order.total_tires) * 100).toFixed(0)}% of order
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
