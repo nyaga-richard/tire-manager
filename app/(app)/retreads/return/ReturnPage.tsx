@@ -51,7 +51,7 @@ import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
 // API Base URL constant
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Tire {
   id: number;
