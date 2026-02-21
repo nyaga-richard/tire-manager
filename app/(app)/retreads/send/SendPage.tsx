@@ -50,6 +50,9 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
+// API Base URL constant
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
 interface Tire {
   id: number;
   serial_number: string;
@@ -107,7 +110,7 @@ export default function SendForRetreadingPage() {
     try {
       const tireIds = tireIdsParam?.split(",").map(Number);
       const promises = tireIds?.map(id =>
-        fetch(`http://localhost:5000/api/tires/${id}`).then(res => res.json())
+        fetch(`${API_BASE_URL}/api/tires/${id}`).then(res => res.json())
       );
       
       const results = await Promise.all(promises || []);
@@ -117,31 +120,31 @@ export default function SendForRetreadingPage() {
     }
   };
 
-const fetchSuppliers = async () => {
-  try {
-    setLoading(true);
-    const response = await fetch("http://localhost:5000/api/suppliers");
-    const data: Supplier[] = await response.json(); // API returns raw array
+  const fetchSuppliers = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_BASE_URL}/api/suppliers`);
+      const data: Supplier[] = await response.json(); // API returns raw array
 
-    if (Array.isArray(data) && data.length > 0) {
-      setSuppliers(data);
-      setFormData(prev => ({
-        ...prev,
-        supplier_id: data[0].id.toString(), // auto-select first supplier
-      }));
-    } else {
-      console.warn("No suppliers found", data);
+      if (Array.isArray(data) && data.length > 0) {
+        setSuppliers(data);
+        setFormData(prev => ({
+          ...prev,
+          supplier_id: data[0].id.toString(), // auto-select first supplier
+        }));
+      } else {
+        console.warn("No suppliers found", data);
+        setSuppliers([]);
+        setFormData(prev => ({ ...prev, supplier_id: "" }));
+      }
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
       setSuppliers([]);
       setFormData(prev => ({ ...prev, supplier_id: "" }));
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Error fetching suppliers:", error);
-    setSuppliers([]);
-    setFormData(prev => ({ ...prev, supplier_id: "" }));
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const handleInputChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -172,7 +175,7 @@ const fetchSuppliers = async () => {
         notes: formData.notes,
       };
 
-      const response = await fetch("http://localhost:5000/api/tires/retread/send-batch", {
+      const response = await fetch(`${API_BASE_URL}/api/tires/retread/send-batch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

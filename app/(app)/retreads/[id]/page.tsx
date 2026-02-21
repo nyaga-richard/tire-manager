@@ -47,7 +47,7 @@ import {
 import { toast } from "sonner";
 
 // API Base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000/api/retread";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface RetreadOrder {
   id: number;

@@ -50,6 +50,9 @@ import {
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
 
+// API Base URL constant
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
 interface Tire {
   id: number;
   serial_number: string;
@@ -95,7 +98,7 @@ export default function ReturnFromRetreadingPage() {
 
   const fetchTiresAtRetreader = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/tires/retread/status?status=AT_RETREAD_SUPPLIER");
+      const response = await fetch(`${API_BASE_URL}/api/tires/retread/status?status=AT_RETREAD_SUPPLIER`);
       const data = await response.json();
       if (data.success) {
         setTiresAtRetreader(data.data.filter((t: any) => t.status === "AT_RETREAD_SUPPLIER"));
@@ -151,7 +154,7 @@ export default function ReturnFromRetreadingPage() {
         new_serial_numbers: selectedTires.map(id => newSerialNumbers[id] || "")
       };
 
-      const response = await fetch("http://localhost:5000/api/tires/retread/return-batch", {
+      const response = await fetch(`${API_BASE_URL}/api/tires/retread/return-batch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),

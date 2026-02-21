@@ -73,7 +73,7 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 
 // API Base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface RetreadOrder {
   id: number;
