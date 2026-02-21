@@ -42,6 +42,9 @@ import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/hooks/useSettings";
 
+// API Base URL constant
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
 export interface PurchaseOrder {
   id: number;
   po_number: string;
@@ -130,7 +133,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
     
     try {
       setLoading(true);
-      const response = await fetch(`http://localhost:5000/api/purchase-orders/${orderId}`);
+      const response = await fetch(`${API_BASE_URL}/api/purchase-orders/${orderId}`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch order: ${response.status} ${response.statusText}`);
