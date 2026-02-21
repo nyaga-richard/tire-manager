@@ -133,7 +133,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
     
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/purchase-orders/${orderId}`);
+      const response = await fetch(`/api/purchase-orders/${orderId}`);
       
       if (!response.ok) {
         throw new Error(`Failed to fetch order: ${response.status} ${response.statusText}`);
