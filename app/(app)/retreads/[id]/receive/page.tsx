@@ -64,6 +64,7 @@ interface ReceivedTire {
 export default function ReceiveRetreadOrderPage() {
   const router = useRouter();
   const params = useParams();
+  const { authFetch } = useAuth();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -196,137 +197,152 @@ export default function ReceiveRetreadOrderPage() {
   };
 
   const handleSubmit = async () => {
-    if (!validateForm()) {
-      return;
+  if (!validateForm()) {
+    return;
+  }
+
+  setSubmitting(true);
+  try {
+    const receivedTires = tires.filter(t => t.status === "RECEIVED");
+    const rejectedTires = tires.filter(t => t.status === "REJECTED");
+
+    // Prepare data for retread order
+    const receivedTiresForOrder = receivedTires.map(t => ({
+      tire_id: t.tire_id,
+      status: t.status,
+      quality: t.quality,
+      received_depth: t.received_depth,
+      cost: costs[t.tire_id],
+      notes: t.notes || "",
+    }));
+
+    const rejectedTiresForOrder = rejectedTires.map(t => ({
+      tire_id: t.tire_id,
+      status: t.status,
+      quality: t.quality,
+      received_depth: 0,
+      cost: 0,
+      notes: t.notes || "",
+    }));
+
+    // Step 1: Submit to retread endpoint
+    const receiveResponse = await fetch(`${RETREAD_API}/retread-orders/${params.id}/receive`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        // Add authorization header if needed for retread endpoint
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      body: JSON.stringify({
+        received_date: receivedDate,
+        notes: notes || "",
+        tires: [...receivedTiresForOrder, ...rejectedTiresForOrder],
+        user_id: user?.id || 1,
+      }),
+    });
+
+    const receiveData = await receiveResponse.json();
+    
+    if (!receiveData.success) {
+      throw new Error(receiveData.error || receiveData.message || "Error receiving order");
     }
 
-    setSubmitting(true);
-    try {
-      const receivedTires = tires.filter(t => t.status === "RECEIVED");
-      const rejectedTires = tires.filter(t => t.status === "REJECTED");
+    // Step 2: If there are received tires, create a GRN
+    if (receivedTires.length > 0) {
+      // First, generate a GRN number - FIX: Add authorization header
+      const numberResponse = await fetch(`${GRN_API}/generate-number`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      
+      if (!numberResponse.ok) {
+        throw new Error(`Failed to generate GRN number: ${numberResponse.status}`);
+      }
+      
+      const numberData = await numberResponse.json();
+      const grnNumber = numberData.success ? numberData.data : `GRN-${Date.now()}`;
 
-      // Prepare data for retread order
-      const receivedTiresForOrder = receivedTires.map(t => ({
-        tire_id: t.tire_id,
-        status: t.status,
-        quality: t.quality,
-        received_depth: t.received_depth,
-        cost: costs[t.tire_id],
+      // Prepare GRN items in the format expected by your backend
+      const grnItems = receivedTires.map(t => ({
+        item_id: t.tire_id,
+        item_type: "TIRE",
+        item_code: t.serial_number,
+        item_name: `${t.brand} ${t.model}`.trim() || "Retread Tire",
+        description: `Retread tire - Size: ${t.size}, Quality: ${t.quality}, Depth: ${t.received_depth}mm`,
+        quantity: 1,
+        unit_price: costs[t.tire_id],
+        total_price: costs[t.tire_id],
+        received_quantity: 1,
+        accepted_quantity: 1,
+        rejected_quantity: 0,
+        condition: t.quality,
         notes: t.notes || "",
+        batch_number: `RT-${orderNumber}-${t.serial_number}`,
+        manufacturing_date: new Date().toISOString().split('T')[0],
+        expiry_date: null
       }));
 
-      const rejectedTiresForOrder = rejectedTires.map(t => ({
-        tire_id: t.tire_id,
-        status: t.status,
-        quality: t.quality,
-        received_depth: 0,
-        cost: 0,
-        notes: t.notes || "",
-      }));
+      // Create GRN - FIX: Add proper headers with authorization
+      const grnPayload = {
+        grn_number: grnNumber,
+        po_id: parseInt(params.id as string),
+        po_number: orderNumber,
+        receipt_date: receivedDate,
+        received_by: user?.id || 1,
+        supplier_id: supplierId,
+        supplier_name: supplierName,
+        delivery_note_number: deliveryNoteNumber || null,
+        vehicle_number: vehicleNumber || null,
+        driver_name: driverName || null,
+        notes: grnNotes || notes || `Retread tires received from order #${orderNumber}`,
+        items: grnItems,
+        total_value: receivedTires.reduce((sum, t) => sum + (costs[t.tire_id] || 0), 0),
+        item_count: receivedTires.length,
+        total_quantity: receivedTires.length,
+        status: "COMPLETED"
+      };
 
-      // Step 1: Submit to retread endpoint
-      const receiveResponse = await fetch(`${RETREAD_API}/retread-orders/${params.id}/receive`, {
+      console.log("Sending GRN payload:", grnPayload);
+
+      // FIX: Add proper headers with authorization token
+      const grnResponse = await fetch(`${GRN_API}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "Authorization": `Bearer ${localStorage.getItem('token')}`
         },
-        body: JSON.stringify({
-          received_date: receivedDate,
-          notes: notes || "",
-          tires: [...receivedTiresForOrder, ...rejectedTiresForOrder],
-          user_id: user?.id || 1,
-        }),
+        body: JSON.stringify(grnPayload),
       });
 
-      const receiveData = await receiveResponse.json();
-      
-      if (!receiveData.success) {
-        throw new Error(receiveData.error || receiveData.message || "Error receiving order");
+      // Check if response is ok before trying to parse JSON
+      if (!grnResponse.ok) {
+        const errorText = await grnResponse.text();
+        console.error("GRN creation failed with status:", grnResponse.status, "Response:", errorText);
+        throw new Error(`GRN creation failed: ${grnResponse.status} ${grnResponse.statusText}`);
       }
 
-      // Step 2: If there are received tires, create a GRN
-      if (receivedTires.length > 0) {
-        // First, generate a GRN number
-        const numberResponse = await fetch(`${GRN_API}/generate-number`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('token')}`
-          }
-        });
-        const numberData = await numberResponse.json();
-        const grnNumber = numberData.success ? numberData.data : `GRN-${Date.now()}`;
-
-        // Prepare GRN items in the format expected by your backend
-        const grnItems = receivedTires.map(t => ({
-          item_id: t.tire_id,
-          item_type: "TIRE",
-          item_code: t.serial_number,
-          item_name: `${t.brand} ${t.model}`,
-          description: `Retread tire - Size: ${t.size}, Quality: ${t.quality}, Depth: ${t.received_depth}mm`,
-          quantity: 1,
-          unit_price: costs[t.tire_id],
-          total_price: costs[t.tire_id],
-          received_quantity: 1,
-          accepted_quantity: 1,
-          rejected_quantity: 0,
-          condition: t.quality,
-          notes: t.notes || "",
-          batch_number: `RT-${orderNumber}-${t.serial_number}`,
-          manufacturing_date: new Date().toISOString().split('T')[0],
-          expiry_date: null
-        }));
-
-        // Create GRN
-        const grnPayload = {
-          grn_number: grnNumber,
-          po_id: parseInt(params.id as string),
-          po_number: orderNumber,
-          receipt_date: receivedDate,
-          received_by: user?.id || 1,
-          supplier_id: supplierId,
-          supplier_name: supplierName,
-          delivery_note_number: deliveryNoteNumber || null,
-          vehicle_number: vehicleNumber || null,
-          driver_name: driverName || null,
-          notes: grnNotes || notes || `Retread tires received from order #${orderNumber}`,
-          items: grnItems,
-          total_value: receivedTires.reduce((sum, t) => sum + (costs[t.tire_id] || 0), 0),
-          item_count: receivedTires.length,
-          total_quantity: receivedTires.length,
-          status: "COMPLETED"
-        };
-
-        console.log("Sending GRN payload:", grnPayload);
-
-        const grnResponse = await fetch(`${GRN_API}`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "credentials": "include",
-          },
-          body: JSON.stringify(grnPayload),
-        });
-
-        const grnData = await grnResponse.json();
-        console.log("GRN Response:", grnData);
-        
-        if (grnData.success) {
-          toast.success(`GRN #${grnData.data?.grn_number || grnNumber} created successfully`);
-        } else {
-          console.error("GRN creation failed:", grnData);
-          toast.warning(`Order received but GRN creation failed: ${grnData.message || 'Unknown error'}`);
-        }
-      }
-
-      toast.success(receiveData.message || "Order received successfully");
-      router.push(`/retreads/${params.id}`);
+      const grnData = await grnResponse.json();
+      console.log("GRN Response:", grnData);
       
-    } catch (error: any) {
-      console.error("Error processing receipt:", error);
-      toast.error(error.message || "Failed to process receipt");
-    } finally {
-      setSubmitting(false);
+      if (grnData.success) {
+        toast.success(`GRN #${grnData.data?.grn_number || grnNumber} created successfully`);
+      } else {
+        console.error("GRN creation failed:", grnData);
+        toast.warning(`Order received but GRN creation failed: ${grnData.message || 'Unknown error'}`);
+      }
     }
-  };
+
+    toast.success(receiveData.message || "Order received successfully");
+    router.push(`/retreads/${params.id}`);
+    
+  } catch (error: any) {
+    console.error("Error processing receipt:", error);
+    toast.error(error.message || "Failed to process receipt");
+  } finally {
+    setSubmitting(false);
+  }
+};
 
   const getQualityColor = (quality: string) => {
     switch (quality) {

@@ -206,7 +206,7 @@ export default function CreateRetreadBatchPage() {
       
       // Filter to only show RETREAD type suppliers for retread orders
       const retreadSuppliers = suppliersData.filter(
-        supplier => supplier.type === "RETREAD"
+        supplier => supplier.type === "TIRE"
       );
       
       setSuppliers(retreadSuppliers);
