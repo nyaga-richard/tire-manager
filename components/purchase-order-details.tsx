@@ -43,7 +43,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSettings } from "@/hooks/useSettings";
 
 // API Base URL constant
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ;
 
 export interface PurchaseOrder {
   id: number;
@@ -423,7 +423,7 @@ export default function PurchaseOrderDetails({ orderId, isOpen, onClose }: Purch
             {/* Modal Header */}
             <div className="flex items-center justify-between p-6 border-b no-print">
               <div>
-                <h2 className="text-2xl font-bold">Purchase Order Details</h2>
+                <h2 className="text-2xl font-bold">Purchase Orders Details</h2>
                 <p className="text-muted-foreground">
                   {order ? `PO: ${order.po_number}` : "Loading..."}
                 </p>
