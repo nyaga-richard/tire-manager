@@ -59,7 +59,7 @@ import {
 import { toast } from "sonner";
 
 // API Base URL - make sure this points to your backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Tire {
   id: number;
