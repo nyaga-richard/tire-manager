@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import { Plus, Save, X, Check, Shield } from "lucide-react";
 
 // API base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ;
 
 interface Permission {
   id: number;

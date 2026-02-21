@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { User, Save, X, Shield } from "lucide-react";
 
 // API base URL
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ;
 
 interface RoleOption {
   value: number;

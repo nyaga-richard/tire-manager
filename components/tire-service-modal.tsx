@@ -32,6 +32,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 
+// API Base URL constant
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+
 interface Tire {
   id: number;
   serial_number: string;
@@ -217,7 +220,7 @@ export default function TireServiceModal({
   const fetchVehicleData = async () => {
     try {
       setLoadingVehicle(true);
-      const response = await fetch(`http://localhost:5000/api/vehicles/${vehicleId}`);
+      const response = await fetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`);
       if (response.ok) {
         const data: VehicleData = await response.json();
         // The API returns positions with codes like "FL", "FR", "RL1", "RL2", "RR1", "RR2"
@@ -253,7 +256,7 @@ export default function TireServiceModal({
 
   const fetchAvailableTires = async () => {
     try {
-      const response = await fetch("http://localhost:5000/api/tires/");
+      const response = await fetch(`${API_BASE_URL}/api/tires/`);
       if (response.ok) {
         const data = await response.json();
         console.log("Fetched tires data:", data);
@@ -280,7 +283,7 @@ export default function TireServiceModal({
   const fetchTireSizes = async () => {
     try {
       setLoadingSizes(true);
-      const response = await fetch("http://localhost:5000/api/inventory/by-size");
+      const response = await fetch(`${API_BASE_URL}/api/inventory/by-size`);
       if (response.ok) {
         const data = await response.json();
         setTireSizes(data);
@@ -500,7 +503,7 @@ const handleSubmit = async (e: React.FormEvent) => {
 
           console.log("Sending install payload:", installPayload);
 
-          const response = await fetch(`http://localhost:5000/api/tires/install`, {
+          const response = await fetch(`${API_BASE_URL}/api/tires/install`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -554,7 +557,7 @@ const handleSubmit = async (e: React.FormEvent) => {
 
         console.log("Sending remove payload:", removePayload);
 
-        const response = await fetch(`http://localhost:5000/api/tires/remove`, {
+        const response = await fetch(`${API_BASE_URL}/api/tires/remove`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -602,7 +605,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       
       // Remove from position tire
       swapOperations.push(
-        fetch(`http://localhost:5000/api/tires/remove`, {
+        fetch(`${API_BASE_URL}/api/tires/remove`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -620,7 +623,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       
       if (toTire) {
         swapOperations.push(
-          fetch(`http://localhost:5000/api/tires/remove`, {
+          fetch(`${API_BASE_URL}/api/tires/remove`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -650,7 +653,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       
       // Install 'from' tire to 'to' position - use position_code
       installOperations.push(
-        fetch(`http://localhost:5000/api/tires/install`, {
+        fetch(`${API_BASE_URL}/api/tires/install`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -669,7 +672,7 @@ const handleSubmit = async (e: React.FormEvent) => {
       
       if (toTire) {
         installOperations.push(
-          fetch(`http://localhost:5000/api/tires/install`, {
+          fetch(`${API_BASE_URL}/api/tires/install`, {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
