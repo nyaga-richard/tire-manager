@@ -394,7 +394,7 @@ export default function ReceiveRetreadOrderPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Receive Retread test Order</h1>
+          <h1 className="text-3xl font-bold tracking-tight">Receive Retread Order</h1>
           <p className="text-muted-foreground">
             Order #{orderNumber} {supplierName && `- ${supplierName}`}
           </p>
