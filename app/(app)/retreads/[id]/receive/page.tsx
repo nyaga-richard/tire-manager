@@ -231,7 +231,8 @@ export default function ReceiveRetreadOrderPage() {
       headers: {
         "Content-Type": "application/json",
         // Add authorization header if needed for retread endpoint
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
+        //'Authorization': `Bearer ${localStorage.getItem('token')}`
+        credentials: "include" 
       },
       body: JSON.stringify({
         received_date: receivedDate,
@@ -395,7 +396,7 @@ export default function ReceiveRetreadOrderPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Receive Retread Order</h1>
           <p className="text-muted-foreground">
-            Order #{orderNumber} {supplierName && `- ${supplierName}`}
+            Order test #{orderNumber} {supplierName && `- ${supplierName}`}
           </p>
         </div>
       </div>
