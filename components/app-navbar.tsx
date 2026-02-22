@@ -33,7 +33,7 @@ import {
   Repeat,
   ShoppingCart,
 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext"; // Fixed import path
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import {
@@ -41,6 +41,7 @@ import {
   SheetContent,
   SheetTrigger,
   SheetClose,
+  SheetTitle,
 } from "@/components/ui/sheet";
 
 // Navigation items with icons and permissions
@@ -316,6 +317,9 @@ export default function AppNavbar() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="right" className="w-[280px] sm:w-[350px] p-0">
+                {/* Hidden title for accessibility - required by Radix UI */}
+                <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
+                
                 <div className="flex flex-col h-full">
                   {/* User info */}
                   <div className="p-4 border-b">
