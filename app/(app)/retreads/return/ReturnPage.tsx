@@ -255,7 +255,7 @@ export default function ReturnFromRetreadingPage() {
                                 onCheckedChange={handleSelectAll}
                               />
                             </TableHead>
-                            <TableHead>Serial #</TableHead>
+                            <TableHead>Serial test#</TableHead>
                             <TableHead>Size</TableHead>
                             <TableHead>Brand & Model</TableHead>
                             <TableHead>Supplier</TableHead>
