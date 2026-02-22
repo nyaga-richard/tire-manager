@@ -27,12 +27,14 @@ import {
   Save, 
   Car, 
   AlertCircle,
-  RefreshCw 
+  RefreshCw,
+  Info
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -192,12 +194,12 @@ export default function EditVehiclePage() {
   // Show loading state
   if (authLoading || fetchLoading) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
-          <div>
-            <Skeleton className="h-8 w-64 mb-2" />
-            <Skeleton className="h-4 w-48" />
+          <div className="flex-1">
+            <Skeleton className="h-8 w-48 sm:w-64 mb-2" />
+            <Skeleton className="h-4 w-36 sm:w-48" />
           </div>
         </div>
         <Card>
@@ -205,20 +207,21 @@ export default function EditVehiclePage() {
             <Skeleton className="h-6 w-48 mb-2" />
             <Skeleton className="h-4 w-64" />
           </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {Array.from({ length: 5 }).map((_, i) => (
+          <CardContent className="space-y-4 sm:space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
+              {Array.from({ length: 7 }).map((_, i) => (
                 <div key={i} className="space-y-2">
                   <Skeleton className="h-4 w-24" />
-                  <Skeleton className="h-10 w-full" />
+                  <Skeleton className="h-9 sm:h-10 w-full" />
                 </div>
               ))}
             </div>
+            <Skeleton className="h-20 sm:h-24 w-full" />
           </CardContent>
-          <CardFooter className="border-t px-6 py-4">
-            <div className="flex justify-between w-full">
-              <Skeleton className="h-10 w-24" />
-              <Skeleton className="h-10 w-32" />
+          <CardFooter className="border-t px-4 sm:px-6 py-3 sm:py-4">
+            <div className="flex justify-between w-full gap-3">
+              <Skeleton className="h-9 sm:h-10 w-20 sm:w-24" />
+              <Skeleton className="h-9 sm:h-10 w-28 sm:w-32" />
             </div>
           </CardFooter>
         </Card>
@@ -234,27 +237,27 @@ export default function EditVehiclePage() {
   // Show permission denied
   if (!hasPermission("vehicle.edit")) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/vehicles">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Edit Vehicle</h1>
-            <p className="text-muted-foreground">Edit vehicle details</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">Edit Vehicle</h1>
+            <p className="text-sm sm:text-base text-muted-foreground truncate">Edit vehicle details</p>
           </div>
         </div>
 
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <AlertDescription className="ml-2 text-sm">
             You don't have permission to edit vehicles. Please contact your administrator.
           </AlertDescription>
         </Alert>
 
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/vehicles">Return to Vehicles</Link>
         </Button>
       </div>
@@ -264,35 +267,36 @@ export default function EditVehiclePage() {
   // Show error state
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/vehicles">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Edit Vehicle</h1>
-            <p className="text-muted-foreground">Edit vehicle details</p>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">Edit Vehicle</h1>
+            <p className="text-sm sm:text-base text-muted-foreground truncate">Edit vehicle details</p>
           </div>
         </div>
 
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
+          <AlertCircle className="h-4 w-4 shrink-0" />
+          <AlertDescription className="ml-2 text-sm">
             {error}
           </AlertDescription>
         </Alert>
 
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-2">
           <Button 
             onClick={() => window.location.reload()} 
             variant="outline"
+            className="w-full sm:w-auto"
           >
             <RefreshCw className="mr-2 h-4 w-4" />
             Try Again
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href="/vehicles">Cancel</Link>
           </Button>
         </div>
@@ -302,36 +306,38 @@ export default function EditVehiclePage() {
 
   return (
     <PermissionGuard permissionCode="vehicle.edit" action="edit">
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        {/* Header */}
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/vehicles">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">
-              Edit Vehicle: {formData.vehicle_number}
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
+              Edit Vehicle
             </h1>
-            <p className="text-muted-foreground">
-              Update vehicle information for your fleet
+            <p className="text-sm sm:text-base text-muted-foreground truncate">
+              {formData.vehicle_number}
             </p>
           </div>
         </div>
 
         <Card>
           <form onSubmit={handleSubmit}>
-            <CardHeader>
-              <CardTitle>Vehicle Information</CardTitle>
-              <CardDescription>
-                Edit the details of the vehicle. Fields marked with * are required.
+            <CardHeader className="pb-3 sm:pb-4">
+              <CardTitle className="text-base sm:text-lg">Vehicle Information</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
+                Edit the details of the vehicle. Fields marked with <span className="text-red-500">*</span> are required.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <CardContent className="space-y-4 sm:space-y-6 p-4 sm:p-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 {/* Vehicle Number */}
-                <div className="space-y-2">
-                  <Label htmlFor="vehicle_number">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="vehicle_number" className="text-xs sm:text-sm font-medium">
                     Vehicle Number <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -342,17 +348,17 @@ export default function EditVehiclePage() {
                     placeholder="e.g., KCZ 025J"
                     required
                     disabled={loading}
-                    className="uppercase"
+                    className="uppercase h-9 sm:h-10 text-sm"
                     maxLength={20}
                   />
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
                     License plate or registration number
                   </p>
                 </div>
 
                 {/* Make */}
-                <div className="space-y-2">
-                  <Label htmlFor="make">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="make" className="text-xs sm:text-sm font-medium">
                     Make <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -363,13 +369,13 @@ export default function EditVehiclePage() {
                     placeholder="e.g., ISUZU"
                     required
                     disabled={loading}
-                    className="uppercase"
+                    className="uppercase h-9 sm:h-10 text-sm"
                   />
                 </div>
 
                 {/* Model */}
-                <div className="space-y-2">
-                  <Label htmlFor="model">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="model" className="text-xs sm:text-sm font-medium">
                     Model <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -380,24 +386,24 @@ export default function EditVehiclePage() {
                     placeholder="e.g., FRR"
                     required
                     disabled={loading}
-                    className="uppercase"
+                    className="uppercase h-9 sm:h-10 text-sm"
                   />
                 </div>
 
                 {/* Year */}
-                <div className="space-y-2">
-                  <Label htmlFor="year">Year</Label>
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="year" className="text-xs sm:text-sm font-medium">Year</Label>
                   <Select
                     value={formData.year?.toString()}
                     onValueChange={(value) => handleSelectChange("year", value)}
                     disabled={loading}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 sm:h-10 text-sm">
                       <SelectValue placeholder="Select year" />
                     </SelectTrigger>
                     <SelectContent>
                       {years.map((year) => (
-                        <SelectItem key={year} value={year.toString()}>
+                        <SelectItem key={year} value={year.toString()} className="text-sm">
                           {year}
                         </SelectItem>
                       ))}
@@ -406,8 +412,8 @@ export default function EditVehiclePage() {
                 </div>
 
                 {/* Wheel Configuration */}
-                <div className="space-y-2">
-                  <Label htmlFor="wheel_config">
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="wheel_config" className="text-xs sm:text-sm font-medium">
                     Wheel Configuration <span className="text-red-500">*</span>
                   </Label>
                   <Select
@@ -416,25 +422,25 @@ export default function EditVehiclePage() {
                     disabled={loading}
                     required
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 sm:h-10 text-sm">
                       <SelectValue placeholder="Select configuration" />
                     </SelectTrigger>
                     <SelectContent>
                       {wheelConfigs.map((config) => (
-                        <SelectItem key={config} value={config}>
+                        <SelectItem key={config} value={config} className="text-sm">
                           {config}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-[10px] sm:text-xs text-muted-foreground">
                     Determines the number of wheels and axles
                   </p>
                 </div>
 
                 {/* Current Odometer */}
-                <div className="space-y-2">
-                  <Label htmlFor="current_odometer">Current Odometer (km)</Label>
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="current_odometer" className="text-xs sm:text-sm font-medium">Current Odometer (km)</Label>
                   <Input
                     id="current_odometer"
                     name="current_odometer"
@@ -445,12 +451,13 @@ export default function EditVehiclePage() {
                     onChange={handleChange}
                     placeholder="e.g., 5000"
                     disabled={loading}
+                    className="h-9 sm:h-10 text-sm"
                   />
                 </div>
 
                 {/* Status */}
-                <div className="space-y-2">
-                  <Label htmlFor="status">Status</Label>
+                <div className="space-y-1.5 sm:space-y-2">
+                  <Label htmlFor="status" className="text-xs sm:text-sm font-medium">Status</Label>
                   <Select
                     value={formData.status}
                     onValueChange={(value: "ACTIVE" | "INACTIVE" | "MAINTENANCE") => 
@@ -458,45 +465,57 @@ export default function EditVehiclePage() {
                     }
                     disabled={loading}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="h-9 sm:h-10 text-sm">
                       <SelectValue placeholder="Select status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="ACTIVE">Active</SelectItem>
-                      <SelectItem value="INACTIVE">Inactive</SelectItem>
-                      <SelectItem value="MAINTENANCE">Maintenance</SelectItem>
+                      <SelectItem value="ACTIVE" className="text-sm">Active</SelectItem>
+                      <SelectItem value="INACTIVE" className="text-sm">Inactive</SelectItem>
+                      <SelectItem value="MAINTENANCE" className="text-sm">Maintenance</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
               </div>
 
-              {/* Help text */}
-              <div className="rounded-lg bg-muted p-4">
-                <div className="flex items-start gap-3">
-                  <Car className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div className="space-y-1">
-                    <p className="text-sm font-medium">Vehicle Information Tips</p>
-                    <p className="text-sm text-muted-foreground">
-                      • Vehicle numbers should be unique across your fleet<br />
-                      • Wheel configuration affects tire compatibility and positions<br />
-                      • Status changes will affect vehicle availability immediately
-                    </p>
+              {/* Help text - Mobile optimized */}
+              <div className="rounded-lg bg-muted/50 p-3 sm:p-4">
+                <div className="flex items-start gap-2 sm:gap-3">
+                  <Car className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground shrink-0 mt-0.5" />
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <p className="text-xs sm:text-sm font-medium">Vehicle Information Tips</p>
+                    <div className="text-[10px] sm:text-xs text-muted-foreground space-y-1">
+                      <p>• Vehicle numbers must be unique across your fleet</p>
+                      <p>• Wheel configuration affects tire compatibility</p>
+                      <p>• Status changes affect vehicle availability immediately</p>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Last Updated Info */}
-              <div className="text-xs text-muted-foreground border-t pt-4">
-                Last edited by: {user?.full_name || user?.username || "Unknown"} • 
-                Vehicle ID: {vehicleId}
+              <div className="text-[10px] sm:text-xs text-muted-foreground border-t pt-4">
+                <span className="block sm:inline">
+                  Last edited by: {user?.full_name || user?.username || "Unknown"}
+                </span>
+                <span className="hidden sm:inline mx-2">•</span>
+                <span className="block sm:inline">
+                  Vehicle ID: {vehicleId}
+                </span>
+              </div>
+
+              {/* Required fields note for mobile */}
+              <div className="text-[10px] sm:text-xs text-muted-foreground text-right">
+                <span className="text-red-500">*</span> Required fields
               </div>
             </CardContent>
-            <CardFooter className="flex justify-between border-t px-6 py-4">
+            
+            <CardFooter className="flex flex-col-reverse sm:flex-row sm:justify-between gap-3 sm:gap-0 border-t px-4 sm:px-6 py-3 sm:py-4">
               <Button
                 variant="outline"
                 type="button"
                 asChild
                 disabled={loading}
+                className="w-full sm:w-auto h-9 sm:h-10 text-sm"
               >
                 <Link href="/vehicles">Cancel</Link>
               </Button>
@@ -508,16 +527,17 @@ export default function EditVehiclePage() {
                   !formData.make.trim() || 
                   !formData.model.trim()
                 }
+                className="w-full sm:w-auto h-9 sm:h-10 text-sm"
               >
                 {loading ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Saving Changes...
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2 shrink-0"></div>
+                    <span className="truncate">Saving Changes...</span>
                   </>
                 ) : (
                   <>
-                    <Save className="mr-2 h-4 w-4" />
-                    Save Changes
+                    <Save className="mr-2 h-4 w-4 shrink-0" />
+                    <span className="truncate">Save Changes</span>
                   </>
                 )}
               </Button>
