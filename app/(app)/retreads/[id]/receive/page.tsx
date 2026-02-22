@@ -196,7 +196,7 @@ export default function ReceiveRetreadOrderPage() {
     return true;
   };
 
-  const handleSubmit = async () => {
+const handleSubmit = async () => {
   if (!validateForm()) {
     return;
   }
@@ -225,13 +225,11 @@ export default function ReceiveRetreadOrderPage() {
       notes: t.notes || "",
     }));
 
-    // Step 1: Submit to retread endpoint
-    const receiveResponse = await fetch(`${RETREAD_API}/retread-orders/${params.id}/receive`, {
+    // Step 1: Submit to retread endpoint - use authFetch for consistent authentication
+    const receiveResponse = await authFetch(`${RETREAD_API}/retread-orders/${params.id}/receive`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Add authorization header if needed for retread endpoint
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
       },
       body: JSON.stringify({
         received_date: receivedDate,
@@ -249,12 +247,8 @@ export default function ReceiveRetreadOrderPage() {
 
     // Step 2: If there are received tires, create a GRN
     if (receivedTires.length > 0) {
-      // First, generate a GRN number - FIX: Add authorization header
-      const numberResponse = await fetch(`${GRN_API}/generate-number`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
+      // Use authFetch for all API calls to maintain consistent authentication
+      const numberResponse = await authFetch(`${GRN_API}/generate-number`);
       
       if (!numberResponse.ok) {
         throw new Error(`Failed to generate GRN number: ${numberResponse.status}`);
@@ -263,7 +257,7 @@ export default function ReceiveRetreadOrderPage() {
       const numberData = await numberResponse.json();
       const grnNumber = numberData.success ? numberData.data : `GRN-${Date.now()}`;
 
-      // Prepare GRN items in the format expected by your backend
+      // Prepare GRN items
       const grnItems = receivedTires.map(t => ({
         item_id: t.tire_id,
         item_type: "TIRE",
@@ -283,7 +277,7 @@ export default function ReceiveRetreadOrderPage() {
         expiry_date: null
       }));
 
-      // Create GRN - FIX: Add proper headers with authorization
+      // Create GRN - use authFetch for consistent authentication
       const grnPayload = {
         grn_number: grnNumber,
         po_id: parseInt(params.id as string),
@@ -305,17 +299,14 @@ export default function ReceiveRetreadOrderPage() {
 
       console.log("Sending GRN payload:", grnPayload);
 
-      // FIX: Add proper headers with authorization token
-      const grnResponse = await fetch(`${GRN_API}`, {
+      const grnResponse = await authFetch(`${GRN_API}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem('token')}`
         },
         body: JSON.stringify(grnPayload),
       });
 
-      // Check if response is ok before trying to parse JSON
       if (!grnResponse.ok) {
         const errorText = await grnResponse.text();
         console.error("GRN creation failed with status:", grnResponse.status, "Response:", errorText);

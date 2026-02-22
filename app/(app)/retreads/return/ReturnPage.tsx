@@ -157,6 +157,7 @@ export default function ReturnFromRetreadingPage() {
       const response = await fetch(`${API_BASE_URL}/api/tires/retread/return-batch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
 
@@ -254,7 +255,7 @@ export default function ReturnFromRetreadingPage() {
                                 onCheckedChange={handleSelectAll}
                               />
                             </TableHead>
-                            <TableHead>Serial #</TableHead>
+                            <TableHead>Serial test#</TableHead>
                             <TableHead>Size</TableHead>
                             <TableHead>Brand & Model</TableHead>
                             <TableHead>Supplier</TableHead>
