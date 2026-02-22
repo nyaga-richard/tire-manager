@@ -48,6 +48,7 @@ const RETREAD_API = `${API_BASE_URL}/api/retread`;
 const GRN_API = `${API_BASE_URL}/api/grn`;
 
 interface ReceivedTire {
+  order_item_id: number;  // Added - this is the PO item ID from retread_order_items
   tire_id: number;
   serial_number: string;
   size: string;
@@ -59,6 +60,7 @@ interface ReceivedTire {
   status: "PENDING" | "RECEIVED" | "REJECTED";
   cost?: number;
   previous_retread_count?: number;
+  estimated_cost?: number;
 }
 
 export default function ReceiveRetreadOrderPage() {
@@ -101,28 +103,31 @@ export default function ReceiveRetreadOrderPage() {
         setSupplierId(data.data.supplier_id);
         
         interface ApiTireData {
+          order_item_id: number;  // Added
           tire_id: number;
           serial_number: string;
           size: string;
           brand: string;
           model: string | null;
           previous_retread_count: number;
-          tread_depth_new: number;
+          received_depth: number;
           estimated_cost?: number;
         }
         
         const initialTires: ReceivedTire[] = data.data.tires.map((tire: ApiTireData) => ({
+          order_item_id: tire.order_item_id,  // Store the PO item ID
           tire_id: tire.tire_id,
           serial_number: tire.serial_number,
           size: tire.size,
           brand: tire.brand,
           model: tire.model || "",
-          received_depth: tire.tread_depth_new || 16,
+          received_depth: tire.received_depth || 16,
           quality: "GOOD",
           notes: "",
           status: "PENDING",
           cost: tire.estimated_cost || 0,
-          previous_retread_count: tire.previous_retread_count || 0
+          previous_retread_count: tire.previous_retread_count || 0,
+          estimated_cost: tire.estimated_cost || 0
         }));
         
         setTires(initialTires);
@@ -193,147 +198,179 @@ export default function ReceiveRetreadOrderPage() {
       return false;
     }
 
+    // Check for missing order_item_ids (PO item IDs)
+    const missingOrderItemIds = receivedTires.some(t => !t.order_item_id);
+    if (missingOrderItemIds) {
+      toast.error("Some tires are missing PO item IDs. Cannot create GRN. Please contact support.");
+      console.error("Missing order_item_ids for received tires:", 
+        receivedTires.filter(t => !t.order_item_id).map(t => t.serial_number));
+      return false;
+    }
+
     return true;
   };
 
-const handleSubmit = async () => {
-  if (!validateForm()) {
-    return;
-  }
-
-  setSubmitting(true);
-  try {
-    const receivedTires = tires.filter(t => t.status === "RECEIVED");
-    const rejectedTires = tires.filter(t => t.status === "REJECTED");
-
-    // Prepare data for retread order
-    const receivedTiresForOrder = receivedTires.map(t => ({
-      tire_id: t.tire_id,
-      status: t.status,
-      quality: t.quality,
-      received_depth: t.received_depth,
-      cost: costs[t.tire_id],
-      notes: t.notes || "",
-    }));
-
-    const rejectedTiresForOrder = rejectedTires.map(t => ({
-      tire_id: t.tire_id,
-      status: t.status,
-      quality: t.quality,
-      received_depth: 0,
-      cost: 0,
-      notes: t.notes || "",
-    }));
-
-    // Step 1: Submit to retread endpoint - use authFetch for consistent authentication
-    const receiveResponse = await authFetch(`${RETREAD_API}/retread-orders/${params.id}/receive`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        received_date: receivedDate,
-        notes: notes || "",
-        tires: [...receivedTiresForOrder, ...rejectedTiresForOrder],
-        user_id: user?.id || 1,
-      }),
-    });
-
-    const receiveData = await receiveResponse.json();
-    
-    if (!receiveData.success) {
-      throw new Error(receiveData.error || receiveData.message || "Error receiving order");
+  const handleSubmit = async () => {
+    if (!validateForm()) {
+      return;
     }
 
-    // Step 2: If there are received tires, create a GRN
-    if (receivedTires.length > 0) {
-      // Use authFetch for all API calls to maintain consistent authentication
-      const numberResponse = await authFetch(`${GRN_API}/generate-number`);
-      
-      if (!numberResponse.ok) {
-        throw new Error(`Failed to generate GRN number: ${numberResponse.status}`);
-      }
-      
-      const numberData = await numberResponse.json();
-      const grnNumber = numberData.success ? numberData.data : `GRN-${Date.now()}`;
+    setSubmitting(true);
+    try {
+      const receivedTires = tires.filter(t => t.status === "RECEIVED");
+      const rejectedTires = tires.filter(t => t.status === "REJECTED");
 
-      // Prepare GRN items
-      const grnItems = receivedTires.map(t => ({
-        item_id: t.tire_id,
-        item_type: "TIRE",
-        item_code: t.serial_number,
-        item_name: `${t.brand} ${t.model}`.trim() || "Retread Tire",
-        description: `Retread tire - Size: ${t.size}, Quality: ${t.quality}, Depth: ${t.received_depth}mm`,
-        quantity: 1,
-        unit_price: costs[t.tire_id],
-        total_price: costs[t.tire_id],
-        received_quantity: 1,
-        accepted_quantity: 1,
-        rejected_quantity: 0,
-        condition: t.quality,
+      // Prepare data for retread order
+      const receivedTiresForOrder = receivedTires.map(t => ({
+        tire_id: t.tire_id,
+        status: t.status,
+        quality: t.quality,
+        received_depth: t.received_depth,
+        cost: costs[t.tire_id],
         notes: t.notes || "",
-        batch_number: `RT-${orderNumber}-${t.serial_number}`,
-        manufacturing_date: new Date().toISOString().split('T')[0],
-        expiry_date: null
       }));
 
-      // Create GRN - use authFetch for consistent authentication
-      const grnPayload = {
-        grn_number: grnNumber,
-        po_id: parseInt(params.id as string),
-        po_number: orderNumber,
-        receipt_date: receivedDate,
-        received_by: user?.id || 1,
-        supplier_id: supplierId,
-        supplier_name: supplierName,
-        delivery_note_number: deliveryNoteNumber || null,
-        vehicle_number: vehicleNumber || null,
-        driver_name: driverName || null,
-        notes: grnNotes || notes || `Retread tires received from order #${orderNumber}`,
-        items: grnItems,
-        total_value: receivedTires.reduce((sum, t) => sum + (costs[t.tire_id] || 0), 0),
-        item_count: receivedTires.length,
-        total_quantity: receivedTires.length,
-        status: "COMPLETED"
-      };
+      const rejectedTiresForOrder = rejectedTires.map(t => ({
+        tire_id: t.tire_id,
+        status: t.status,
+        quality: t.quality,
+        received_depth: 0,
+        cost: 0,
+        notes: t.notes || "",
+      }));
 
-      console.log("Sending GRN payload:", grnPayload);
-
-      const grnResponse = await authFetch(`${GRN_API}`, {
+      // Step 1: Submit to retread endpoint
+      const receiveResponse = await authFetch(`${RETREAD_API}/retread-orders/${params.id}/receive`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(grnPayload),
+        body: JSON.stringify({
+          received_date: receivedDate,
+          notes: notes || "",
+          tires: [...receivedTiresForOrder, ...rejectedTiresForOrder],
+          user_id: user?.id || 1,
+        }),
       });
 
-      if (!grnResponse.ok) {
-        const errorText = await grnResponse.text();
-        console.error("GRN creation failed with status:", grnResponse.status, "Response:", errorText);
-        throw new Error(`GRN creation failed: ${grnResponse.status} ${grnResponse.statusText}`);
+      const receiveData = await receiveResponse.json();
+      
+      if (!receiveData.success) {
+        throw new Error(receiveData.error || receiveData.message || "Error receiving order");
       }
 
-      const grnData = await grnResponse.json();
-      console.log("GRN Response:", grnData);
+      // Step 2: If there are received tires, create a GRN
+      if (receivedTires.length > 0) {
+        await createGRN(receivedTires, rejectedTires);
+      }
+
+      toast.success(receiveData.message || "Order received successfully");
+      router.push(`/retreads/${params.id}`);
       
-      if (grnData.success) {
-        toast.success(`GRN #${grnData.data?.grn_number || grnNumber} created successfully`);
-      } else {
-        console.error("GRN creation failed:", grnData);
-        toast.warning(`Order received but GRN creation failed: ${grnData.message || 'Unknown error'}`);
+    } catch (error: any) {
+      console.error("Error processing receipt:", error);
+      toast.error(error.message || "Failed to process receipt");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedTire[]) => {
+  try {
+    // Generate GRN number (optional, backend can generate)
+    const numberResponse = await authFetch(`${GRN_API}/generate-number`);
+    
+    if (!numberResponse.ok) {
+      throw new Error(`Failed to generate GRN number: ${numberResponse.status}`);
+    }
+    
+    const numberData = await numberResponse.json();
+    const grnNumber = numberData.success ? numberData.data : `GRN-${Date.now()}`;
+
+    // Generate a default invoice number if not provided
+    const defaultInvoiceNumber = deliveryNoteNumber || `INV-${orderNumber}-${Date.now()}`;
+
+    // Prepare GRN items for received tires - ENSURE BRAND IS INCLUDED
+    const grnItems = receivedTires.map(t => ({
+      retread_order_item_id: t.order_item_id,
+      quantity_received: 1,
+      unit_cost: costs[t.tire_id], // Use unit_cost as expected by model
+      batch_number: `RT-${orderNumber}-${t.serial_number}`,
+      brand: t.brand, // Explicitly include brand
+      serial_numbers: [t.serial_number],
+      notes: t.notes || "",
+      condition: t.quality
+    }));
+
+    // Prepare GRN items for rejected tires - ENSURE BRAND IS INCLUDED
+    const rejectedGrnItems = rejectedTires.map(t => ({
+      retread_order_item_id: t.order_item_id,
+      quantity_received: 1,
+      unit_cost: 0,
+      batch_number: `RT-${orderNumber}-${t.serial_number}-REJECTED`,
+      brand: t.brand, // Explicitly include brand
+      serial_numbers: [t.serial_number],
+      notes: t.notes || "Rejected during receiving",
+      condition: "REJECTED"
+    }));
+
+    // Combine all items
+    const allGrnItems = [...grnItems, ...rejectedGrnItems];
+
+    // Create GRN payload for retread order - REMOVE po_id and po_number
+    const grnPayload = {
+      retread_order_id: parseInt(params.id as string),
+      receipt_date: receivedDate,
+      received_by: user?.id || 1,
+      supplier_id: supplierId,
+      supplier_invoice_number: defaultInvoiceNumber,
+      delivery_note_number: deliveryNoteNumber || null,
+      vehicle_number: vehicleNumber || null,
+      driver_name: driverName || null,
+      notes: grnNotes || notes || `Retread tires received from order #${orderNumber}`,
+      items: allGrnItems
+    };
+
+    console.log("Sending GRN payload for retread:", JSON.stringify(grnPayload, null, 2));
+
+    // Create GRN
+    const grnResponse = await authFetch(`${GRN_API}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(grnPayload),
+    });
+
+    if (!grnResponse.ok) {
+      const errorText = await grnResponse.text();
+      console.error("GRN creation failed with status:", grnResponse.status, "Response:", errorText);
+      
+      try {
+        const errorData = JSON.parse(errorText);
+        throw new Error(errorData.message || `GRN creation failed: ${grnResponse.status}`);
+      } catch (e) {
+        throw new Error(`GRN creation failed: ${grnResponse.status} ${grnResponse.statusText}`);
       }
     }
 
-    toast.success(receiveData.message || "Order received successfully");
-    router.push(`/retreads/${params.id}`);
+    const grnData = await grnResponse.json();
+    console.log("GRN Response:", grnData);
     
-  } catch (error: any) {
-    console.error("Error processing receipt:", error);
-    toast.error(error.message || "Failed to process receipt");
-  } finally {
-    setSubmitting(false);
+    if (grnData.success) {
+      toast.success(`GRN #${grnData.data?.grnNumber || grnNumber} created successfully`);
+    } else {
+      console.error("GRN creation failed:", grnData);
+      toast.warning(`Order received but GRN creation failed: ${grnData.message || 'Unknown error'}`);
+    }
+  } catch (error) {
+    console.error("Error creating GRN:", error);
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    toast.warning(`Order received but GRN creation failed: ${errorMessage}`);
+    // Don't throw - we still want to complete the order receipt
   }
 };
+
 
   const getQualityColor = (quality: string) => {
     switch (quality) {
@@ -553,6 +590,11 @@ const handleSubmit = async () => {
                             <div className="text-xs text-muted-foreground">
                               Prev retreads: {tire.previous_retread_count || 0}
                             </div>
+                            {tire.order_item_id && (
+                              <div className="text-xs text-blue-600">
+                                Item ID: {tire.order_item_id}
+                              </div>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
