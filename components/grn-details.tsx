@@ -7,6 +7,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -17,6 +24,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import {
   FileText,
   Building,
@@ -33,9 +47,17 @@ import {
   ExternalLink,
   ArrowLeft,
   Loader2,
+  ChevronDown,
+  ChevronRight,
+  Info,
+  MapPin,
+  Phone,
+  Mail,
+  Barcode,
+  Layers,
 } from "lucide-react";
-import { toast } from "sonner";
 import Link from "next/link";
+import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 
@@ -106,12 +128,162 @@ interface GRNDetailsProps {
   onOpenChange: (open: boolean) => void;
 }
 
+// Mobile GRN Item Card
+const MobileGRNItemCard = ({ 
+  item, 
+  formatCurrency 
+}: { 
+  item: GRNItem; 
+  formatCurrency: (amount: number) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const itemTotal = item.quantity_received * item.unit_cost;
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="font-medium">{item.size || "N/A"}</div>
+            <div className="text-sm text-muted-foreground">
+              {item.brand || "N/A"} {item.model ? `/ ${item.model}` : ''}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+
+        {/* Basic Info */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-xs text-muted-foreground">Type</div>
+            <Badge variant="outline" className="capitalize text-xs">
+              {item.type?.toLowerCase() || "standard"}
+            </Badge>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">Quantity</div>
+            <div className="text-sm font-medium">{item.quantity_received}</div>
+          </div>
+        </div>
+
+        <div className="mt-2 flex justify-between items-center">
+          <div>
+            <div className="text-xs text-muted-foreground">Unit Cost</div>
+            <div className="text-sm">{formatCurrency(item.unit_cost)}</div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">Line Total</div>
+            <div className="text-sm font-bold text-primary">{formatCurrency(itemTotal)}</div>
+          </div>
+        </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            {item.batch_number && (
+              <div>
+                <div className="text-xs text-muted-foreground">Batch Number</div>
+                <div className="text-sm font-mono">{item.batch_number}</div>
+              </div>
+            )}
+
+            {item.serial_numbers && item.serial_numbers.length > 0 && (
+              <div>
+                <div className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                  <Barcode className="h-3 w-3" />
+                  Serial Numbers ({item.serial_numbers.length})
+                </div>
+                <div className="max-h-24 overflow-y-auto bg-muted/30 rounded p-2">
+                  {item.serial_numbers.map((sn, idx) => (
+                    <div key={idx} className="text-xs font-mono py-0.5 border-b last:border-0">
+                      {sn}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {item.notes && (
+              <div>
+                <div className="text-xs text-muted-foreground">Notes</div>
+                <div className="text-sm bg-muted/30 p-2 rounded mt-1">{item.notes}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// Mobile Tire Card
+const MobileTireCard = ({ 
+  tire, 
+  formatCurrency 
+}: { 
+  tire: Tire; 
+  formatCurrency: (amount: number) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <Card className="mb-2 last:mb-0">
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="font-mono text-xs font-medium truncate">{tire.serial_number}</div>
+            <div className="text-sm mt-1">{tire.size} • {tire.brand}</div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-6 w-6 p-0"
+          >
+            <ChevronDown className={`h-3 w-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+
+        {isExpanded && (
+          <div className="mt-2 pt-2 border-t text-xs space-y-1">
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Type:</span>
+              <span>{tire.type}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Cost:</span>
+              <span className="font-medium">{formatCurrency(tire.purchase_cost)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Status:</span>
+              <Badge variant="outline" className="text-[10px]">{tire.status}</Badge>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Location:</span>
+              <span>{tire.current_location}</span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 export function GRNDetails({ grnId, open, onOpenChange }: GRNDetailsProps) {
   const { user, hasPermission, authFetch } = useAuth();
   const [grn, setGrn] = useState<GRN | null>(null);
   const [loading, setLoading] = useState(true);
   const [printLoading, setPrintLoading] = useState(false);
   const [exportLoading, setExportLoading] = useState(false);
+  const [activeMobileTab, setActiveMobileTab] = useState<"items" | "tires">("items");
 
   useEffect(() => {
     if (open && grnId) {
@@ -689,7 +861,7 @@ Generated By: ${user?.full_name || user?.username || "System"}
           <DialogHeader>
             <DialogTitle>GRN Details</DialogTitle>
           </DialogHeader>
-          <div className="text-center py-8">
+          <div className="text-center py-8 px-4">
             <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
             <h3 className="text-lg font-medium">GRN Not Found</h3>
             <p className="text-muted-foreground mt-2">
@@ -708,283 +880,47 @@ Generated By: ${user?.full_name || user?.username || "System"}
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-6xl max-h-[90vh]">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => onOpenChange(false)}
-                className="h-8 w-8"
-              >
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
-              <div>
-                <DialogTitle className="flex items-center gap-2">
-                  <FileText className="h-5 w-5" />
-                  GRN: {grn.grn_number}
-                </DialogTitle>
-                <p className="text-sm text-muted-foreground">
-                  PO: {grn.po_number} • {formatDate(grn.receipt_date)}
-                </p>
-              </div>
+      <DialogContent className="sm:max-w-6xl max-h-[90vh] p-0 flex flex-col">
+        {/* Mobile Header */}
+        <div className="sm:hidden sticky top-0 bg-white dark:bg-gray-900 z-10 border-b p-4">
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onOpenChange(false)}
+              className="h-8 w-8"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex-1 min-w-0">
+              <h2 className="font-semibold truncate">GRN: {grn.grn_number}</h2>
+              <p className="text-xs text-muted-foreground truncate">
+                PO: {grn.po_number} • {formatDate(grn.receipt_date)}
+              </p>
             </div>
-            <Badge className={`flex items-center gap-1 ${getStatusColor(grn.status)}`}>
+            <Badge className={`flex items-center gap-1 text-xs ${getStatusColor(grn.status)}`}>
               {getStatusIcon(grn.status)}
-              {grn.status}
+              <span className="hidden xs:inline">{grn.status}</span>
             </Badge>
           </div>
-        </DialogHeader>
-
-        <div className="overflow-y-auto max-h-[calc(90vh-180px)] pr-2">
-          {/* Header Information */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-medium mb-2 flex items-center gap-2">
-                  <FileText className="h-4 w-4" />
-                  GRN Information
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">GRN Number:</span>
-                    <span className="font-medium">{grn.grn_number}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">PO Number:</span>
-                    <PermissionGuard permissionCode="po.view" action="view" fallback={
-                      <span className="font-medium">{grn.po_number}</span>
-                    }>
-                      <Link
-                        href={`/purchases/orders/${grn.po_id}`}
-                        className="font-medium text-blue-600 hover:underline flex items-center gap-1"
-                        target="_blank"
-                      >
-                        {grn.po_number}
-                        <ExternalLink className="h-3 w-3" />
-                      </Link>
-                    </PermissionGuard>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Receipt Date:</span>
-                    <div className="flex items-center gap-1">
-                      <Calendar className="h-3 w-3" />
-                      <span className="font-medium">{formatDate(grn.receipt_date)}</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Created:</span>
-                    <span className="font-medium">{formatDateTime(grn.created_at)}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="font-medium mb-2 flex items-center gap-2">
-                  <Building className="h-4 w-4" />
-                  Supplier Information
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Supplier:</span>
-                    <span className="font-medium">{grn.supplier_name}</span>
-                  </div>
-                  {grn.supplier_code && (
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Code:</span>
-                      <span className="font-medium">{grn.supplier_code}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <h3 className="font-medium mb-2 flex items-center gap-2">
-                  <Truck className="h-4 w-4" />
-                  Delivery Information
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Invoice No:</span>
-                    <span className="font-medium">{grn.supplier_invoice_number || "N/A"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Delivery Note:</span>
-                    <span className="font-medium">{grn.delivery_note_number || "N/A"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Vehicle:</span>
-                    <span className="font-medium">{grn.vehicle_number || "N/A"}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Driver:</span>
-                    <span className="font-medium">{grn.driver_name || "N/A"}</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="font-medium mb-2 flex items-center gap-2">
-                  <Package className="h-4 w-4" />
-                  Summary
-                </h3>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Items:</span>
-                    <span className="font-medium">{totalItems}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Quantity:</span>
-                    <span className="font-medium">{totalQuantity} tires</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Total Value:</span>
-                    <span className="font-medium">{formatCurrency(totalValue)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Received By:</span>
-                    <div className="flex items-center gap-1">
-                      <User className="h-3 w-3" />
-                      <span className="font-medium">{grn.received_by_name || "N/A"}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Received Items Table */}
-          <div className="mb-6">
-            <h3 className="font-medium mb-3">Received Items ({grn.items?.length || 0})</h3>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Size</TableHead>
-                    <TableHead>Brand/Model</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Unit Cost</TableHead>
-                    <TableHead>Total</TableHead>
-                    <TableHead>Serial Numbers</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {grn.items?.map((item) => (
-                    <TableRow key={item.id}>
-                      <TableCell className="font-medium">{item.size || "N/A"}</TableCell>
-                      <TableCell>
-                        <div>{item.brand || "N/A"}</div>
-                        {item.model && (
-                          <div className="text-sm text-muted-foreground">{item.model}</div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="capitalize">
-                          {item.type?.toLowerCase() || "standard"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{item.quantity_received}</TableCell>
-                      <TableCell>{formatCurrency(item.unit_cost)}</TableCell>
-                      <TableCell className="font-medium">
-                        {formatCurrency(item.quantity_received * item.unit_cost)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="max-h-20 overflow-y-auto">
-                          {item.serial_numbers?.map((sn, idx) => (
-                            <div key={idx} className="text-xs font-mono py-0.5">
-                              {sn}
-                            </div>
-                          )) || "N/A"}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  <TableRow className="bg-muted/50">
-                    <TableCell colSpan={5} className="text-right font-medium">
-                      Grand Total:
-                    </TableCell>
-                    <TableCell colSpan={2} className="font-bold text-lg">
-                      {formatCurrency(totalValue)}
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-          </div>
-
-          {/* Tires Table - Show ALL tires */}
-          {grn.tires && grn.tires.length > 0 && (
-            <div className="mb-6">
-              <h3 className="font-medium mb-3">
-                Tires Added to Inventory ({grn.tires.length} tires)
-              </h3>
-              <div className="rounded-md border max-h-96 overflow-y-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Serial Number</TableHead>
-                      <TableHead>Size</TableHead>
-                      <TableHead>Brand</TableHead>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Cost</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Location</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {grn.tires.map((tire) => (
-                      <TableRow key={tire.id}>
-                        <TableCell className="font-mono text-xs">{tire.serial_number}</TableCell>
-                        <TableCell>{tire.size}</TableCell>
-                        <TableCell>{tire.brand}</TableCell>
-                        <TableCell>{tire.type}</TableCell>
-                        <TableCell>{formatCurrency(tire.purchase_cost)}</TableCell>
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">{tire.status}</Badge>
-                        </TableCell>
-                        <TableCell>{tire.current_location}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
-
-          {/* Notes */}
-          {grn.notes && (
-            <div className="mb-6">
-              <h3 className="font-medium mb-2">Notes</h3>
-              <div className="p-3 bg-muted/30 rounded-md border">
-                <p className="text-sm">{grn.notes}</p>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Action Buttons */}
-        <div className="flex justify-between items-center pt-4 border-t">
-          <div className="text-sm text-muted-foreground">
-            GRN ID: {grn.id} • Created: {formatDate(grn.created_at)}
-          </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Mobile Action Buttons - At the top */}
+          <div className="flex gap-2 mt-3">
             <Button
               variant="outline"
               size="sm"
+              className="flex-1"
               onClick={handleCopyDetails}
             >
               <Copy className="mr-2 h-4 w-4" />
-              Copy Details
+              Copy
             </Button>
 
             <PermissionGuard permissionCode="grn.view" fallback={null}>
               <Button
                 variant="outline"
                 size="sm"
+                className="flex-1"
                 onClick={handleExport}
                 disabled={exportLoading}
               >
@@ -993,12 +929,13 @@ Generated By: ${user?.full_name || user?.username || "System"}
                 ) : (
                   <Download className="mr-2 h-4 w-4" />
                 )}
-                {exportLoading ? "Exporting..." : "Export CSV"}
+                {exportLoading ? "..." : "Export"}
               </Button>
             </PermissionGuard>
 
             <Button
               size="sm"
+              className="flex-1"
               onClick={handlePrint}
               disabled={printLoading}
             >
@@ -1007,8 +944,514 @@ Generated By: ${user?.full_name || user?.username || "System"}
               ) : (
                 <Printer className="mr-2 h-4 w-4" />
               )}
-              {printLoading ? "Printing..." : "Print GRN"}
+              {printLoading ? "..." : "Print"}
             </Button>
+          </div>
+        </div>
+
+        {/* Desktop Header */}
+        <div className="hidden sm:block border-b">
+          <DialogHeader className="px-6 pt-6 pb-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onOpenChange(false)}
+                  className="h-8 w-8"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+                <div>
+                  <DialogTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    GRN: {grn.grn_number}
+                  </DialogTitle>
+                  <p className="text-sm text-muted-foreground">
+                    PO: {grn.po_number} • {formatDate(grn.receipt_date)}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge className={`flex items-center gap-1 ${getStatusColor(grn.status)}`}>
+                  {getStatusIcon(grn.status)}
+                  {grn.status}
+                </Badge>
+                
+                {/* Desktop Action Buttons */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopyDetails}
+                  className="ml-2"
+                >
+                  <Copy className="mr-2 h-4 w-4" />
+                  Copy
+                </Button>
+
+                <PermissionGuard permissionCode="grn.view" fallback={null}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleExport}
+                    disabled={exportLoading}
+                  >
+                    {exportLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="mr-2 h-4 w-4" />
+                    )}
+                    {exportLoading ? "Exporting..." : "Export"}
+                  </Button>
+                </PermissionGuard>
+
+                <Button
+                  size="sm"
+                  onClick={handlePrint}
+                  disabled={printLoading}
+                >
+                  {printLoading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    <Printer className="mr-2 h-4 w-4" />
+                  )}
+                  {printLoading ? "Printing..." : "Print"}
+                </Button>
+              </div>
+            </div>
+          </DialogHeader>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {/* Desktop Grid Layout */}
+          <div className="hidden sm:block">
+            {/* Header Information */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-medium mb-2 flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    GRN Information
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">GRN Number:</span>
+                      <span className="font-medium">{grn.grn_number}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">PO Number:</span>
+                      <PermissionGuard permissionCode="po.view" action="view" fallback={
+                        <span className="font-medium">{grn.po_number}</span>
+                      }>
+                        <Link
+                          href={`/purchases/orders/${grn.po_id}`}
+                          className="font-medium text-blue-600 hover:underline flex items-center gap-1"
+                          target="_blank"
+                        >
+                          {grn.po_number}
+                          <ExternalLink className="h-3 w-3" />
+                        </Link>
+                      </PermissionGuard>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Receipt Date:</span>
+                      <div className="flex items-center gap-1">
+                        <Calendar className="h-3 w-3" />
+                        <span className="font-medium">{formatDate(grn.receipt_date)}</span>
+                      </div>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Created:</span>
+                      <span className="font-medium">{formatDateTime(grn.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-medium mb-2 flex items-center gap-2">
+                    <Building className="h-4 w-4" />
+                    Supplier Information
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Supplier:</span>
+                      <span className="font-medium">{grn.supplier_name}</span>
+                    </div>
+                    {grn.supplier_code && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Code:</span>
+                        <span className="font-medium">{grn.supplier_code}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <h3 className="font-medium mb-2 flex items-center gap-2">
+                    <Truck className="h-4 w-4" />
+                    Delivery Information
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Invoice No:</span>
+                      <span className="font-medium">{grn.supplier_invoice_number || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Delivery Note:</span>
+                      <span className="font-medium">{grn.delivery_note_number || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Vehicle:</span>
+                      <span className="font-medium">{grn.vehicle_number || "N/A"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Driver:</span>
+                      <span className="font-medium">{grn.driver_name || "N/A"}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="font-medium mb-2 flex items-center gap-2">
+                    <Package className="h-4 w-4" />
+                    Summary
+                  </h3>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Items:</span>
+                      <span className="font-medium">{totalItems}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Quantity:</span>
+                      <span className="font-medium">{totalQuantity} tires</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total Value:</span>
+                      <span className="font-medium">{formatCurrency(totalValue)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Received By:</span>
+                      <div className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        <span className="font-medium">{grn.received_by_name || "N/A"}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Received Items Table */}
+            <div className="mb-6">
+              <h3 className="font-medium mb-3">Received Items ({grn.items?.length || 0})</h3>
+              <div className="rounded-md border overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="whitespace-nowrap">Size</TableHead>
+                      <TableHead className="whitespace-nowrap">Brand/Model</TableHead>
+                      <TableHead className="whitespace-nowrap">Type</TableHead>
+                      <TableHead className="whitespace-nowrap">Quantity</TableHead>
+                      <TableHead className="whitespace-nowrap">Unit Cost</TableHead>
+                      <TableHead className="whitespace-nowrap">Total</TableHead>
+                      <TableHead className="whitespace-nowrap">Serial Numbers</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {grn.items?.map((item) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium whitespace-nowrap">{item.size || "N/A"}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div>{item.brand || "N/A"}</div>
+                          {item.model && (
+                            <div className="text-sm text-muted-foreground">{item.model}</div>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <Badge variant="outline" className="capitalize">
+                            {item.type?.toLowerCase() || "standard"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{item.quantity_received}</TableCell>
+                        <TableCell className="whitespace-nowrap">{formatCurrency(item.unit_cost)}</TableCell>
+                        <TableCell className="font-medium whitespace-nowrap">
+                          {formatCurrency(item.quantity_received * item.unit_cost)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="max-h-20 overflow-y-auto min-w-[150px]">
+                            {item.serial_numbers?.map((sn, idx) => (
+                              <div key={idx} className="text-xs font-mono py-0.5">
+                                {sn}
+                              </div>
+                            )) || "N/A"}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    <TableRow className="bg-muted/50">
+                      <TableCell colSpan={5} className="text-right font-medium whitespace-nowrap">
+                        Grand Total:
+                      </TableCell>
+                      <TableCell colSpan={2} className="font-bold text-lg whitespace-nowrap">
+                        {formatCurrency(totalValue)}
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            {/* Tires Table */}
+            {grn.tires && grn.tires.length > 0 && (
+              <div className="mb-6">
+                <h3 className="font-medium mb-3">
+                  Tires Added to Inventory ({grn.tires.length} tires)
+                </h3>
+                <div className="rounded-md border max-h-96 overflow-y-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="whitespace-nowrap">Serial Number</TableHead>
+                        <TableHead className="whitespace-nowrap">Size</TableHead>
+                        <TableHead className="whitespace-nowrap">Brand</TableHead>
+                        <TableHead className="whitespace-nowrap">Type</TableHead>
+                        <TableHead className="whitespace-nowrap">Cost</TableHead>
+                        <TableHead className="whitespace-nowrap">Status</TableHead>
+                        <TableHead className="whitespace-nowrap">Location</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {grn.tires.map((tire) => (
+                        <TableRow key={tire.id}>
+                          <TableCell className="font-mono text-xs whitespace-nowrap">{tire.serial_number}</TableCell>
+                          <TableCell className="whitespace-nowrap">{tire.size}</TableCell>
+                          <TableCell className="whitespace-nowrap">{tire.brand}</TableCell>
+                          <TableCell className="whitespace-nowrap">{tire.type}</TableCell>
+                          <TableCell className="whitespace-nowrap">{formatCurrency(tire.purchase_cost)}</TableCell>
+                          <TableCell className="whitespace-nowrap">
+                            <Badge variant="outline" className="text-xs">{tire.status}</Badge>
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap">{tire.current_location}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            {grn.notes && (
+              <div className="mb-6">
+                <h3 className="font-medium mb-2">Notes</h3>
+                <div className="p-3 bg-muted/30 rounded-md border">
+                  <p className="text-sm">{grn.notes}</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Mobile Layout */}
+          <div className="sm:hidden space-y-4">
+            {/* Mobile Summary Cards */}
+            <div className="grid grid-cols-2 gap-2">
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Items</div>
+                  <div className="text-lg font-bold">{totalItems}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Quantity</div>
+                  <div className="text-lg font-bold">{totalQuantity}</div>
+                </CardContent>
+              </Card>
+              <Card className="col-span-2">
+                <CardContent className="p-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-muted-foreground">Total Value</span>
+                    <span className="text-lg font-bold text-primary">{formatCurrency(totalValue)}</span>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Mobile Info Cards */}
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">GRN Information</span>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">GRN:</span>
+                    <span className="font-medium">{grn.grn_number}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">PO:</span>
+                    <button
+                      onClick={() => {
+                        window.open(`/purchases/orders/${grn.po_id}`, '_blank');
+                      }}
+                      className="text-blue-600 hover:underline"
+                    >
+                      {grn.po_number}
+                    </button>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Receipt Date:</span>
+                    <span>{formatDate(grn.receipt_date)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Created:</span>
+                    <span className="text-xs">{formatDateTime(grn.created_at)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Building className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">Supplier Information</span>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Name:</span>
+                    <span className="font-medium">{grn.supplier_name}</span>
+                  </div>
+                  {grn.supplier_code && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Code:</span>
+                      <span>{grn.supplier_code}</span>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <Truck className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">Delivery Information</span>
+                </div>
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Invoice:</span>
+                    <span>{grn.supplier_invoice_number || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Delivery Note:</span>
+                    <span>{grn.delivery_note_number || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Vehicle:</span>
+                    <span>{grn.vehicle_number || "N/A"}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Driver:</span>
+                    <span>{grn.driver_name || "N/A"}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-2 mb-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="font-medium">Received By</span>
+                </div>
+                <div className="text-sm">{grn.received_by_name || "N/A"}</div>
+              </CardContent>
+            </Card>
+
+            {/* Mobile Tabs for Items and Tires */}
+            <div className="flex border-b">
+              <button
+                className={`flex-1 py-2 text-sm font-medium ${
+                  activeMobileTab === "items" 
+                    ? "border-b-2 border-primary text-primary" 
+                    : "text-muted-foreground"
+                }`}
+                onClick={() => setActiveMobileTab("items")}
+              >
+                Items ({grn.items?.length || 0})
+              </button>
+              {grn.tires && grn.tires.length > 0 && (
+                <button
+                  className={`flex-1 py-2 text-sm font-medium ${
+                    activeMobileTab === "tires" 
+                      ? "border-b-2 border-primary text-primary" 
+                      : "text-muted-foreground"
+                  }`}
+                  onClick={() => setActiveMobileTab("tires")}
+                >
+                  Tires ({grn.tires.length})
+                </button>
+              )}
+            </div>
+
+            {/* Mobile Items View */}
+            {activeMobileTab === "items" && (
+              <div className="space-y-3">
+                {grn.items?.map((item) => (
+                  <MobileGRNItemCard
+                    key={item.id}
+                    item={item}
+                    formatCurrency={formatCurrency}
+                  />
+                ))}
+                <Card>
+                  <CardContent className="p-3">
+                    <div className="flex justify-between items-center">
+                      <span className="font-medium">Grand Total:</span>
+                      <span className="text-lg font-bold text-primary">{formatCurrency(totalValue)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Mobile Tires View */}
+            {activeMobileTab === "tires" && grn.tires && grn.tires.length > 0 && (
+              <div className="space-y-2">
+                {grn.tires.map((tire) => (
+                  <MobileTireCard
+                    key={tire.id}
+                    tire={tire}
+                    formatCurrency={formatCurrency}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* Mobile Notes */}
+            {grn.notes && (
+              <Card>
+                <CardContent className="p-3">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Info className="h-4 w-4 text-muted-foreground" />
+                    <span className="font-medium">Notes</span>
+                  </div>
+                  <p className="text-sm">{grn.notes}</p>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop Footer with ID */}
+        <div className="hidden sm:block border-t px-6 py-3">
+          <div className="text-sm text-muted-foreground">
+            GRN ID: {grn.id} • Created: {formatDate(grn.created_at)}
           </div>
         </div>
       </DialogContent>

@@ -22,6 +22,15 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import {
   Eye,
   Search,
   Download,
@@ -41,6 +50,9 @@ import {
   Receipt,
   ArrowLeft,
   Info,
+  ChevronDown,
+  Menu,
+  Calendar,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -96,6 +108,208 @@ interface GRN {
   tires: any[];
 }
 
+// Mobile GRN Card Component
+const MobileGRNCard = ({
+  grn,
+  onViewDetails,
+  onInvoiceSupplier,
+  isGRNInvoiced,
+  getInvoiceStatusBadge,
+  formatCurrency,
+  formatDate,
+  setSelectedPoId,
+  setPoModalOpen,
+}: {
+  grn: GRN;
+  onViewDetails: (id: number) => void;
+  onInvoiceSupplier: (grn: GRN) => void;
+  isGRNInvoiced: (grn: GRN) => boolean;
+  getInvoiceStatusBadge: (grn: GRN) => React.ReactNode;
+  formatCurrency: (amount: number) => string;
+  formatDate: (date: string | null) => string;
+  setSelectedPoId: (id: number) => void;
+  setPoModalOpen: (open: boolean) => void;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const invoiced = isGRNInvoiced(grn);
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <span className="font-mono font-medium truncate">{grn.grn_number}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {getInvoiceStatusBadge(grn)}
+              <Badge variant="outline" className={getStatusColor(grn.status)}>
+                <div className="flex items-center gap-1 text-xs">
+                  {getStatusIcon(grn.status)}
+                  {grn.status}
+                </div>
+              </Badge>
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-8 w-8 p-0 ml-2"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+
+        {/* Basic Info */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div>
+            <div className="text-xs text-muted-foreground">Receipt Date</div>
+            <div className="text-sm">{formatDate(grn.receipt_date)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground">PO Number</div>
+            <button
+              onClick={() => {
+                setSelectedPoId(grn.po_id);
+                setPoModalOpen(true);
+              }}
+              className="text-sm text-blue-600 hover:underline truncate block text-left"
+            >
+              {grn.po_number}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-2">
+          <div className="text-xs text-muted-foreground">Supplier</div>
+          <div className="text-sm font-medium truncate">{grn.supplier_name}</div>
+          {grn.supplier_code && (
+            <div className="text-xs text-muted-foreground">{grn.supplier_code}</div>
+          )}
+        </div>
+
+        <div className="mt-2 flex justify-between items-center">
+          <div>
+            <div className="text-xs text-muted-foreground">Items / Quantity</div>
+            <div className="text-sm">
+              {grn.item_count} items • {grn.total_quantity} units
+            </div>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-muted-foreground">Total Value</div>
+            <div className="text-lg font-bold text-primary">
+              {formatCurrency(grn.total_value)}
+            </div>
+          </div>
+        </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            <div>
+              <div className="text-xs text-muted-foreground">Received By</div>
+              <div className="text-sm flex items-center gap-1 mt-1">
+                <User className="h-3 w-3" />
+                {grn.received_by_name || "N/A"}
+              </div>
+            </div>
+
+            {grn.delivery_note_number && (
+              <div>
+                <div className="text-xs text-muted-foreground">Delivery Note</div>
+                <div className="text-sm">{grn.delivery_note_number}</div>
+              </div>
+            )}
+
+            {grn.vehicle_number && (
+              <div>
+                <div className="text-xs text-muted-foreground">Vehicle</div>
+                <div className="text-sm">{grn.vehicle_number}</div>
+              </div>
+            )}
+
+            {grn.notes && (
+              <div>
+                <div className="text-xs text-muted-foreground">Notes</div>
+                <div className="text-sm bg-muted p-2 rounded mt-1">{grn.notes}</div>
+              </div>
+            )}
+
+            {/* Action Buttons */}
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => onViewDetails(grn.id)}
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                View
+              </Button>
+
+              {!invoiced && grn.status === "COMPLETED" ? (
+                <PermissionGuard permissionCode="accounting.create" action="create" fallback={null}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
+                    onClick={() => onInvoiceSupplier(grn)}
+                  >
+                    <Receipt className="h-4 w-4 mr-2 text-blue-600" />
+                    Invoice
+                  </Button>
+                </PermissionGuard>
+              ) : invoiced ? (
+                <PermissionGuard permissionCode="accounting.view" action="view" fallback={null}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
+                    onClick={() => onInvoiceSupplier(grn)}
+                  >
+                    <Calculator className="h-4 w-4 mr-2 text-green-600" />
+                    View Invoice
+                  </Button>
+                </PermissionGuard>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// Helper functions (moved outside component to be accessible)
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case "COMPLETED":
+      return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
+    case "PENDING":
+      return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
+    case "CANCELLED":
+      return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
+    default:
+      return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
+  }
+};
+
+const getStatusIcon = (status: string) => {
+  switch (status) {
+    case "COMPLETED":
+      return <CheckCircle className="h-3 w-3" />;
+    case "PENDING":
+      return <Clock className="h-3 w-3" />;
+    case "CANCELLED":
+      return <AlertCircle className="h-3 w-3" />;
+    default:
+      return <FileText className="h-3 w-3" />;
+  }
+};
+
 export default function GRNsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
@@ -124,6 +338,10 @@ export default function GRNsPage() {
   const [poModalOpen, setPoModalOpen] = useState(false);
   const [selectedPoId, setSelectedPoId] = useState<number | null>(null);
 
+  // Mobile state
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
   // Check authentication
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -143,7 +361,7 @@ export default function GRNsPage() {
     if (isAuthenticated && hasPermission("grn.view")) {
       fetchGRNs();
     }
-  }, [page, status, startDate, endDate, isAuthenticated, hasPermission]);
+  }, [page, status, startDate, endDate, limit, isAuthenticated, hasPermission]);
 
   const fetchGRNs = async () => {
     try {
@@ -233,6 +451,7 @@ export default function GRNsPage() {
     e.preventDefault();
     setPage(1);
     fetchGRNs();
+    setIsFilterSheetOpen(false);
   };
 
   const clearFilters = () => {
@@ -241,32 +460,7 @@ export default function GRNsPage() {
     setStartDate(undefined);
     setEndDate(undefined);
     setPage(1);
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
-      case "PENDING":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
-      case "CANCELLED":
-        return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "COMPLETED":
-        return <CheckCircle className="h-4 w-4" />;
-      case "PENDING":
-        return <Clock className="h-4 w-4" />;
-      case "CANCELLED":
-        return <AlertCircle className="h-4 w-4" />;
-      default:
-        return <FileText className="h-4 w-4" />;
-    }
+    setIsFilterSheetOpen(false);
   };
 
   const formatCurrency = (amount: number) => {
@@ -414,7 +608,7 @@ export default function GRNsPage() {
   if (authLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <Skeleton className="h-8 w-48 mb-2" />
             <Skeleton className="h-4 w-64" />
@@ -434,15 +628,15 @@ export default function GRNsPage() {
   if (!hasPermission("grn.view")) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/inventory">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Goods Received Notes</h1>
-            <p className="text-muted-foreground">Track goods received from suppliers</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Goods Received Notes</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Track goods received from suppliers</p>
           </div>
         </div>
 
@@ -453,7 +647,7 @@ export default function GRNsPage() {
           </AlertDescription>
         </Alert>
 
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/inventory">Return to Inventory</Link>
         </Button>
       </div>
@@ -464,15 +658,15 @@ export default function GRNsPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/inventory">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Goods Received Notes</h1>
-            <p className="text-muted-foreground">Track goods received from suppliers</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Goods Received Notes</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Track goods received from suppliers</p>
           </div>
         </div>
 
@@ -481,12 +675,12 @@ export default function GRNsPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
 
-        <div className="flex gap-2">
-          <Button onClick={fetchGRNs} variant="outline">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button onClick={fetchGRNs} variant="outline" className="w-full sm:w-auto">
             <RefreshCw className="mr-2 h-4 w-4" />
             Try Again
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href="/inventory">Back to Inventory</Link>
           </Button>
         </div>
@@ -520,7 +714,7 @@ export default function GRNsPage() {
         )}
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Button variant="outline" size="icon" asChild>
               <Link href="/inventory">
@@ -528,13 +722,15 @@ export default function GRNsPage() {
               </Link>
             </Button>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Goods Received Notes</h1>
-              <p className="text-muted-foreground">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Goods Received Notes</h1>
+              <p className="text-sm sm:text-base text-muted-foreground">
                 Track all goods received from suppliers
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Desktop Actions */}
+          <div className="hidden sm:flex items-center gap-2">
             <Button variant="outline" onClick={fetchGRNs} disabled={loading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
               Refresh
@@ -546,10 +742,33 @@ export default function GRNsPage() {
               </Button>
             </PermissionGuard>
           </div>
+
+          {/* Mobile Actions */}
+          <div className="flex sm:hidden items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1"
+              onClick={() => setIsFilterSheetOpen(true)}
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="mr-2 h-4 w-4" />
+              Menu
+            </Button>
+          </div>
         </div>
 
-        {/* Filters */}
-        <Card>
+        {/* Desktop Filters */}
+        <Card className="hidden sm:block">
           <CardHeader>
             <CardTitle>Filters</CardTitle>
             <CardDescription>
@@ -631,11 +850,6 @@ export default function GRNsPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                
-                {/* Spacer columns for alignment */}
-                <div className="hidden md:block"></div>
-                <div className="hidden lg:block"></div>
-                <div className="hidden lg:block"></div>
               </div>
 
               {/* Action Buttons */}
@@ -668,8 +882,150 @@ export default function GRNsPage() {
           </CardContent>
         </Card>
 
-        {/* GRNs Table */}
-        <Card>
+        {/* Mobile Filter Sheet */}
+        <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
+          <SheetContent side="bottom" className="h-auto max-h-[90vh] rounded-t-xl overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filter GRNs
+              </SheetTitle>
+              <SheetDescription>
+                Apply filters to narrow down results
+              </SheetDescription>
+            </SheetHeader>
+            <form onSubmit={handleSearch} className="space-y-4 py-4">
+              {/* Search Field */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="GRN, PO, supplier..."
+                    className="pl-8"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Status Filter */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Status</Label>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="All Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="COMPLETED">Completed</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Start Date */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Start Date</Label>
+                <DatePicker
+                  date={startDate}
+                  onSelect={setStartDate}
+                />
+              </div>
+
+              {/* End Date */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">End Date</Label>
+                <DatePicker
+                  date={endDate}
+                  onSelect={setEndDate}
+                />
+              </div>
+
+              {/* Items per page */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Items per page</Label>
+                <Select
+                  value={limit.toString()}
+                  onValueChange={(value) => {
+                    setLimit(parseInt(value));
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="20">20</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                    <SelectItem value="100">100</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button type="submit" className="flex-1">
+                  Apply Filters
+                </Button>
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={clearFilters}
+                >
+                  Clear
+                </Button>
+              </div>
+            </form>
+          </SheetContent>
+        </Sheet>
+
+        {/* Mobile Menu Sheet */}
+        <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+          <SheetContent side="bottom" className="h-auto rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle>Actions</SheetTitle>
+              <SheetDescription>
+                Choose an action to perform
+              </SheetDescription>
+            </SheetHeader>
+            <div className="grid gap-2 py-4">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  fetchGRNs();
+                  setIsMobileMenuOpen(false);
+                }}
+                disabled={loading}
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh Data
+              </Button>
+              
+              <PermissionGuard permissionCode="grn.view" fallback={null}>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => {
+                    exportToCSV();
+                    setIsMobileMenuOpen(false);
+                  }}
+                  disabled={grns.length === 0}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Export to CSV
+                </Button>
+              </PermissionGuard>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* GRNs Table - Desktop */}
+        <Card className="hidden sm:block">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
@@ -699,70 +1055,61 @@ export default function GRNsPage() {
                 </p>
               </div>
             ) : (
-              <div className="rounded-md border">
+              <div className="rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[180px]">GRN Number</TableHead>
-                      <TableHead className="w-[150px]">PO Number</TableHead>
-                      <TableHead className="w-[120px]">Receipt Date</TableHead>
-                      <TableHead className="w-[200px]">Supplier</TableHead>
-                      <TableHead className="w-[100px]">Items</TableHead>
-                      <TableHead className="w-[120px]">Total Value</TableHead>
-                      <TableHead className="w-[150px]">Received By</TableHead>
-                      <TableHead className="w-[130px] text-right">Actions</TableHead>
+                      <TableHead className="whitespace-nowrap">GRN Number</TableHead>
+                      <TableHead className="whitespace-nowrap">PO Number</TableHead>
+                      <TableHead className="whitespace-nowrap">Receipt Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Supplier</TableHead>
+                      <TableHead className="whitespace-nowrap">Items</TableHead>
+                      <TableHead className="whitespace-nowrap">Total Value</TableHead>
+                      <TableHead className="whitespace-nowrap">Received By</TableHead>
+                      <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {grns.map((grn) => {
                       const invoiced = isGRNInvoiced(grn);
                       
-                      // Debug log for each row
-                      console.log(`Rendering GRN ${grn.grn_number}:`, {
-                        invoiced,
-                        supplier_invoice_number: grn.supplier_invoice_number,
-                        accounting_transaction_id: grn.accounting_transaction_id,
-                        showCreateButton: !invoiced && grn.status === "COMPLETED",
-                        showViewButton: invoiced
-                      });
-                      
                       return (
                         <TableRow key={grn.id}>
-                          <TableCell className="font-medium">
+                          <TableCell className="font-medium whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                               <div className="flex flex-col items-start">
-                                <span className="truncate">{grn.grn_number}</span>
+                                <span>{grn.grn_number}</span>
                                 {getInvoiceStatusBadge(grn)}
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <button
                               onClick={() => {
                                 setSelectedPoId(grn.po_id);
                                 setPoModalOpen(true);
                               }}
-                              className="text-blue-600 hover:underline truncate block text-left"
+                              className="text-blue-600 hover:underline"
                             >
                               {grn.po_number}
                             </button>
                           </TableCell>
-                          <TableCell>{formatDate(grn.receipt_date)}</TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDate(grn.receipt_date)}</TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                               <div className="min-w-0">
-                                <div className="font-medium truncate">{grn.supplier_name}</div>
+                                <div className="font-medium">{grn.supplier_name}</div>
                                 {grn.supplier_code && (
-                                  <div className="text-xs text-muted-foreground truncate">
+                                  <div className="text-xs text-muted-foreground">
                                     {grn.supplier_code}
                                   </div>
                                 )}
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                               <div>
@@ -773,18 +1120,18 @@ export default function GRNsPage() {
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell className="font-semibold">
+                          <TableCell className="font-semibold whitespace-nowrap">
                             {formatCurrency(grn.total_value)}
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                              <span className="truncate">{grn.received_by_name || "N/A"}</span>
+                              <span>{grn.received_by_name || "N/A"}</span>
                             </div>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right whitespace-nowrap">
                             <div className="flex justify-end gap-1">
-                              {/* View Details Button - Always shown */}
+                              {/* View Details Button */}
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -803,11 +1150,8 @@ export default function GRNsPage() {
                                 </Tooltip>
                               </TooltipProvider>
 
-                              {/* 
-                                INVOICE BUTTONS - IMPROVED LOGIC WITH STRICT CHECKING
-                              */}
+                              {/* Invoice Buttons */}
                               {!invoiced && grn.status === "COMPLETED" ? (
-                                // Show "Create Invoice" button for COMPLETED, non-invoiced GRNs
                                 <PermissionGuard permissionCode="accounting.create" action="create" fallback={null}>
                                   <TooltipProvider>
                                     <Tooltip>
@@ -817,7 +1161,6 @@ export default function GRNsPage() {
                                           size="icon"
                                           onClick={() => handleInvoiceSupplier(grn)}
                                           className="h-8 w-8 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
-                                          title="Record Supplier Invoice"
                                         >
                                           <Receipt className="h-4 w-4 text-blue-600" />
                                         </Button>
@@ -829,7 +1172,6 @@ export default function GRNsPage() {
                                   </TooltipProvider>
                                 </PermissionGuard>
                               ) : invoiced ? (
-                                // Show "View Invoice" button for invoiced GRNs
                                 <PermissionGuard permissionCode="accounting.view" action="view" fallback={null}>
                                   <TooltipProvider>
                                     <Tooltip>
@@ -839,7 +1181,6 @@ export default function GRNsPage() {
                                           size="icon"
                                           onClick={() => handleInvoiceSupplier(grn)}
                                           className="h-8 w-8 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
-                                          title={getInvoiceButtonTooltip(grn)}
                                         >
                                           <Calculator className="h-4 w-4 text-green-600" />
                                         </Button>
@@ -897,6 +1238,79 @@ export default function GRNsPage() {
           )}
         </Card>
 
+        {/* Mobile GRN Cards */}
+        <div className="sm:hidden space-y-4">
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                <p className="mt-2 text-muted-foreground">Loading GRNs...</p>
+              </div>
+            </div>
+          ) : grns.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center h-64 text-center px-4">
+                <Truck className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No GRNs found</h3>
+                <p className="text-muted-foreground mt-1">
+                  {search || status !== "all" || startDate || endDate
+                    ? "Try adjusting your filters"
+                    : "No GRNs have been created yet"}
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {grns.map((grn) => (
+                <MobileGRNCard
+                  key={grn.id}
+                  grn={grn}
+                  onViewDetails={handleViewDetails}
+                  onInvoiceSupplier={handleInvoiceSupplier}
+                  isGRNInvoiced={isGRNInvoiced}
+                  getInvoiceStatusBadge={getInvoiceStatusBadge}
+                  formatCurrency={formatCurrency}
+                  formatDate={formatDate}
+                  setSelectedPoId={setSelectedPoId}
+                  setPoModalOpen={setPoModalOpen}
+                />
+              ))}
+
+              {/* Mobile Pagination */}
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-sm text-muted-foreground text-center mb-4">
+                    Showing {Math.min(limit, grns.length)} of {total} GRNs • Page {page} of {totalPages}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(page - 1)}
+                      disabled={page <= 1 || loading}
+                      className="flex-1"
+                    >
+                      <ChevronLeft className="h-4 w-4 mr-1" />
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setPage(page + 1)}
+                      disabled={page >= totalPages || loading}
+                      className="flex-1"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4 ml-1" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
+
+        {/* PO Details Modal */}
         {selectedPoId && (
           <PurchaseOrderDetails
             orderId={selectedPoId}
@@ -911,3 +1325,10 @@ export default function GRNsPage() {
     </PermissionGuard>
   );
 }
+
+// Missing Label import
+const Label = ({ children, className, ...props }: any) => (
+  <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className || ''}`} {...props}>
+    {children}
+  </label>
+);
