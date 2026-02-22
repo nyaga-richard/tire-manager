@@ -46,6 +46,8 @@ import {
   TrendingDown as TrendingDownIcon,
   BarChart3,
   ShoppingBag,
+  ChevronRight,
+  Menu,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -74,6 +76,16 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 import PurchaseOrderDetails from "@/components/purchase-order-details";
 import { useSettings } from "@/hooks/useSettings";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -162,6 +174,134 @@ const defaultOrderAnalytics: PurchaseOrderAnalytics = {
   averageDeliveryTime: null,
 };
 
+// Mobile Order Card Component
+const MobileOrderCard = ({ 
+  order, 
+  onViewDetails,
+  formatCurrency,
+  formatDate,
+  getStatusColor,
+  getStatusIcon,
+  getOrderProgress 
+}: { 
+  order: PurchaseOrder;
+  onViewDetails: (order: PurchaseOrder) => void;
+  formatCurrency: (amount: number) => string;
+  formatDate: (date: string | null) => string;
+  getStatusColor: (status: string) => string;
+  getStatusIcon: (status: string) => React.ReactNode;
+  getOrderProgress: (order: PurchaseOrder) => number;
+}) => {
+  const progress = getOrderProgress(order);
+  const itemsCount = order.item_count || 0;
+  const receivedCount = order.total_received || 0;
+  const pendingCount = itemsCount - receivedCount;
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header with Order Number and Status */}
+        <div className="flex items-start justify-between mb-3">
+          <div>
+            <div className="font-mono font-bold text-lg">
+              {order.po_number}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <Building className="h-3 w-3 text-muted-foreground" />
+              <span className="text-sm font-medium">{order.supplier_name}</span>
+              <span className="text-xs text-muted-foreground">({order.supplier_type})</span>
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className={getStatusColor(order.status)}
+          >
+            <div className="flex items-center gap-1 text-xs">
+              {getStatusIcon(order.status)}
+              {order.status.replace("_", " ")}
+            </div>
+          </Badge>
+        </div>
+
+        {/* Order Details Grid */}
+        <div className="grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">Order Date</div>
+            <div className="text-sm font-medium flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              {formatDate(order.po_date)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">Expected Delivery</div>
+            <div className="text-sm font-medium">
+              {formatDate(order.expected_delivery_date)}
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">Items</div>
+            <div className="text-sm font-medium">
+              <span className="font-bold">{itemsCount}</span> total
+            </div>
+            {itemsCount > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {receivedCount} rec • {pendingCount} pend
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-xs text-muted-foreground mb-1">Total Amount</div>
+            <div className="text-sm font-bold text-primary">
+              {formatCurrency(order.final_amount)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Sub: {formatCurrency(order.total_amount)}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="mb-3">
+          <div className="flex items-center justify-between text-xs mb-1">
+            <span className="text-muted-foreground">Receiving Progress</span>
+            <span className="font-medium">{progress}%</span>
+          </div>
+          <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+            <div 
+              className="h-full bg-green-500 rounded-full transition-all duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2 pt-2 border-t">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1"
+            onClick={() => onViewDetails(order)}
+          >
+            <Eye className="h-4 w-4 mr-2" />
+            Details
+          </Button>
+          
+          {["ORDERED", "PARTIALLY_RECEIVED", "DRAFT", "PENDING", "APPROVED"].includes(order.status) && (
+            <PermissionGuard permissionCode="po.receive" action="edit">
+              <Button variant="outline" size="sm" className="flex-1" asChild>
+                <Link href={`/purchases/orders/${order.id}/receive`}>
+                  <Truck className="h-4 w-4 mr-2" />
+                  Receive
+                </Link>
+              </Button>
+            </PermissionGuard>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 export default function PurchasesPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
@@ -178,6 +318,8 @@ export default function PurchasesPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Get currency settings
   const currency = systemSettings?.currency || 'KES';
@@ -656,11 +798,24 @@ export default function PurchasesPage() {
     }
   };
 
+  const applyFilters = (status: string, timeRange: string) => {
+    setOrderFilterStatus(status);
+    setTimeRangeOrders(timeRange);
+    setIsFilterSheetOpen(false);
+  };
+
+  const clearFilters = () => {
+    setOrderFilterStatus("all");
+    setTimeRangeOrders("month");
+    setSearch("");
+    setIsFilterSheetOpen(false);
+  };
+
   // Show auth loading state
   if (authLoading || settingsLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <Skeleton className="h-8 w-48 mb-2" />
             <Skeleton className="h-4 w-64" />
@@ -670,7 +825,7 @@ export default function PurchasesPage() {
             <Skeleton className="h-10 w-32" />
           </div>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
             <Skeleton key={i} className="h-32 w-full" />
           ))}
@@ -684,7 +839,7 @@ export default function PurchasesPage() {
   if (!hasPermission("po.view")) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Purchases & Procurement</h1>
             <p className="text-muted-foreground">Manage purchase orders and transactions</p>
@@ -698,7 +853,7 @@ export default function PurchasesPage() {
           </AlertDescription>
         </Alert>
 
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/dashboard">Return to Dashboard</Link>
         </Button>
       </div>
@@ -709,7 +864,7 @@ export default function PurchasesPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Purchases & Procurement</h1>
             <p className="text-muted-foreground">Manage purchase orders and transactions</p>
@@ -722,7 +877,7 @@ export default function PurchasesPage() {
         </Alert>
 
         <div className="flex gap-2">
-          <Button onClick={fetchData} variant="outline">
+          <Button onClick={fetchData} variant="outline" className="w-full sm:w-auto">
             <RefreshCw className="mr-2 h-4 w-4" />
             Try Again
           </Button>
@@ -734,10 +889,10 @@ export default function PurchasesPage() {
   return (
     <PermissionGuard permissionCode="po.view" action="view">
       <div className="space-y-6">
-        {/* Show loading overlay when loading */}
+        {/* Loading Overlay */}
         {loading && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="rounded-lg bg-white dark:bg-gray-900 p-6 shadow-xl">
+            <div className="rounded-lg bg-white dark:bg-gray-900 p-6 shadow-xl max-w-[90%] sm:max-w-md">
               <div className="flex items-center gap-3">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
                 <div>
@@ -749,11 +904,11 @@ export default function PurchasesPage() {
           </div>
         )}
 
-        {/* Header */}
-        <div className="flex items-center justify-between">
+        {/* Header - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Purchases & Procurement</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Purchases & Procurement</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               Manage tire purchase orders and procurement
             </p>
             {systemSettings?.company_name && (
@@ -762,7 +917,9 @@ export default function PurchasesPage() {
               </p>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Desktop Actions */}
+          <div className="hidden sm:flex items-center gap-2">
             <Select 
               value={timeRangeOrders} 
               onValueChange={setTimeRangeOrders}
@@ -780,7 +937,7 @@ export default function PurchasesPage() {
               </SelectContent>
             </Select>
             
-            <Button variant="outline" onClick={fetchData} disabled={loading}>
+            <Button variant="outline" onClick={fetchData} disabled={loading} size="sm">
               <RefreshCw
                 className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`}
               />
@@ -790,7 +947,7 @@ export default function PurchasesPage() {
             <PermissionGuard permissionCode="po.create" action="create">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button>
+                  <Button size="sm">
                     <Plus className="mr-2 h-4 w-4" />
                     New
                     <ChevronDown className="ml-2 h-4 w-4" />
@@ -815,10 +972,77 @@ export default function PurchasesPage() {
               </DropdownMenu>
             </PermissionGuard>
           </div>
+
+          {/* Mobile Actions */}
+          <div className="flex sm:hidden items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1"
+              onClick={() => setIsFilterSheetOpen(true)}
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+            </Button>
+            
+            <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+              <SheetTrigger asChild>
+                <Button variant="outline" size="sm" className="flex-1">
+                  <Menu className="mr-2 h-4 w-4" />
+                  Actions
+                </Button>
+              </SheetTrigger>
+              <SheetContent side="bottom" className="h-auto rounded-t-xl">
+                <SheetHeader>
+                  <SheetTitle>Actions</SheetTitle>
+                  <SheetDescription>
+                    Choose an action to perform
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="grid gap-2 py-4">
+                  <Button 
+                    variant="outline" 
+                    onClick={fetchData} 
+                    disabled={loading}
+                    className="w-full justify-start"
+                  >
+                    <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                    Refresh Data
+                  </Button>
+                  
+                  <PermissionGuard permissionCode="po.create" action="create">
+                    <Button 
+                      variant="outline" 
+                      className="w-full justify-start"
+                      asChild
+                    >
+                      <Link href="/purchases/new-purchase">
+                        <ShoppingCart className="mr-2 h-4 w-4" />
+                        Create Purchase Order
+                      </Link>
+                    </Button>
+                    
+                    <PermissionGuard permissionCode="tire.retread" action="create">
+                      <Button 
+                        variant="outline" 
+                        className="w-full justify-start"
+                        asChild
+                      >
+                        <Link href="/purchases/retread">
+                          <Wrench className="mr-2 h-4 w-4" />
+                          Send for Retreading
+                        </Link>
+                      </Button>
+                    </PermissionGuard>
+                  </PermissionGuard>
+                </div>
+              </SheetContent>
+            </Sheet>
+          </div>
         </div>
 
-        {/* Purchase Order Analytics Cards */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {/* Analytics Cards - Responsive Grid */}
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
@@ -886,8 +1110,8 @@ export default function PurchasesPage() {
           </Card>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center justify-between">
+        {/* Filters - Desktop */}
+        <div className="hidden sm:flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Select value={orderFilterStatus} onValueChange={setOrderFilterStatus}>
               <SelectTrigger className="w-[180px]">
@@ -920,8 +1144,87 @@ export default function PurchasesPage() {
           </div>
         </div>
 
-        {/* Purchase Orders Table */}
-        <Card>
+        {/* Filters - Mobile Sheet */}
+        <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
+          <SheetContent side="bottom" className="h-auto rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle>Filter Orders</SheetTitle>
+              <SheetDescription>
+                Apply filters to narrow down results
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    type="search"
+                    placeholder="Search orders..."
+                    className="pl-8"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Status</Label>
+                <Select value={orderFilterStatus} onValueChange={setOrderFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Filter by status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Status</SelectItem>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="ORDERED">Ordered</SelectItem>
+                    <SelectItem value="PARTIALLY_RECEIVED">Partially Received</SelectItem>
+                    <SelectItem value="RECEIVED">Received</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                    <SelectItem value="CLOSED">Closed</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Time Range</Label>
+                <Select value={timeRangeOrders} onValueChange={setTimeRangeOrders}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Time Range" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="week">This Week</SelectItem>
+                    <SelectItem value="month">This Month</SelectItem>
+                    <SelectItem value="quarter">This Quarter</SelectItem>
+                    <SelectItem value="year">This Year</SelectItem>
+                    <SelectItem value="all">All Time</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  className="flex-1" 
+                  onClick={() => setIsFilterSheetOpen(false)}
+                >
+                  Apply Filters
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={clearFilters}
+                >
+                  Clear All
+                </Button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Purchase Orders - Desktop Table */}
+        <Card className="hidden sm:block">
           <CardContent className="p-0">
             {ordersLoading ? (
               <div className="flex items-center justify-center h-64">
@@ -931,7 +1234,7 @@ export default function PurchasesPage() {
                 </div>
               </div>
             ) : filteredOrders.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-64 text-center">
+              <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                 <Package className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium">No purchase orders found</h3>
                 <p className="text-muted-foreground mt-1">
@@ -949,19 +1252,19 @@ export default function PurchasesPage() {
                 </PermissionGuard>
               </div>
             ) : (
-              <div className="rounded-md border">
+              <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Order Number</TableHead>
-                      <TableHead>Supplier</TableHead>
-                      <TableHead>Order Date</TableHead>
-                      <TableHead>Expected Delivery</TableHead>
-                      <TableHead>Items</TableHead>
-                      <TableHead>Total Amount ({currencySymbol})</TableHead>
-                      <TableHead>Progress</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="whitespace-nowrap">Order Number</TableHead>
+                      <TableHead className="whitespace-nowrap">Supplier</TableHead>
+                      <TableHead className="whitespace-nowrap">Order Date</TableHead>
+                      <TableHead className="whitespace-nowrap">Expected Delivery</TableHead>
+                      <TableHead className="whitespace-nowrap">Items</TableHead>
+                      <TableHead className="whitespace-nowrap">Total Amount ({currencySymbol})</TableHead>
+                      <TableHead className="whitespace-nowrap">Progress</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                      <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -973,47 +1276,47 @@ export default function PurchasesPage() {
                       
                       return (
                         <TableRow key={order.id} className="hover:bg-accent/50">
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="font-mono font-bold">
                               {order.po_number}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="flex items-center gap-2">
-                              <Building className="h-3 w-3 text-muted-foreground" />
+                              <Building className="h-3 w-3 text-muted-foreground flex-shrink-0" />
                               <span>{order.supplier_name}</span>
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {order.supplier_type}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="font-medium">
                               {formatDate(order.po_date)}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className={order.expected_delivery_date ? "" : "text-muted-foreground"}>
                               {formatDate(order.expected_delivery_date)}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div>
                               <div className="font-medium">{itemsCount} items</div>
                               <div className="text-xs text-muted-foreground">
-                                {receivedCount} received • {pendingCount} pending
+                                {receivedCount} rec • {pendingCount} pend
                               </div>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="font-bold">
                               {formatCurrency(order.final_amount)}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              Subtotal: {formatCurrency(order.total_amount)}
+                              Sub: {formatCurrency(order.total_amount)}
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <div className="flex items-center gap-2">
                               <div className="h-2 w-20 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
                                 <div 
@@ -1024,7 +1327,7 @@ export default function PurchasesPage() {
                               <span className="text-xs font-medium">{progress}%</span>
                             </div>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <Badge
                               variant="outline"
                               className={getStatusColor(order.status)}
@@ -1035,7 +1338,7 @@ export default function PurchasesPage() {
                               </div>
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-right whitespace-nowrap">
                             <div className="flex justify-end gap-2">
                               <TooltipProvider>
                                 <Tooltip>
@@ -1084,21 +1387,22 @@ export default function PurchasesPage() {
           </CardContent>
           {filteredOrders.length > 0 && (
             <CardFooter className="border-t px-6 py-4">
-              <div className="flex items-center justify-between w-full">
+              <div className="flex flex-col sm:flex-row items-center justify-between w-full gap-4">
                 <div className="text-sm text-muted-foreground">
                   Showing {filteredOrders.length} of {purchaseOrders.length} purchase orders
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 w-full sm:w-auto">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => exportReport("purchase-orders")}
+                    className="flex-1 sm:flex-none"
                   >
                     <Download className="mr-2 h-4 w-4" />
-                    Export Orders
+                    Export
                   </Button>
                   <PermissionGuard permissionCode="po.create" action="create">
-                    <Button asChild>
+                    <Button asChild size="sm" className="flex-1 sm:flex-none">
                       <Link href="/purchases/new-purchase">
                         <Plus className="mr-2 h-4 w-4" />
                         New Order
@@ -1110,6 +1414,81 @@ export default function PurchasesPage() {
             </CardFooter>
           )}
         </Card>
+
+        {/* Purchase Orders - Mobile Cards */}
+        <div className="sm:hidden space-y-4">
+          {ordersLoading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                <p className="mt-2 text-muted-foreground">Loading purchase orders...</p>
+              </div>
+            </div>
+          ) : filteredOrders.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center h-64 text-center px-4">
+                <Package className="h-12 w-12 text-muted-foreground mb-4" />
+                <h3 className="text-lg font-medium">No purchase orders found</h3>
+                <p className="text-muted-foreground mt-1">
+                  {search
+                    ? "Try a different search term"
+                    : "Get started by creating your first purchase order"}
+                </p>
+                <PermissionGuard permissionCode="po.create" action="create">
+                  <Button className="mt-4 w-full" asChild>
+                    <Link href="/purchases/new-purchase">
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create Purchase Order
+                    </Link>
+                  </Button>
+                </PermissionGuard>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {filteredOrders.map((order) => (
+                <MobileOrderCard
+                  key={order.id}
+                  order={order}
+                  onViewDetails={openOrderDetails}
+                  formatCurrency={formatCurrency}
+                  formatDate={formatDate}
+                  getStatusColor={getStatusColor}
+                  getStatusIcon={getStatusIcon}
+                  getOrderProgress={getOrderProgress}
+                />
+              ))}
+              
+              {/* Mobile Footer */}
+              <Card className="mt-4">
+                <CardContent className="p-4">
+                  <div className="text-sm text-muted-foreground mb-4">
+                    Showing {filteredOrders.length} of {purchaseOrders.length} purchase orders
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => exportReport("purchase-orders")}
+                      className="flex-1"
+                    >
+                      <Download className="mr-2 h-4 w-4" />
+                      Export
+                    </Button>
+                    <PermissionGuard permissionCode="po.create" action="create">
+                      <Button asChild size="sm" className="flex-1">
+                        <Link href="/purchases/new-purchase">
+                          <Plus className="mr-2 h-4 w-4" />
+                          New Order
+                        </Link>
+                      </Button>
+                    </PermissionGuard>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </div>
 
         {/* Purchase Order Details Modal */}
         <PurchaseOrderDetails 

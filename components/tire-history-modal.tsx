@@ -46,12 +46,17 @@ import {
   Clock,
   Tag,
   SlidersHorizontal,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { format, subMonths, startOfMonth, endOfMonth, subDays, subYears, startOfYear } from "date-fns";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { Separator } from "@/components/ui/separator";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Card, CardContent } from "./ui/card";
 
 interface TireInstallationHistory {
   id: number;
@@ -102,6 +107,12 @@ export default function TireHistoryModal({
     endDate: undefined,
   });
   const [currentPage, setCurrentPage] = useState(1);
+  const [expandedSections, setExpandedSections] = useState({
+    filters: true,
+    stats: true,
+  });
+  const [selectedRecord, setSelectedRecord] = useState<TireInstallationHistory | null>(null);
+  const [detailViewOpen, setDetailViewOpen] = useState(false);
   const itemsPerPage = 10;
   const printRef = useRef<HTMLDivElement>(null);
 
@@ -625,13 +636,13 @@ export default function TireHistoryModal({
     const typeUpper = type.toUpperCase();
     switch (typeUpper) {
       case "NEW":
-        return "bg-green-50 text-green-700 border-green-200";
+        return "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
       case "RETREAD":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200";
+        return "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
       case "USED":
-        return "bg-blue-50 text-blue-700 border-blue-200";
+        return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200";
+        return "bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
@@ -650,377 +661,554 @@ export default function TireHistoryModal({
     setCurrentPage(1);
   };
 
+  const toggleSection = (section: keyof typeof expandedSections) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  const handleRowClick = (record: TireInstallationHistory) => {
+    setSelectedRecord(record);
+    setDetailViewOpen(true);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="min-w-[95vw] max-h-[95vh] w-[95vw] h-[95vh] p-0 overflow-hidden flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b bg-gradient-to-r from-slate-50 to-white">
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="flex items-center gap-2 text-lg">
-                <Package className="h-5 w-5 text-primary" />
-                Tire Installation History
+      <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-4xl h-[95vh] max-h-[95vh] p-0 overflow-hidden flex flex-col">
+        {/* Header - Fixed at top */}
+        <DialogHeader className="px-4 sm:px-6 py-3 sm:py-4 border-b bg-gradient-to-r from-slate-50 to-white shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Package className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
+                <span className="truncate">Tire Installation History</span>
               </DialogTitle>
-              <DialogDescription className="flex items-center gap-2 mt-1">
-                <span>Complete tire service history for vehicle </span>
-                <Badge variant="secondary" className="font-mono">
+              <DialogDescription className="flex flex-wrap items-center gap-2 mt-1 text-xs sm:text-sm">
+                <span className="truncate">Complete tire service history for vehicle</span>
+                <Badge variant="secondary" className="font-mono text-xs">
                   {vehicleNumber}
                 </Badge>
                 {historyData.length > 0 && (
                   <>
-                    <span className="text-muted-foreground">•</span>
-                    <Badge variant="outline" className="text-xs">
-                      {historyData.length} total records
+                    <span className="hidden sm:inline text-muted-foreground">•</span>
+                    <Badge variant="outline" className="text-[10px] sm:text-xs">
+                      {historyData.length} records
                     </Badge>
                   </>
                 )}
               </DialogDescription>
             </div>
-            <div className="flex items-center gap-2">
+            
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 shrink-0">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handlePrint}
-                className="h-8 gap-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                className="h-7 sm:h-8 gap-1 sm:gap-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
               >
-                <Printer className="h-3.5 w-3.5" />
-                Print Report
+                <Printer className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">Print</span>
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleExportCSV}
-                className="h-8 gap-1.5 text-xs"
+                className="h-7 sm:h-8 gap-1 sm:gap-1.5 text-xs"
                 disabled={sortedData.length === 0}
               >
-                <Download className="h-3.5 w-3.5" />
-                Export CSV
+                <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
+                <span className="hidden sm:inline">Export</span>
               </Button>
             </div>
           </div>
         </DialogHeader>
 
-        {/* Statistics Bar */}
-        {historyData.length > 0 && (
-          <div className="px-6 py-3 border-b bg-gradient-to-r from-amber-50 to-amber-25">
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-amber-600" />
-                <div>
-                  <div className="text-xs font-medium text-gray-600">Total Records</div>
-                  <div className="text-lg font-bold text-gray-900">{statistics.totalRecords}</div>
-                </div>
+        {/* Scrollable Content Area */}
+        <div className="flex-1 overflow-y-auto">
+          {/* Statistics Bar - Collapsible on mobile */}
+          {historyData.length > 0 && (
+            <Collapsible
+              open={expandedSections.stats}
+              onOpenChange={() => toggleSection('stats')}
+              className="border-b"
+            >
+              <div className="flex items-center justify-between px-4 sm:px-6 py-2 sm:hidden">
+                <span className="text-xs font-medium">Statistics Overview</span>
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                    {expandedSections.stats ? (
+                      <ChevronUp className="h-3 w-3" />
+                    ) : (
+                      <ChevronDown className="h-3 w-3" />
+                    )}
+                  </Button>
+                </CollapsibleTrigger>
               </div>
-              <div className="flex items-center gap-2">
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <div>
-                  <div className="text-xs font-medium text-gray-600">Current Tires</div>
-                  <div className="text-lg font-bold text-gray-900">{statistics.currentTires}</div>
+              <CollapsibleContent className="sm:block">
+                <div className="px-4 sm:px-6 py-3 bg-gradient-to-r from-amber-50 to-amber-25">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    <div className="flex items-center gap-2">
+                      <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-amber-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Total Records</div>
+                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.totalRecords}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Current Tires</div>
+                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.currentTires}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Avg Days</div>
+                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.avgServiceDays}</div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Hash className="h-3 w-3 sm:h-4 sm:w-4 text-purple-600 shrink-0" />
+                      <div className="min-w-0 col-span-2 sm:col-span-1">
+                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Most Used</div>
+                        <div className="text-xs sm:text-sm font-bold text-gray-900 truncate" title={statistics.mostCommonPosition}>
+                          {statistics.mostCommonPosition}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-3 w-3 sm:h-4 sm:w-4 text-indigo-600 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Filtered</div>
+                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.dateRangeCount}</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4 text-blue-600" />
-                <div>
-                  <div className="text-xs font-medium text-gray-600">Avg Service Days</div>
-                  <div className="text-lg font-bold text-gray-900">{statistics.avgServiceDays}</div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+
+          {/* Filters and Search - Collapsible on mobile */}
+          <Collapsible
+            open={expandedSections.filters}
+            onOpenChange={() => toggleSection('filters')}
+            className="border-b"
+          >
+            <div className="flex items-center justify-between px-4 sm:px-6 py-2 sm:hidden">
+              <span className="text-xs font-medium">Filters & Search</span>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  {expandedSections.filters ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent className="sm:block">
+              <div className="px-4 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4 bg-muted/30">
+                {/* Search Bar */}
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-medium flex items-center gap-1">
+                      <Search className="h-3 w-3" />
+                      Search
+                    </Label>
+                    <div className="flex gap-2">
+                      <div className="flex-1 relative">
+                        <Input
+                          placeholder="Search serial, position, brand..."
+                          value={searchTerm}
+                          onChange={(e) => {
+                            setSearchTerm(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          className="pl-7 pr-7 h-8 text-xs"
+                        />
+                        <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+                        {searchTerm && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={clearSearch}
+                            className="absolute right-0 top-1/2 transform -translate-y-1/2 h-6 w-6"
+                          >
+                            <X className="h-2.5 w-2.5" />
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Compact Date Range Filter */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-xs font-medium flex items-center gap-1">
+                        <CalendarIcon className="h-3 w-3" />
+                        Date Range
+                      </Label>
+                      <div className="flex items-center gap-1">
+                        {dateRange.startDate && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={clearDateFilter}
+                            className="h-5 px-1.5 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            Clear
+                          </Button>
+                        )}
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button
+                              variant={dateRange.startDate ? "secondary" : "outline"}
+                              size="sm"
+                              className="h-6 px-2 text-[10px]"
+                            >
+                              <CalendarIcon className="h-2.5 w-2.5 mr-1" />
+                              {dateRange.startDate ? 'Change' : 'Select'}
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-[280px] p-2" align="end">
+                            <div className="space-y-2">
+                              <div className="grid grid-cols-3 gap-1">
+                                {['week', 'month', '3months', 'year', 'today', 'all'].map((preset) => (
+                                  <Button
+                                    key={preset}
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleDateRangePreset(preset)}
+                                    className="h-6 text-[10px]"
+                                  >
+                                    {preset === '3months' ? '3M' : preset === 'today' ? 'Today' : preset === 'all' ? 'All' : preset}
+                                  </Button>
+                                ))}
+                              </div>
+                              
+                              <Separator />
+                              
+                              <div className="text-[10px] font-medium">Custom:</div>
+                              <CalendarComponent
+                                mode="range"
+                                selected={{
+                                  from: dateRange.startDate,
+                                  to: dateRange.endDate,
+                                }}
+                                onSelect={(range) => {
+                                  if (range?.from && range?.to) {
+                                    setDateRange({
+                                      startDate: range.from,
+                                      endDate: range.to,
+                                    });
+                                    setCurrentPage(1);
+                                  }
+                                }}
+                                numberOfMonths={1}
+                                className="rounded-md border p-1"
+                              />
+                            </div>
+                          </PopoverContent>
+                        </Popover>
+                      </div>
+                    </div>
+                    
+                    {dateRange.startDate && (
+                      <div className="text-[10px] text-blue-700 px-1 truncate">
+                        {dateRange.endDate ? (
+                          `${format(dateRange.startDate, "MMM d")} - ${format(dateRange.endDate, "MMM d")}`
+                        ) : (
+                          `From ${format(dateRange.startDate, "MMM d, yyyy")}`
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <Hash className="h-4 w-4 text-purple-600" />
-                <div>
-                  <div className="text-xs font-medium text-gray-600">Most Used Position</div>
-                  <div className="text-sm font-bold text-gray-900 truncate" title={statistics.mostCommonPosition}>
-                    {statistics.mostCommonPosition}
+
+                {/* Additional Filters */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Position</Label>
+                    <Select 
+                      value={filterPosition} 
+                      onValueChange={(value) => {
+                        setFilterPosition(value);
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Positions" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Positions</SelectItem>
+                        {uniquePositions.map((position) => (
+                          <SelectItem key={position} value={position} className="text-xs">
+                            {position}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Status</Label>
+                    <Select 
+                      value={filterStatus} 
+                      onValueChange={(value) => {
+                        setFilterStatus(value);
+                        setCurrentPage(1);
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="All Status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all" className="text-xs">All Status</SelectItem>
+                        <SelectItem value="current" className="text-xs">Current Tires</SelectItem>
+                        <SelectItem value="removed" className="text-xs">Removed Tires</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Filter Actions */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleResetFilters}
+                    className="h-7 text-xs"
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Reset Filters
+                  </Button>
+                  <div className="text-[10px] text-muted-foreground">
+                    Showing {sortedData.length} of {historyData.length} records
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Filter className="h-4 w-4 text-indigo-600" />
-                <div>
-                  <div className="text-xs font-medium text-gray-600">Filtered Records</div>
-                  <div className="text-lg font-bold text-gray-900">{statistics.dateRangeCount}</div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* History Table/List */}
+          <div className="p-4 sm:p-6">
+            {historyData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-center">
+                <AlertCircle className="h-8 w-8 sm:h-12 sm:w-12 mb-2 sm:mb-3 text-muted-foreground opacity-50" />
+                <h3 className="font-semibold text-sm sm:text-base mb-1">No History Found</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground">
+                  No tire installation history available for this vehicle.
+                </p>
+              </div>
+            ) : sortedData.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-center">
+                <AlertCircle className="h-8 w-8 sm:h-12 sm:w-12 mb-2 sm:mb-3 text-muted-foreground opacity-50" />
+                <h3 className="font-semibold text-sm sm:text-base mb-1">No Matching Records</h3>
+                <p className="text-xs sm:text-sm text-muted-foreground mb-3">
+                  Try adjusting your search criteria.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={handleResetFilters}
+                    size="sm"
+                    className="h-7 text-xs"
+                  >
+                    Clear All Filters
+                  </Button>
                 </div>
               </div>
-            </div>
-          </div>
-        )}
+            ) : (
+              <>
+                {/* Desktop Table */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <Table className="min-w-[1200px]">
+                    <TableHeader className="bg-background border-b">
+                      <TableRow className="hover:bg-transparent">
+                        <TableHead className="w-16 py-2 px-3 font-semibold text-[11px]">ID</TableHead>
+                        <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Serial</TableHead>
+                        <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Position</TableHead>
+                        <TableHead className="w-40 py-2 px-3 font-semibold text-[11px]">Tire Details</TableHead>
+                        <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Installation</TableHead>
+                        <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Removal</TableHead>
+                        <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Duration</TableHead>
+                        <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Mileage</TableHead>
+                        <TableHead className="w-64 py-2 px-3 font-semibold text-[11px]">Reason & Created By</TableHead>
+                        <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Status</TableHead>
+                        <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Created Date</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedData.map((record) => {
+                        const isCurrent = !record.removal_date;
+                        const serviceDuration = getServiceDuration(
+                          record.install_date,
+                          record.removal_date
+                        );
+                        const serviceMileage = getServiceMileage(
+                          record.install_odometer,
+                          record.removal_odometer
+                        );
+                        const tireType = getTireType(record);
 
-        {/* Filters and Search */}
-        <div className="px-6 py-4 space-y-4 border-b bg-muted/30">
-          {/* Search Bar */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-xs font-medium flex items-center gap-1">
-                <Search className="h-3.5 w-3.5" />
-                Advanced Search
-              </Label>
-              <div className="flex gap-2">
-                <div className="flex-1 relative">
-                  <Input
-                    placeholder="Search by serial, position, brand, reason, installer..."
-                    value={searchTerm}
-                    onChange={(e) => {
-                      setSearchTerm(e.target.value);
-                      setCurrentPage(1);
-                    }}
-                    className="pl-9 pr-8 h-9 text-sm"
-                  />
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  {searchTerm && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={clearSearch}
-                      className="absolute right-1 top-1/2 transform -translate-y-1/2 h-6 w-6"
-                    >
-                      <X className="h-3 w-3" />
-                    </Button>
-                  )}
+                        return (
+                          <TableRow 
+                            key={record.id} 
+                            className="hover:bg-muted/30 border-b last:border-0 cursor-pointer"
+                            onClick={() => handleRowClick(record)}
+                          >
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="font-mono text-[11px] font-medium text-muted-foreground">#{record.id}</div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
+                                    tireType === "NEW"
+                                      ? "bg-green-500"
+                                      : tireType === "RETREAD"
+                                      ? "bg-yellow-500"
+                                      : "bg-blue-500"
+                                  }`}
+                                />
+                                <div className="font-mono text-xs font-medium truncate max-w-[100px]" title={record.serial_number}>
+                                  {record.serial_number}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="space-y-0.5">
+                                <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0.5">
+                                  {record.position_code}
+                                </Badge>
+                                <div className="text-[10px] text-muted-foreground truncate max-w-[80px]" title={record.position_name}>
+                                  {record.position_name}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="space-y-1">
+                                <div className="text-xs font-medium truncate max-w-[100px]" title={record.brand}>
+                                  {record.brand}
+                                </div>
+                                <div className="text-[11px] text-muted-foreground truncate max-w-[100px]" title={record.size}>
+                                  {record.size}
+                                </div>
+                                <Badge
+                                  variant="outline"
+                                  className={`text-[10px] px-1.5 py-0.5 ${getTireTypeColor(tireType)}`}
+                                >
+                                  {tireType}
+                                </Badge>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                                  <span className="text-xs">
+                                    {formatDate(record.install_date)}
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-muted-foreground pl-4">
+                                  {record.install_odometer.toLocaleString()} km
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              {record.removal_date ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-1">
+                                    <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                                    <span className="text-xs">
+                                      {formatDate(record.removal_date)}
+                                    </span>
+                                  </div>
+                                  <div className="text-[11px] text-muted-foreground pl-4">
+                                    {record.removal_odometer?.toLocaleString()} km
+                                  </div>
+                                </div>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] px-2 py-0.5"
+                                >
+                                  Current
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
+                                {serviceDuration}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
+                                {serviceMileage}
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="space-y-1">
+                                <div className="text-[11px] line-clamp-2 max-h-8 overflow-hidden" title={record.reason_for_change}>
+                                  {record.reason_for_change}
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  By: <span className="font-medium">{record.created_by}</span>
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              {isCurrent ? (
+                                <Badge className="px-2 py-0.5 bg-green-50 text-green-700 border-green-200 text-xs">
+                                  <CheckCircle className="h-2.5 w-2.5 mr-1" />
+                                  Active
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs">
+                                  Removed
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="py-2 px-3 align-top">
+                              <div className="text-[10px] text-muted-foreground truncate max-w-[100px]" title={formatDateTime(record.created_at)}>
+                                {formatDateTime(record.created_at)}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={() => setSearchTerm("")}
-                  className="h-9 px-3 text-xs"
-                  disabled={!searchTerm}
-                >
-                  Clear
-                </Button>
-              </div>
-              <div className="text-xs text-muted-foreground pl-1">
-                {searchTerm 
-                  ? `${filteredData.length} results found for "${searchTerm}"`
-                  : "Search across all fields. Use spaces for multiple terms."
-                }
-              </div>
-            </div>
 
-            {/* Compact Date Range Filter */}
-            <div className="space-y-2">
-  <div className="flex items-center justify-between">
-    <Label className="text-xs font-medium flex items-center gap-1">
-      <CalendarIcon className="h-3.5 w-3.5" />
-      Date Range Filter
-    </Label>
-    <div className="flex items-center gap-1">
-      {dateRange.startDate && (
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={clearDateFilter}
-          className="h-6 px-2 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-        >
-          Clear
-        </Button>
-      )}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button
-            variant={dateRange.startDate ? "secondary" : "outline"}
-            size="sm"
-            className="h-6 px-2 text-xs"
-          >
-            <CalendarIcon className="h-3 w-3 mr-1" />
-            {dateRange.startDate ? 'Change' : 'Dates'}
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-auto p-2" align="end">
-          <div className="space-y-2">
-            <div className="grid grid-cols-3 gap-1">
-              {['week', 'month', '3months', 'year', 'today', 'all'].map((preset) => (
-                <Button
-                  key={preset}
-                  variant="outline"
-                  size="sm"
-                  onClick={() => handleDateRangePreset(preset)}
-                  className="h-7 text-xs"
-                >
-                  {preset === '3months' ? '3M' : preset === 'today' ? 'Today' : preset === 'all' ? 'All' : preset}
-                </Button>
-              ))}
-            </div>
-            
-            <Separator />
-            
-            <div className="text-xs font-medium">Custom Range:</div>
-            <CalendarComponent
-              mode="range"
-              selected={{
-                from: dateRange.startDate,
-                to: dateRange.endDate,
-              }}
-              onSelect={(range) => {
-                if (range?.from && range?.to) {
-                  setDateRange({
-                    startDate: range.from,
-                    endDate: range.to,
-                  });
-                  setCurrentPage(1);
-                }
-              }}
-              numberOfMonths={1}
-              className="rounded-md border p-1"
-            />
-          </div>
-        </PopoverContent>
-      </Popover>
-    </div>
-  </div>
-  
-  {dateRange.startDate && (
-    <div className="text-xs text-blue-700 px-1">
-      {dateRange.endDate ? (
-        `${format(dateRange.startDate, "MMM dd")} - ${format(dateRange.endDate, "MMM dd")}`
-      ) : (
-        `From ${format(dateRange.startDate, "MMM dd, yyyy")}`
-      )}
-    </div>
-  )}
-</div>
-          </div>
+                {/* Mobile Card List */}
+                <div className="sm:hidden space-y-3">
+                  {paginatedData.map((record) => {
+                    const isCurrent = !record.removal_date;
+                    const serviceDuration = getServiceDuration(
+                      record.install_date,
+                      record.removal_date
+                    );
+                    const serviceMileage = getServiceMileage(
+                      record.install_odometer,
+                      record.removal_odometer
+                    );
+                    const tireType = getTireType(record);
 
-          {/* Additional Filters */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div>
-              <Label className="text-xs font-medium mb-1 block">Position Filter</Label>
-              <Select 
-                value={filterPosition} 
-                onValueChange={(value) => {
-                  setFilterPosition(value);
-                  setCurrentPage(1);
-                }}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <Hash className="h-3.5 w-3.5 mr-2" />
-                  <SelectValue placeholder="All Positions" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Positions</SelectItem>
-                  {uniquePositions.map((position) => (
-                    <SelectItem key={position} value={position}>
-                      {position}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label className="text-xs font-medium mb-1 block">Status Filter</Label>
-              <Select 
-                value={filterStatus} 
-                onValueChange={(value) => {
-                  setFilterStatus(value);
-                  setCurrentPage(1);
-                }}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <CheckCircle className="h-3.5 w-3.5 mr-2" />
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="current">Current Tires</SelectItem>
-                  <SelectItem value="removed">Removed Tires</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="md:col-span-2 flex items-end gap-3">
-              <Button
-                variant="outline"
-                onClick={handleResetFilters}
-                className="h-9 text-sm"
-              >
-                <RefreshCw className="h-3.5 w-3.5 mr-2" />
-                Reset All Filters
-              </Button>
-              <div className="flex-1">
-                <div className="text-xs text-muted-foreground">
-                  Showing {sortedData.length} of {historyData.length} records
-                  {dateRange.startDate && " • Date filtered"}
-                  {filterPosition !== "all" && " • Position filtered"}
-                  {filterStatus !== "all" && " • Status filtered"}
-                </div>
-                <div className="text-xs font-medium mt-1">
-                  Page {currentPage} of {totalPages} • {paginatedData.length} items on this page
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* History Table */}
-        <div className="flex-1 overflow-hidden relative">
-          {historyData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-6">
-              <AlertCircle className="h-12 w-12 mb-3 text-muted-foreground opacity-50" />
-              <h3 className="font-semibold text-lg mb-1">No History Found</h3>
-              <p className="text-muted-foreground text-sm">
-                No tire installation history available for this vehicle.
-              </p>
-            </div>
-          ) : sortedData.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-center p-6">
-              <AlertCircle className="h-12 w-12 mb-3 text-muted-foreground opacity-50" />
-              <h3 className="font-semibold text-lg mb-1">No Matching Records</h3>
-              <p className="text-muted-foreground text-sm mb-4">
-                No records match your filters. Try adjusting your search criteria.
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  onClick={handleResetFilters}
-                  size="sm"
-                >
-                  Clear All Filters
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={clearDateFilter}
-                  size="sm"
-                >
-                  Clear Dates
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <div className="h-full overflow-auto">
-              <div className="min-w-[1200px]">
-                <Table className="min-w-full text-xs">
-                  <TableHeader className="sticky top-0 bg-background z-10 border-b">
-                    <TableRow className="hover:bg-transparent">
-                      <TableHead className="w-16 py-2 px-3 font-semibold text-[11px]">ID</TableHead>
-                      <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Serial</TableHead>
-                      <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Position</TableHead>
-                      <TableHead className="w-40 py-2 px-3 font-semibold text-[11px]">Tire Details</TableHead>
-                      <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Installation</TableHead>
-                      <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Removal</TableHead>
-                      <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Duration</TableHead>
-                      <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Mileage</TableHead>
-                      <TableHead className="w-64 py-2 px-3 font-semibold text-[11px]">Reason & Created By</TableHead>
-                      <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Status</TableHead>
-                      <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Created Date</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {paginatedData.map((record) => {
-                      const isCurrent = !record.removal_date;
-                      const serviceDuration = getServiceDuration(
-                        record.install_date,
-                        record.removal_date
-                      );
-                      const serviceMileage = getServiceMileage(
-                        record.install_odometer,
-                        record.removal_odometer
-                      );
-                      const tireType = getTireType(record);
-
-                      return (
-                        <TableRow key={record.id} className="hover:bg-muted/30 border-b last:border-0">
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="font-mono text-[11px] font-medium text-muted-foreground">#{record.id}</div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="flex items-center gap-1.5">
+                    return (
+                      <Card 
+                        key={record.id} 
+                        className="overflow-hidden cursor-pointer hover:bg-accent/50 transition-colors"
+                        onClick={() => handleRowClick(record)}
+                      >
+                        <CardContent className="p-3">
+                          {/* Header */}
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center gap-2">
                               <div
                                 className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
                                   tireType === "NEW"
@@ -1030,182 +1218,275 @@ export default function TireHistoryModal({
                                     : "bg-blue-500"
                                 }`}
                               />
-                              <div className="font-mono text-xs font-medium truncate" title={record.serial_number}>
-                                {record.serial_number}
-                              </div>
+                              <span className="font-mono text-xs font-medium">{record.serial_number}</span>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="space-y-0.5">
-                              <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0.5">
-                                {record.position_code}
-                              </Badge>
-                              <div className="text-[10px] text-muted-foreground truncate" title={record.position_name}>
-                                {record.position_name}
-                              </div>
+                            <Badge variant="outline" className="font-mono text-[10px]">
+                              #{record.id}
+                            </Badge>
+                          </div>
+
+                          {/* Position */}
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="outline" className="font-mono text-[10px]">
+                              {record.position_code}
+                            </Badge>
+                            <span className="text-xs truncate">{record.position_name}</span>
+                          </div>
+
+                          {/* Tire Details */}
+                          <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">Brand</div>
+                              <div className="truncate">{record.brand}</div>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="space-y-1">
-                              <div className="text-xs font-medium truncate" title={record.brand}>
-                                {record.brand}
-                              </div>
-                              <div className="text-[11px] text-muted-foreground truncate" title={record.size}>
-                                {record.size}
-                              </div>
-                              <Badge
-                                variant="outline"
-                                className={`text-[10px] px-1.5 py-0.5 ${getTireTypeColor(tireType)}`}
-                              >
-                                {tireType}
-                              </Badge>
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">Size</div>
+                              <div>{record.size}</div>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="space-y-1">
+                          </div>
+
+                          {/* Dates */}
+                          <div className="space-y-1 text-xs mb-2">
+                            <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-                                <span className="text-xs">
-                                  {formatDate(record.install_date)}
-                                </span>
+                                <Calendar className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-[10px]">Install:</span>
                               </div>
-                              <div className="text-[11px] text-muted-foreground pl-4">
-                                {record.install_odometer.toLocaleString()} km
-                              </div>
+                              <span>{formatDate(record.install_date)}</span>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            {record.removal_date ? (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-                                  <span className="text-xs">
-                                    {formatDate(record.removal_date)}
-                                  </span>
-                                </div>
-                                <div className="text-[11px] text-muted-foreground pl-4">
-                                  {record.removal_odometer?.toLocaleString()} km
-                                </div>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1">
+                                <Calendar className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-[10px]">Removal:</span>
                               </div>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] px-2 py-0.5"
-                              >
-                                Current
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
-                              {serviceDuration}
+                              {record.removal_date ? (
+                                <span>{formatDate(record.removal_date)}</span>
+                              ) : (
+                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
+                                  Current
+                                </Badge>
+                              )}
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
-                              {serviceMileage}
+                          </div>
+
+                          {/* Odometer */}
+                          <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">Install Odo</div>
+                              <div className="font-mono text-xs">{record.install_odometer.toLocaleString()} km</div>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="space-y-1">
-                              <div className="text-[11px] line-clamp-2 max-h-8 overflow-hidden" title={record.reason_for_change}>
-                                {record.reason_for_change}
-                              </div>
-                              <div className="text-[10px] text-muted-foreground">
-                                By: <span className="font-medium">{record.created_by}</span>
+                            <div>
+                              <div className="text-[10px] text-muted-foreground">Removal Odo</div>
+                              <div className="font-mono text-xs">
+                                {record.removal_odometer?.toLocaleString() || 'N/A'} km
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            {isCurrent ? (
-                              <Badge className="px-2 py-0.5 bg-green-50 text-green-700 border-green-200 text-xs">
-                                <CheckCircle className="h-2.5 w-2.5 mr-1" />
-                                Active
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs">
-                                Removed
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="py-2 px-3 align-top">
-                            <div className="text-[10px] text-muted-foreground truncate" title={formatDateTime(record.created_at)}>
-                              {formatDateTime(record.created_at)}
+                          </div>
+
+                          {/* Service Info */}
+                          <div className="grid grid-cols-2 gap-2 text-xs mb-2">
+                            <div className="bg-muted/30 rounded p-1.5">
+                              <div className="text-[10px] text-muted-foreground">Duration</div>
+                              <div className="font-medium">{serviceDuration}</div>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </div>
-          )}
+                            <div className="bg-muted/30 rounded p-1.5">
+                              <div className="text-[10px] text-muted-foreground">Mileage</div>
+                              <div className="font-medium">{serviceMileage}</div>
+                            </div>
+                          </div>
+
+                          {/* Reason */}
+                          <div className="text-xs mb-2">
+                            <div className="text-[10px] text-muted-foreground mb-1">Reason</div>
+                            <div className="text-xs line-clamp-2">{record.reason_for_change}</div>
+                          </div>
+
+                          {/* Footer */}
+                          <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
+                            <span>By: {record.created_by}</span>
+                            <span>{formatDateTime(record.created_at)}</span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
         </div>
 
-        {/* Pagination */}
+        {/* Pagination - Fixed at bottom */}
         {totalPages > 1 && sortedData.length > 0 && (
-          <div className="flex items-center justify-between border-t px-6 py-3 bg-background">
-            <div className="text-xs text-muted-foreground">
-              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, sortedData.length)} of {sortedData.length} records
-              {dateRange.startDate && (
-                <span className="ml-2">• Date filtered</span>
-              )}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t px-4 sm:px-6 py-3 bg-background shrink-0">
+            <div className="text-[10px] sm:text-xs text-muted-foreground order-2 sm:order-1">
+              Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, sortedData.length)} of {sortedData.length}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center justify-center gap-2 order-1 sm:order-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="h-8 px-3 text-xs"
+                className="h-7 sm:h-8 px-2 sm:px-3 text-xs"
               >
                 <ChevronLeft className="h-3 w-3 mr-1" />
-                Previous
+                <span className="hidden sm:inline">Prev</span>
               </Button>
+              
               <div className="flex items-center gap-1">
-                <span className="text-xs text-muted-foreground px-2">Page</span>
-                <div className="flex items-center gap-0.5">
-                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-                    
-                    return (
-                      <Button
-                        key={pageNum}
-                        variant={currentPage === pageNum ? "default" : "outline"}
-                        size="sm"
-                        className="h-8 w-8 min-w-8 text-xs"
-                        onClick={() => handlePageChange(pageNum)}
-                      >
-                        {pageNum}
-                      </Button>
-                    );
-                  })}
-                </div>
-                <span className="text-xs text-muted-foreground px-2">of {totalPages}</span>
+                {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                  let pageNum;
+                  if (totalPages <= 3) {
+                    pageNum = i + 1;
+                  } else if (currentPage <= 2) {
+                    pageNum = i + 1;
+                  } else if (currentPage >= totalPages - 1) {
+                    pageNum = totalPages - 2 + i;
+                  } else {
+                    pageNum = currentPage - 1 + i;
+                  }
+                  
+                  return (
+                    <Button
+                      key={pageNum}
+                      variant={currentPage === pageNum ? "default" : "outline"}
+                      size="sm"
+                      className="h-7 w-7 min-w-7 sm:h-8 sm:w-8 text-xs"
+                      onClick={() => handlePageChange(pageNum)}
+                    >
+                      {pageNum}
+                    </Button>
+                  );
+                })}
               </div>
+              
+              <span className="text-xs text-muted-foreground px-1 hidden sm:inline">
+                of {totalPages}
+              </span>
+              
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="h-8 px-3 text-xs"
+                className="h-7 sm:h-8 px-2 sm:px-3 text-xs"
               >
-                Next
+                <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-3 w-3 ml-1" />
               </Button>
             </div>
           </div>
         )}
+
+        {/* Detail View Dialog */}
+        <Dialog open={detailViewOpen} onOpenChange={setDetailViewOpen}>
+          <DialogContent className="max-w-[95vw] sm:max-w-lg rounded-lg p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+                <Package className="h-4 w-4 sm:h-5 sm:w-5" />
+                Tire Installation Details
+              </DialogTitle>
+            </DialogHeader>
+            
+            {selectedRecord && (
+              <div className="space-y-3 sm:space-y-4 max-h-[60vh] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Serial Number</div>
+                    <div className="font-mono font-medium">{selectedRecord.serial_number}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Position</div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {selectedRecord.position_code}
+                      </Badge>
+                      <span className="text-sm truncate">{selectedRecord.position_name}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Brand</div>
+                    <div>{selectedRecord.brand}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Size</div>
+                    <div>{selectedRecord.size}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Type</div>
+                    <Badge variant="outline" className={getTireTypeColor(getTireType(selectedRecord))}>
+                      {getTireType(selectedRecord)}
+                    </Badge>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Install Date</div>
+                    <div>{formatDate(selectedRecord.install_date)}</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {selectedRecord.install_odometer.toLocaleString()} km
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Removal Date</div>
+                    {selectedRecord.removal_date ? (
+                      <>
+                        <div>{formatDate(selectedRecord.removal_date)}</div>
+                        <div className="text-xs text-muted-foreground mt-1">
+                          {selectedRecord.removal_odometer?.toLocaleString()} km
+                        </div>
+                      </>
+                    ) : (
+                      <Badge className="bg-blue-50 text-blue-700 border-blue-200">Current</Badge>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Service Duration</div>
+                    <div className="font-medium">{getServiceDuration(selectedRecord.install_date, selectedRecord.removal_date)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Service Mileage</div>
+                    <div className="font-medium">{getServiceMileage(selectedRecord.install_odometer, selectedRecord.removal_odometer)}</div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs text-muted-foreground">Reason for Change</div>
+                  <div className="text-sm">{selectedRecord.reason_for_change}</div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground">Installed By</div>
+                    <div>{selectedRecord.created_by}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground">Created Date</div>
+                    <div>{formatDateTime(selectedRecord.created_at)}</div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-3">
+                  <Button variant="outline" size="sm" onClick={() => setDetailViewOpen(false)}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );
@@ -1213,7 +1494,7 @@ export default function TireHistoryModal({
 
 // Import the Label component
 const Label = ({ className, children, ...props }: any) => (
-  <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} {...props}>
+  <label className={`text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} {...props}>
     {children}
   </label>
 );

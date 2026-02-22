@@ -45,6 +45,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
 import {
   ArrowLeft,
@@ -71,6 +80,10 @@ import {
   Download,
   Printer,
   Info,
+  Menu,
+  Filter,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
@@ -165,6 +178,261 @@ interface GRNDocument {
   }>;
 }
 
+// Mobile Item Card Component
+const MobileItemCard = ({
+  item,
+  onUpdateQuantity,
+  onUpdateBrand,
+  onUpdateCondition,
+  onUpdateBatchNumber,
+  onUpdateNotes,
+  submitting,
+  formatCurrency,
+  getConditionColor,
+}: {
+  item: ReceivingItem;
+  onUpdateQuantity: (poItemId: number, quantity: number) => void;
+  onUpdateBrand: (poItemId: number, brand: string) => void;
+  onUpdateCondition: (poItemId: number, condition: "GOOD" | "DAMAGED" | "DEFECTIVE") => void;
+  onUpdateBatchNumber: (poItemId: number, batchNumber: string) => void;
+  onUpdateNotes: (poItemId: number, notes: string) => void;
+  submitting: boolean;
+  formatCurrency: (amount: number) => string;
+  getConditionColor: (condition: string) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const itemTotal = item.current_receive * item.unit_price;
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header - Always visible */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="font-medium text-lg">{item.size}</div>
+            <div className="text-sm text-muted-foreground">
+              {item.model} • {item.type}
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
+              Unit: {formatCurrency(item.unit_price)}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="ml-2"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+
+        {/* Quantity Controls - Always visible */}
+        <div className="flex items-center justify-between mt-3">
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground">Ordered: {item.ordered_quantity}</div>
+            <div className="text-xs text-muted-foreground">Received: {item.previously_received}</div>
+            <div className="text-xs font-medium">Remaining: {item.remaining_quantity}</div>
+          </div>
+          
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdateQuantity(item.po_item_id, item.current_receive - 1)}
+              disabled={item.current_receive <= 0 || submitting}
+              className="h-8 w-8 p-0"
+            >
+              <Minus className="h-3 w-3" />
+            </Button>
+            
+            <Input
+              type="number"
+              min="0"
+              max={item.remaining_quantity}
+              value={item.current_receive}
+              onChange={(e) => onUpdateQuantity(item.po_item_id, parseInt(e.target.value) || 0)}
+              className="w-16 text-center h-8"
+              disabled={submitting}
+            />
+            
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onUpdateQuantity(item.po_item_id, item.current_receive + 1)}
+              disabled={item.current_receive >= item.remaining_quantity || submitting}
+              className="h-8 w-8 p-0"
+            >
+              <Plus className="h-3 w-3" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Item Total - Always visible */}
+        {item.current_receive > 0 && (
+          <div className="mt-2 text-right">
+            <div className="text-sm font-medium">{formatCurrency(itemTotal)}</div>
+            <div className="text-xs text-muted-foreground">
+              {item.current_receive} × {formatCurrency(item.unit_price)}
+            </div>
+          </div>
+        )}
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            {/* Brand */}
+            <div className="space-y-1">
+              <Label className="text-xs">
+                Brand <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                value={item.brand}
+                onChange={(e) => onUpdateBrand(item.po_item_id, e.target.value)}
+                placeholder="Enter brand (e.g., Michelin)"
+                className="w-full text-sm"
+                required={item.current_receive > 0}
+                disabled={submitting}
+              />
+            </div>
+
+            {/* Batch Number */}
+            <div className="space-y-1">
+              <Label className="text-xs">Batch Number</Label>
+              <Input
+                value={item.batch_number}
+                onChange={(e) => onUpdateBatchNumber(item.po_item_id, e.target.value)}
+                placeholder="Batch number"
+                className="w-full text-sm"
+                disabled={submitting}
+              />
+            </div>
+
+            {/* Condition */}
+            <div className="space-y-1">
+              <Label className="text-xs">Condition</Label>
+              <Select
+                value={item.condition}
+                onValueChange={(value: "GOOD" | "DAMAGED" | "DEFECTIVE") => 
+                  onUpdateCondition(item.po_item_id, value)
+                }
+                disabled={submitting}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="GOOD">
+                    <Badge className={getConditionColor("GOOD")}>Good</Badge>
+                  </SelectItem>
+                  <SelectItem value="DAMAGED">
+                    <Badge className={getConditionColor("DAMAGED")}>Damaged</Badge>
+                  </SelectItem>
+                  <SelectItem value="DEFECTIVE">
+                    <Badge className={getConditionColor("DEFECTIVE")}>Defective</Badge>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Textarea
+                value={item.notes}
+                onChange={(e) => onUpdateNotes(item.po_item_id, e.target.value)}
+                placeholder="Add notes for this item"
+                rows={2}
+                className="text-sm"
+                disabled={submitting}
+              />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// Mobile Serial Number Card Component
+const MobileSerialCard = ({
+  item,
+  onUpdateSerial,
+  onGenerateBatch,
+  submitting,
+}: {
+  item: ReceivingItem;
+  onUpdateSerial: (poItemId: number, index: number, value: string) => void;
+  onGenerateBatch: (poItemId: number) => void;
+  submitting: boolean;
+}) => {
+  const enteredCount = (item.serial_numbers || []).filter(sn => sn.trim() !== "").length;
+
+  return (
+    <Card className="mb-3 last:mb-0 border-l-4 border-l-blue-500">
+      <CardHeader className="py-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="text-sm font-medium">
+              {item.size} • {item.brand || 'No brand'} • Qty: {item.current_receive}
+            </CardTitle>
+            <CardDescription>
+              Enter unique serial numbers for each tire
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => onGenerateBatch(item.po_item_id)}
+            disabled={!item.brand || item.brand.trim() === "" || submitting}
+            className="ml-2"
+          >
+            <Key className="mr-2 h-3 w-3" />
+            Generate
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-2">
+          {Array.from({ length: item.current_receive }).map((_, index) => (
+            <div key={index} className="space-y-1">
+              <Label className="text-xs">Tire {index + 1}</Label>
+              <Input
+                value={(item.serial_numbers?.[index] || "")}
+                onChange={(e) => onUpdateSerial(item.po_item_id, index, e.target.value)}
+                placeholder={`SN-${item.size}-${index + 1}`}
+                className="text-sm"
+                disabled={submitting}
+              />
+            </div>
+          ))}
+        </div>
+        
+        {item.current_receive > 0 && (
+          <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
+            <span className={enteredCount === item.current_receive ? "text-green-600" : ""}>
+              {enteredCount} / {item.current_receive} entered
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                const text = (item.serial_numbers || []).filter(sn => sn.trim() !== "").join('\n');
+                navigator.clipboard.writeText(text);
+                toast.success("Serial numbers copied to clipboard");
+              }}
+              disabled={enteredCount === 0 || submitting}
+            >
+              <Copy className="mr-1 h-3 w-3" />
+              Copy
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 export default function ReceiveGoodsPage() {
   const params = useParams();
   const router = useRouter();
@@ -181,6 +449,8 @@ export default function ReceiveGoodsPage() {
   const [generatedGRN, setGeneratedGRN] = useState<GRNDocument | null>(null);
   const [showGRNDialog, setShowGRNDialog] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDeliverySheetOpen, setIsDeliverySheetOpen] = useState(false);
   const [receivingData, setReceivingData] = useState({
     receipt_date: new Date().toISOString().split('T')[0],
     supplier_invoice_number: "",
@@ -578,11 +848,26 @@ export default function ReceiveGoodsPage() {
     }
   };
 
+  const resetForm = () => {
+    setReceivingItems(prev =>
+      prev.map(item => ({
+        ...item,
+        current_receive: 0,
+        serial_numbers: [],
+        condition: "GOOD" as const,
+        brand: "",
+        batch_number: `BATCH-${order?.po_number}-${item.po_item_id}`,
+        notes: ""
+      }))
+    );
+    toast.info("Receiving form reset");
+  };
+
   // Show auth loading state
   if (authLoading || settingsLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Skeleton className="h-10 w-24" />
             <div>
@@ -605,16 +890,16 @@ export default function ReceiveGoodsPage() {
   if (!hasPermission("po.receive")) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
-          <Button variant="outline" size="sm" asChild>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
             <Link href="/purchases?tab=orders">
               <ArrowLeft className="mr-2 h-4 w-4" />
               Back to Orders
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Receive Goods</h1>
-            <p className="text-muted-foreground">Process goods receipt for purchase orders</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Receive Goods</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Process goods receipt for purchase orders</p>
           </div>
         </div>
 
@@ -625,7 +910,7 @@ export default function ReceiveGoodsPage() {
           </AlertDescription>
         </Alert>
 
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/purchases">Return to Purchases</Link>
         </Button>
       </div>
@@ -635,7 +920,7 @@ export default function ReceiveGoodsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
+        <div className="text-center px-4">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
           <p className="mt-4 text-muted-foreground">Loading purchase order...</p>
         </div>
@@ -645,11 +930,11 @@ export default function ReceiveGoodsPage() {
 
   if (error || !order) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-screen">
+      <div className="flex flex-col items-center justify-center min-h-screen px-4">
         <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
-        <h2 className="text-2xl font-bold">Order Not Found</h2>
-        <p className="text-muted-foreground mt-2">{error || "The purchase order could not be found."}</p>
-        <Button className="mt-4" asChild>
+        <h2 className="text-2xl font-bold text-center">Order Not Found</h2>
+        <p className="text-muted-foreground mt-2 text-center">{error || "The purchase order could not be found."}</p>
+        <Button className="mt-4 w-full sm:w-auto" asChild>
           <Link href="/purchases">
             <ArrowLeft className="mr-2 h-4 w-4" />
             Back to Purchases
@@ -670,18 +955,18 @@ export default function ReceiveGoodsPage() {
   return (
     <PermissionGuard permissionCode="po.receive" action="edit">
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" asChild>
+        {/* Header - Mobile Responsive */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <Button variant="outline" size="sm" asChild className="w-full sm:w-auto">
               <Link href="/purchases?tab=orders">
                 <ArrowLeft className="mr-2 h-4 w-4" />
                 Back to Orders
               </Link>
             </Button>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">Receive Goods</h1>
-              <p className="text-muted-foreground">
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Receive Goods</h1>
+              <p className="text-sm sm:text-base text-muted-foreground">
                 PO: {order.po_number} • {order.supplier_name}
               </p>
               {systemSettings?.company_name && (
@@ -691,7 +976,9 @@ export default function ReceiveGoodsPage() {
               )}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          
+          {/* Desktop Status */}
+          <div className="hidden sm:flex items-center gap-2">
             <Badge className={getStatusColor(order.status)}>
               {order.status.replace("_", " ")}
             </Badge>
@@ -699,66 +986,84 @@ export default function ReceiveGoodsPage() {
               Created by: {order.created_by_name || `User ${order.created_by}`}
             </div>
           </div>
+
+          {/* Mobile Status Button */}
+          <div className="flex sm:hidden items-center justify-between">
+            <Badge className={getStatusColor(order.status)}>
+              {order.status.replace("_", " ")}
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="h-4 w-4 mr-2" />
+              Menu
+            </Button>
+          </div>
         </div>
 
-        {/* Order Summary */}
+        {/* Order Summary - Mobile Responsive */}
         <Card>
-          <CardHeader>
-            <CardTitle>Order Summary</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-lg">Order Summary</CardTitle>
             <CardDescription>Purchase order details and receiving progress</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-4">
+              {/* Supplier Info */}
+              <div className="space-y-3">
                 <div>
                   <Label className="text-sm font-medium">Supplier Information</Label>
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-2 space-y-2">
                     <div className="flex items-center gap-2">
-                      <Building className="h-4 w-4 text-muted-foreground" />
-                      <span className="font-medium">{order.supplier_name}</span>
+                      <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="font-medium text-sm">{order.supplier_name}</span>
                     </div>
-                    <p className="text-sm text-muted-foreground">{order.supplier_type}</p>
+                    <p className="text-sm text-muted-foreground pl-6">{order.supplier_type}</p>
                   </div>
                 </div>
                 <div>
                   <Label className="text-sm font-medium">Order Dates</Label>
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-2 space-y-2">
                     <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span>Order Date: {formatDate(order.po_date)}</span>
+                      <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm">Order: {formatDate(order.po_date)}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Truck className="h-4 w-4 text-muted-foreground" />
-                      <span>Expected: {formatDate(order.expected_delivery_date)}</span>
+                      <Truck className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      <span className="text-sm">Expected: {formatDate(order.expected_delivery_date)}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <div className="space-y-4">
+              {/* Order Value */}
+              <div className="space-y-3">
                 <div>
                   <Label className="text-sm font-medium">Order Value</Label>
-                  <div className="mt-2 space-y-1">
-                    <div className="text-2xl font-bold">{formatCurrency(order.final_amount)}</div>
-                    <div className="text-sm text-muted-foreground">
+                  <div className="mt-2">
+                    <div className="text-xl sm:text-2xl font-bold">{formatCurrency(order.final_amount)}</div>
+                    <div className="text-sm text-muted-foreground mt-1">
                       {order.items?.length || 0} items • {totalOrdered} units total
                     </div>
                     {order.tax_name && (
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground mt-1">
                         {order.tax_name} rate: {order.tax_rate || taxRate}%
                       </div>
                     )}
                   </div>
                 </div>
                 {order.notes && (
-                  <div>
+                  <div className="hidden sm:block">
                     <Label className="text-sm font-medium">Order Notes</Label>
                     <p className="mt-1 text-sm text-muted-foreground">{order.notes}</p>
                   </div>
                 )}
               </div>
 
-              <div className="space-y-4">
+              {/* Receiving Progress */}
+              <div className="space-y-3">
                 <div>
                   <Label className="text-sm font-medium">Receiving Progress</Label>
                   <div className="mt-2">
@@ -772,34 +1077,42 @@ export default function ReceiveGoodsPage() {
                         style={{ width: `${progressPercentage}%` }}
                       />
                     </div>
-                    <div className="grid grid-cols-3 gap-2 mt-3 text-sm">
+                    <div className="grid grid-cols-3 gap-2 mt-4">
                       <div className="text-center">
-                        <div className="font-bold">{totalPreviouslyReceived}</div>
-                        <div className="text-xs text-muted-foreground">Previously Received</div>
+                        <div className="font-bold text-sm">{totalPreviouslyReceived}</div>
+                        <div className="text-xs text-muted-foreground">Previous</div>
                       </div>
                       <div className="text-center">
-                        <div className="font-bold text-blue-600 dark:text-blue-400">{currentlyReceiving}</div>
-                        <div className="text-xs text-muted-foreground">Currently Receiving</div>
+                        <div className="font-bold text-sm text-blue-600 dark:text-blue-400">{currentlyReceiving}</div>
+                        <div className="text-xs text-muted-foreground">Current</div>
                       </div>
                       <div className="text-center">
-                        <div className="font-bold">{remainingToReceive - currentlyReceiving}</div>
+                        <div className="font-bold text-sm">{remainingToReceive - currentlyReceiving}</div>
                         <div className="text-xs text-muted-foreground">Remaining</div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
+
+              {/* Mobile Order Notes */}
+              {order.notes && (
+                <div className="sm:hidden">
+                  <Label className="text-sm font-medium">Order Notes</Label>
+                  <p className="mt-1 text-sm text-muted-foreground">{order.notes}</p>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
-        {/* Receiving Form */}
+        {/* Main Content - Responsive Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Delivery Information */}
-          <div className="lg:col-span-1 space-y-6">
+          {/* Delivery Information - Desktop */}
+          <div className="hidden lg:block lg:col-span-1 space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-lg">
                   <Truck className="h-5 w-5" />
                   Delivery Information
                 </CardTitle>
@@ -807,7 +1120,7 @@ export default function ReceiveGoodsPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="receipt_date">
+                  <Label htmlFor="receipt_date" className="text-sm">
                     Receipt Date <span className="text-red-500">*</span>
                   </Label>
                   <Input
@@ -817,73 +1130,68 @@ export default function ReceiveGoodsPage() {
                     onChange={(e) => updateReceivingData('receipt_date', e.target.value)}
                     required
                     disabled={submitting}
+                    className="w-full"
                   />
                 </div>
 
-                {/* <div className="space-y-2">
-                  <Label htmlFor="supplier_invoice_number">Supplier Invoice No</Label>
-                  <Input
-                    id="supplier_invoice_number"
-                    value={receivingData.supplier_invoice_number}
-                    onChange={(e) => updateReceivingData('supplier_invoice_number', e.target.value)}
-                    placeholder="e.g., INV-2024-001"
-                    disabled={submitting}
-                  />
-                </div> */}
-
                 <div className="space-y-2">
-                  <Label htmlFor="delivery_note_number">Delivery Note No</Label>
+                  <Label htmlFor="delivery_note_number" className="text-sm">Delivery Note No</Label>
                   <Input
                     id="delivery_note_number"
                     value={receivingData.delivery_note_number}
                     onChange={(e) => updateReceivingData('delivery_note_number', e.target.value)}
                     placeholder="e.g., DN-2024-001"
                     disabled={submitting}
+                    className="w-full"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-2">
-                    <Label htmlFor="vehicle_number">Vehicle Number</Label>
+                    <Label htmlFor="vehicle_number" className="text-sm">Vehicle Number</Label>
                     <Input
                       id="vehicle_number"
                       value={receivingData.vehicle_number}
                       onChange={(e) => updateReceivingData('vehicle_number', e.target.value)}
                       disabled={submitting}
+                      className="w-full"
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="driver_name">Driver Name</Label>
+                    <Label htmlFor="driver_name" className="text-sm">Driver Name</Label>
                     <Input
                       id="driver_name"
                       value={receivingData.driver_name}
                       onChange={(e) => updateReceivingData('driver_name', e.target.value)}
                       disabled={submitting}
+                      className="w-full"
                     />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="receiving_notes">Receiving Notes</Label>
+                  <Label htmlFor="receiving_notes" className="text-sm">Receiving Notes</Label>
                   <Textarea
                     id="receiving_notes"
                     value={receivingData.receiving_notes}
                     onChange={(e) => updateReceivingData('receiving_notes', e.target.value)}
                     placeholder="Any notes about the delivery..."
-                    rows={3}
+                    rows={2}
                     disabled={submitting}
+                    className="w-full"
                   />
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="inspection_notes">Inspection Notes</Label>
+                  <Label htmlFor="inspection_notes" className="text-sm">Inspection Notes</Label>
                   <Textarea
                     id="inspection_notes"
                     value={receivingData.inspection_notes}
                     onChange={(e) => updateReceivingData('inspection_notes', e.target.value)}
                     placeholder="Quality inspection findings..."
-                    rows={3}
+                    rows={2}
                     disabled={submitting}
+                    className="w-full"
                   />
                 </div>
 
@@ -895,8 +1203,8 @@ export default function ReceiveGoodsPage() {
 
             {/* Quick Stats */}
             <Card>
-              <CardHeader>
-                <CardTitle>Receiving Summary</CardTitle>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">Receiving Summary</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -931,13 +1239,26 @@ export default function ReceiveGoodsPage() {
             </Card>
           </div>
 
+          {/* Mobile Delivery Info Button */}
+          <div className="lg:hidden">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => setIsDeliverySheetOpen(true)}
+            >
+              <Truck className="mr-2 h-4 w-4" />
+              Delivery Information
+              <ChevronRight className="ml-auto h-4 w-4" />
+            </Button>
+          </div>
+
           {/* Items to Receive */}
           <div className="lg:col-span-2">
             <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
+              <CardHeader className="pb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <CardTitle className="flex items-center gap-2">
+                    <CardTitle className="flex items-center gap-2 text-lg">
                       <Package className="h-5 w-5" />
                       Items to Receive
                     </CardTitle>
@@ -945,16 +1266,14 @@ export default function ReceiveGoodsPage() {
                       Specify quantities, serial numbers, and conditions
                     </CardDescription>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
-                      Total: {currentlyReceiving} units • {formatCurrency(calculateTotalValue())}
-                    </span>
+                  <div className="text-sm font-medium">
+                    Total: {currentlyReceiving} units • {formatCurrency(calculateTotalValue())}
                   </div>
                 </div>
               </CardHeader>
               <CardContent>
                 {!canReceive ? (
-                  <div className="text-center py-8">
+                  <div className="text-center py-8 px-4">
                     <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
                     <h3 className="text-lg font-medium">Order Already Completed</h3>
                     <p className="text-muted-foreground mt-2">
@@ -963,18 +1282,18 @@ export default function ReceiveGoodsPage() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {/* Items Table */}
-                    <div className="rounded-md border">
+                    {/* Desktop Items Table */}
+                    <div className="hidden md:block rounded-md border overflow-x-auto">
                       <Table>
                         <TableHeader>
                           <TableRow>
-                            <TableHead className="w-[250px]">Tire Details</TableHead>
-                            <TableHead className="text-center">Ordered</TableHead>
-                            <TableHead className="text-center">Previously Received</TableHead>
-                            <TableHead className="text-center">Remaining</TableHead>
-                            <TableHead className="text-center">Receive Now</TableHead>
-                            <TableHead>Condition</TableHead>
-                            <TableHead className="text-right">Value ({currencySymbol})</TableHead>
+                            <TableHead className="whitespace-nowrap">Tire Details</TableHead>
+                            <TableHead className="text-center whitespace-nowrap">Ordered</TableHead>
+                            <TableHead className="text-center whitespace-nowrap">Previous</TableHead>
+                            <TableHead className="text-center whitespace-nowrap">Remaining</TableHead>
+                            <TableHead className="text-center whitespace-nowrap">Receive Now</TableHead>
+                            <TableHead className="whitespace-nowrap">Condition</TableHead>
+                            <TableHead className="text-right whitespace-nowrap">Value</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -983,7 +1302,7 @@ export default function ReceiveGoodsPage() {
                             
                             return (
                               <TableRow key={item.po_item_id}>
-                                <TableCell>
+                                <TableCell className="whitespace-nowrap">
                                   <div>
                                     <div className="font-medium">{item.size}</div>
                                     <div className="text-sm text-muted-foreground">
@@ -993,74 +1312,59 @@ export default function ReceiveGoodsPage() {
                                       Unit: {formatCurrency(item.unit_price)}
                                     </div>
                                     <div className="mt-2 space-y-2">
-                                      <div>
-                                        <Label className="text-xs">Batch number</Label>
-                                        <Input
-                                          value={item.batch_number}
-                                          onChange={(e) => updateReceivingField(item.po_item_id, 'batch_number', e.target.value)}
-                                          placeholder="Batch number"
-                                          className="w-full text-xs"
-                                          disabled={submitting}
-                                        />
-                                      </div>
-                                      <div>
-                                        <Label className="text-xs">
-                                          Brand <span className="text-red-500">*</span>
-                                        </Label>
-                                        <Input
-                                          value={item.brand}
-                                          onChange={(e) => updateReceivingBrand(item.po_item_id, e.target.value)}
-                                          placeholder="Enter brand (e.g., Michelin, Bridgestone)"
-                                          className="w-full text-xs"
-                                          required={item.current_receive > 0}
-                                          disabled={submitting}
-                                        />
-                                        <p className="text-xs text-muted-foreground mt-1">
-                                          Brand must be entered when receiving goods
-                                        </p>
-                                      </div>
+                                      <Input
+                                        value={item.batch_number}
+                                        onChange={(e) => updateReceivingField(item.po_item_id, 'batch_number', e.target.value)}
+                                        placeholder="Batch"
+                                        className="w-full text-xs"
+                                        disabled={submitting}
+                                      />
+                                      <Input
+                                        value={item.brand}
+                                        onChange={(e) => updateReceivingBrand(item.po_item_id, e.target.value)}
+                                        placeholder="Brand *"
+                                        className="w-full text-xs"
+                                        required={item.current_receive > 0}
+                                        disabled={submitting}
+                                      />
                                     </div>
                                   </div>
                                 </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="font-medium">{item.ordered_quantity}</div>
+                                <TableCell className="text-center whitespace-nowrap">
+                                  {item.ordered_quantity}
                                 </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="font-medium text-blue-600 dark:text-blue-400">
-                                    {item.previously_received}
-                                  </div>
+                                <TableCell className="text-center whitespace-nowrap text-blue-600">
+                                  {item.previously_received}
                                 </TableCell>
-                                <TableCell className="text-center">
-                                  <div className="font-medium">
-                                    {item.remaining_quantity}
-                                  </div>
+                                <TableCell className="text-center whitespace-nowrap">
+                                  {item.remaining_quantity}
                                 </TableCell>
                                 <TableCell>
-                                  <div className="flex items-center justify-center gap-2">
+                                  <div className="flex items-center justify-center gap-1">
                                     <Button
                                       variant="outline"
                                       size="sm"
                                       onClick={() => updateReceivingQuantity(item.po_item_id, item.current_receive - 1)}
                                       disabled={item.current_receive <= 0 || submitting}
+                                      className="h-8 w-8 p-0"
                                     >
                                       <Minus className="h-3 w-3" />
                                     </Button>
-                                    <div className="w-16">
-                                      <Input
-                                        type="number"
-                                        min="0"
-                                        max={item.remaining_quantity}
-                                        value={item.current_receive}
-                                        onChange={(e) => updateReceivingQuantity(item.po_item_id, parseInt(e.target.value) || 0)}
-                                        className="text-center"
-                                        disabled={submitting}
-                                      />
-                                    </div>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      max={item.remaining_quantity}
+                                      value={item.current_receive}
+                                      onChange={(e) => updateReceivingQuantity(item.po_item_id, parseInt(e.target.value) || 0)}
+                                      className="w-14 text-center h-8"
+                                      disabled={submitting}
+                                    />
                                     <Button
                                       variant="outline"
                                       size="sm"
                                       onClick={() => updateReceivingQuantity(item.po_item_id, item.current_receive + 1)}
                                       disabled={item.current_receive >= item.remaining_quantity || submitting}
+                                      className="h-8 w-8 p-0"
                                     >
                                       <Plus className="h-3 w-3" />
                                     </Button>
@@ -1074,23 +1378,17 @@ export default function ReceiveGoodsPage() {
                                     }
                                     disabled={submitting}
                                   >
-                                    <SelectTrigger className="w-28">
+                                    <SelectTrigger className="w-24 h-8">
                                       <SelectValue />
                                     </SelectTrigger>
                                     <SelectContent>
-                                      <SelectItem value="GOOD">
-                                        <Badge className={getConditionColor("GOOD")}>Good</Badge>
-                                      </SelectItem>
-                                      <SelectItem value="DAMAGED">
-                                        <Badge className={getConditionColor("DAMAGED")}>Damaged</Badge>
-                                      </SelectItem>
-                                      <SelectItem value="DEFECTIVE">
-                                        <Badge className={getConditionColor("DEFECTIVE")}>Defective</Badge>
-                                      </SelectItem>
+                                      <SelectItem value="GOOD">Good</SelectItem>
+                                      <SelectItem value="DAMAGED">Damaged</SelectItem>
+                                      <SelectItem value="DEFECTIVE">Defective</SelectItem>
                                     </SelectContent>
                                   </Select>
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell className="text-right whitespace-nowrap">
                                   <div className="font-medium">{formatCurrency(itemTotal)}</div>
                                   {item.current_receive > 0 && (
                                     <div className="text-xs text-muted-foreground">
@@ -1105,8 +1403,26 @@ export default function ReceiveGoodsPage() {
                       </Table>
                     </div>
 
-                    {/* Serial Numbers Section */}
-                    <div className="space-y-4">
+                    {/* Mobile Items Cards */}
+                    <div className="md:hidden space-y-3">
+                      {receivingItems.map((item) => (
+                        <MobileItemCard
+                          key={item.po_item_id}
+                          item={item}
+                          onUpdateQuantity={updateReceivingQuantity}
+                          onUpdateBrand={updateReceivingBrand}
+                          onUpdateCondition={updateReceivingCondition}
+                          onUpdateBatchNumber={(id, batch) => updateReceivingField(id, 'batch_number', batch)}
+                          onUpdateNotes={(id, notes) => updateReceivingField(id, 'notes', notes)}
+                          submitting={submitting}
+                          formatCurrency={formatCurrency}
+                          getConditionColor={getConditionColor}
+                        />
+                      ))}
+                    </div>
+
+                    {/* Desktop Serial Numbers Section */}
+                    <div className="hidden md:block space-y-4">
                       <div className="flex items-center justify-between">
                         <h3 className="font-medium flex items-center gap-2">
                           <Barcode className="h-4 w-4" />
@@ -1122,10 +1438,10 @@ export default function ReceiveGoodsPage() {
                         .map((item) => (
                           <Card key={item.po_item_id} className="overflow-hidden">
                             <CardHeader className="py-3">
-                              <div className="flex items-center justify-between">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                 <div>
                                   <CardTitle className="text-sm font-medium">
-                                    {item.size} • {item.brand || 'No brand entered'} • Qty: {item.current_receive}
+                                    {item.size} • {item.brand || 'No brand'} • Qty: {item.current_receive}
                                   </CardTitle>
                                   <CardDescription>
                                     Enter unique serial numbers for each tire
@@ -1136,6 +1452,7 @@ export default function ReceiveGoodsPage() {
                                   size="sm"
                                   onClick={() => generateBatchSerialNumbers(item.po_item_id)}
                                   disabled={!item.brand || item.brand.trim() === "" || submitting}
+                                  className="w-full sm:w-auto"
                                 >
                                   <Key className="mr-2 h-3 w-3" />
                                   Generate Batch
@@ -1150,7 +1467,7 @@ export default function ReceiveGoodsPage() {
                                     <Input
                                       value={(item.serial_numbers?.[index] || "")}
                                       onChange={(e) => updateSerialNumber(item.po_item_id, index, e.target.value)}
-                                      placeholder={`SN-${item.size}-${index + 1}`}
+                                      placeholder={`SN-${index + 1}`}
                                       className="text-sm"
                                       disabled={submitting}
                                     />
@@ -1189,8 +1506,34 @@ export default function ReceiveGoodsPage() {
                       )}
                     </div>
 
+                    {/* Mobile Serial Numbers Cards */}
+                    <div className="md:hidden space-y-3">
+                      {receivingItems
+                        .filter(item => item.current_receive > 0)
+                        .map((item) => (
+                          <MobileSerialCard
+                            key={item.po_item_id}
+                            item={item}
+                            onUpdateSerial={updateSerialNumber}
+                            onGenerateBatch={generateBatchSerialNumbers}
+                            submitting={submitting}
+                          />
+                        ))}
+
+                      {receivingItems.filter(item => item.current_receive > 0).length === 0 && (
+                        <Card className="border-dashed">
+                          <CardContent className="py-8 text-center">
+                            <Key className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                            <p className="text-sm text-muted-foreground">
+                              Select quantities to receive above to enter serial numbers
+                            </p>
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+
                     {/* Item Notes Section */}
-                    <div className="space-y-4">
+                    <div className="hidden md:block space-y-4">
                       <h3 className="font-medium">Item Notes</h3>
                       {receivingItems
                         .filter(item => item.current_receive > 0)
@@ -1208,7 +1551,7 @@ export default function ReceiveGoodsPage() {
                               <Textarea
                                 value={item.notes}
                                 onChange={(e) => updateReceivingField(item.po_item_id, 'notes', e.target.value)}
-                                placeholder="Add notes for this item (condition, defects, etc.)"
+                                placeholder="Add notes for this item"
                                 rows={2}
                                 disabled={submitting}
                               />
@@ -1219,26 +1562,16 @@ export default function ReceiveGoodsPage() {
                   </div>
                 )}
               </CardContent>
+              
+              {/* Action Buttons */}
               {canReceive && (
-                <CardFooter className="border-t flex justify-between">
-                  <div className="flex gap-2">
+                <CardFooter className="border-t flex flex-col sm:flex-row gap-3 p-4">
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     <Button
                       variant="outline"
-                      onClick={() => {
-                        setReceivingItems(prev =>
-                          prev.map(item => ({
-                            ...item,
-                            current_receive: 0,
-                            serial_numbers: [],
-                            condition: "GOOD" as const,
-                            brand: "",
-                            batch_number: `BATCH-${order?.po_number}-${item.po_item_id}`,
-                            notes: ""
-                          }))
-                        );
-                        toast.info("Receiving form reset");
-                      }}
+                      onClick={resetForm}
                       disabled={submitting}
+                      className="w-full sm:w-auto"
                     >
                       <RotateCcw className="mr-2 h-4 w-4" />
                       Reset
@@ -1248,23 +1581,21 @@ export default function ReceiveGoodsPage() {
                       variant="outline"
                       onClick={handleCompleteReceive}
                       disabled={remainingToReceive === 0 || submitting}
+                      className="w-full sm:w-auto"
                     >
                       <CheckCircle className="mr-2 h-4 w-4" />
-                      Fill All Remaining
+                      Fill All
                     </Button>
                   </div>
                   
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={handleReceiveGoods}
-                      disabled={submitting || calculateTotalReceived() === 0}
-                      className="bg-green-600 hover:bg-green-700 text-white dark:bg-green-700 dark:hover:bg-green-800"
-                    >
-                      <Save className="mr-2 h-4 w-4" />
-                      {submitting ? "Processing..." : "Receive Goods"}
-                    </Button>
-                  </div>
+                  <Button
+                    onClick={handleReceiveGoods}
+                    disabled={submitting || calculateTotalReceived() === 0}
+                    className="w-full sm:w-auto bg-green-600 hover:bg-green-700 text-white dark:bg-green-700 dark:hover:bg-green-800 sm:ml-auto"
+                  >
+                    <Save className="mr-2 h-4 w-4" />
+                    {submitting ? "Processing..." : "Receive Goods"}
+                  </Button>
                 </CardFooter>
               )}
             </Card>
@@ -1275,8 +1606,8 @@ export default function ReceiveGoodsPage() {
         {!canReceive && !isComplete && (
           <Card className="border-yellow-200 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-800">
             <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400" />
+              <div className="flex flex-col sm:flex-row items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0" />
                 <div>
                   <h3 className="font-medium">Cannot Receive Goods</h3>
                   <p className="text-sm text-yellow-700 dark:text-yellow-400">
@@ -1293,8 +1624,8 @@ export default function ReceiveGoodsPage() {
           (item.serial_numbers || []).filter(sn => sn.trim() !== "").length !== item.current_receive) && (
           <Card className="border-orange-200 bg-orange-50 dark:bg-orange-950 dark:border-orange-800">
             <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400" />
+              <div className="flex flex-col sm:flex-row items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-orange-600 dark:text-orange-400 flex-shrink-0" />
                 <div>
                   <h3 className="font-medium">Serial Numbers Required</h3>
                   <p className="text-sm text-orange-700 dark:text-orange-400">
@@ -1310,8 +1641,8 @@ export default function ReceiveGoodsPage() {
         {receivingItems.some(item => item.current_receive > 0 && (!item.brand || item.brand.trim() === "")) && (
           <Card className="border-red-200 bg-red-50 dark:bg-red-950 dark:border-red-800">
             <CardContent className="pt-6">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+              <div className="flex flex-col sm:flex-row items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0" />
                 <div>
                   <h3 className="font-medium">Brand Required</h3>
                   <p className="text-sm text-red-700 dark:text-red-400">
@@ -1323,9 +1654,154 @@ export default function ReceiveGoodsPage() {
           </Card>
         )}
 
+        {/* Mobile Menu Sheet */}
+        <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+          <SheetContent side="bottom" className="h-auto rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle>Order Information</SheetTitle>
+              <SheetDescription>
+                Purchase order details and status
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Order Status</Label>
+                <Badge className={getStatusColor(order.status)}>
+                  {order.status.replace("_", " ")}
+                </Badge>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Created By</Label>
+                <div className="text-sm">{order.created_by_name || `User ${order.created_by}`}</div>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Order Dates</Label>
+                <div className="text-sm">Order: {formatDate(order.po_date)}</div>
+                <div className="text-sm">Expected: {formatDate(order.expected_delivery_date)}</div>
+              </div>
+              {order.notes && (
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium">Order Notes</Label>
+                  <p className="text-sm text-muted-foreground">{order.notes}</p>
+                </div>
+              )}
+              <Separator />
+              <Button 
+                variant="outline" 
+                className="w-full"
+                onClick={() => setIsMobileMenuOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Mobile Delivery Sheet */}
+        <Sheet open={isDeliverySheetOpen} onOpenChange={setIsDeliverySheetOpen}>
+          <SheetContent side="bottom" className="h-auto rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <Truck className="h-5 w-5" />
+                Delivery Information
+              </SheetTitle>
+              <SheetDescription>
+                Enter delivery details for this receipt
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="mobile_receipt_date">
+                  Receipt Date <span className="text-red-500">*</span>
+                </Label>
+                <Input
+                  id="mobile_receipt_date"
+                  type="date"
+                  value={receivingData.receipt_date}
+                  onChange={(e) => updateReceivingData('receipt_date', e.target.value)}
+                  required
+                  disabled={submitting}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mobile_delivery_note">Delivery Note No</Label>
+                <Input
+                  id="mobile_delivery_note"
+                  value={receivingData.delivery_note_number}
+                  onChange={(e) => updateReceivingData('delivery_note_number', e.target.value)}
+                  placeholder="e.g., DN-2024-001"
+                  disabled={submitting}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="mobile_vehicle">Vehicle Number</Label>
+                  <Input
+                    id="mobile_vehicle"
+                    value={receivingData.vehicle_number}
+                    onChange={(e) => updateReceivingData('vehicle_number', e.target.value)}
+                    disabled={submitting}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="mobile_driver">Driver Name</Label>
+                  <Input
+                    id="mobile_driver"
+                    value={receivingData.driver_name}
+                    onChange={(e) => updateReceivingData('driver_name', e.target.value)}
+                    disabled={submitting}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mobile_receiving_notes">Receiving Notes</Label>
+                <Textarea
+                  id="mobile_receiving_notes"
+                  value={receivingData.receiving_notes}
+                  onChange={(e) => updateReceivingData('receiving_notes', e.target.value)}
+                  placeholder="Any notes about the delivery..."
+                  rows={2}
+                  disabled={submitting}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="mobile_inspection_notes">Inspection Notes</Label>
+                <Textarea
+                  id="mobile_inspection_notes"
+                  value={receivingData.inspection_notes}
+                  onChange={(e) => updateReceivingData('inspection_notes', e.target.value)}
+                  placeholder="Quality inspection findings..."
+                  rows={2}
+                  disabled={submitting}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  className="flex-1" 
+                  onClick={() => setIsDeliverySheetOpen(false)}
+                >
+                  Save & Close
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={() => setIsDeliverySheetOpen(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
         {/* GRN Success Dialog */}
         <Dialog open={showGRNDialog} onOpenChange={setShowGRNDialog}>
-          <DialogContent className="sm:max-w-4xl">
+          <DialogContent className="sm:max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-green-500" />
@@ -1351,14 +1827,14 @@ export default function ReceiveGoodsPage() {
 
             {generatedGRN && (
               <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <Label>GRN Number</Label>
-                    <div className="text-lg font-bold">{generatedGRN.grn_number}</div>
+                    <div className="text-lg font-bold break-all">{generatedGRN.grn_number}</div>
                   </div>
                   <div>
                     <Label>PO Number</Label>
-                    <div className="text-lg font-medium">{order?.po_number}</div>
+                    <div className="text-lg font-medium break-all">{order?.po_number}</div>
                   </div>
                   <div>
                     <Label>Received By</Label>
@@ -1372,14 +1848,14 @@ export default function ReceiveGoodsPage() {
 
                 <div>
                   <Label>Received Items Summary</Label>
-                  <div className="mt-2 rounded-md border">
+                  <div className="mt-2 rounded-md border overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Item</TableHead>
-                          <TableHead className="text-center">Quantity</TableHead>
-                          <TableHead>Serial Numbers</TableHead>
-                          <TableHead>Brand (from GRN)</TableHead>
+                          <TableHead className="whitespace-nowrap">Item</TableHead>
+                          <TableHead className="text-center whitespace-nowrap">Quantity</TableHead>
+                          <TableHead className="whitespace-nowrap">Serial Numbers</TableHead>
+                          <TableHead className="whitespace-nowrap">Brand</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1387,22 +1863,22 @@ export default function ReceiveGoodsPage() {
                           const poItem = order?.items?.find(oi => oi.id === item.po_item_id);
                           return (
                             <TableRow key={item.grnItemId}>
-                              <TableCell>
+                              <TableCell className="whitespace-nowrap">
                                 {poItem?.size} • {item.brand}
                               </TableCell>
-                              <TableCell className="text-center">
+                              <TableCell className="text-center whitespace-nowrap">
                                 {item.quantity_received}
                               </TableCell>
                               <TableCell>
                                 <div className="max-h-20 overflow-y-auto">
                                   {item.serial_numbers.map((sn, idx) => (
-                                    <div key={idx} className="text-xs font-mono py-0.5">
+                                    <div key={idx} className="text-xs font-mono py-0.5 break-all">
                                       {sn}
                                     </div>
                                   ))}
                                 </div>
                               </TableCell>
-                              <TableCell>
+                              <TableCell className="whitespace-nowrap">
                                 <div className="text-sm font-medium">{item.brand}</div>
                               </TableCell>
                             </TableRow>
@@ -1427,16 +1903,16 @@ export default function ReceiveGoodsPage() {
               <Button
                 variant="outline"
                 onClick={() => setShowGRNDialog(false)}
+                className="w-full sm:w-auto"
               >
                 Close
               </Button>
-              <div className="flex gap-2">
-                <Button
-                  onClick={navigateToGRN}
-                >
-                  View GRN Details
-                </Button>
-              </div>
+              <Button
+                onClick={navigateToGRN}
+                className="w-full sm:w-auto"
+              >
+                View GRN Details
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
