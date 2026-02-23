@@ -8,6 +8,7 @@ import { toast } from "sonner";
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface User {
+  role_name: string;
   id: number;
   username: string;
   email: string;

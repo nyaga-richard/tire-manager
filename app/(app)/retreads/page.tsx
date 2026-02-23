@@ -23,6 +23,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import {
   Search,
   RefreshCw,
   Package,
@@ -39,6 +48,15 @@ import {
   Plus,
   Loader2,
   ListOrdered,
+  Filter,
+  Menu,
+  ChevronDown,
+  TrendingUp,
+  TrendingDown,
+  Gauge,
+  RotateCcw,
+  Calendar,
+  DollarSign,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -125,13 +143,310 @@ interface Supplier {
   avg_turnaround_days?: number;
 }
 
-// API Response interfaces
-interface ApiResponse<T> {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-}
+// Mobile Tire Card Component
+const MobileTireCard = ({
+  tire,
+  selected,
+  onSelect,
+  onViewDetails,
+  getStatusColor,
+  formatDistance,
+  formatNumber,
+}: {
+  tire: Tire;
+  selected: boolean;
+  onSelect: (id: number) => void;
+  onViewDetails: (id: number) => void;
+  getStatusColor: (status: string) => string;
+  formatDistance: (distance?: number) => string;
+  formatNumber: (num?: number) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const treadPercentage = (tire.depth_remaining / tire.tread_depth_new) * 100;
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={() => onSelect(tire.id)}
+            className="mt-1"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="font-mono font-medium text-sm truncate">
+                  {tire.serial_number}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className="text-xs">
+                    {tire.size}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={getStatusColor(tire.status)}
+                  >
+                    {tire.status.replace(/_/g, " ")}
+                  </Badge>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+              </Button>
+            </div>
+
+            {/* Basic Info */}
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-xs text-muted-foreground">Brand</div>
+                <div className="text-sm font-medium">{tire.brand}</div>
+                {tire.model && (
+                  <div className="text-xs text-muted-foreground">{tire.model}</div>
+                )}
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Depth</div>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-2 bg-gray-200 rounded-full">
+                    <div
+                      className="h-full rounded-full bg-green-500"
+                      style={{ width: `${Math.min(100, treadPercentage)}%` }}
+                    />
+                  </div>
+                  <span className="text-sm font-medium">
+                    {tire.depth_remaining}mm
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-xs text-muted-foreground">Distance</div>
+                <div className="text-sm font-medium">{formatDistance(tire.total_distance)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Installs</div>
+                <div className="text-sm font-medium">
+                  <Badge variant="outline" className="text-xs">
+                    {formatNumber(tire.installation_count)}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Retreads</div>
+                <div className="text-sm font-medium">
+                  <Badge variant="outline" className="text-xs">
+                    {tire.retread_count || 0}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-xs text-muted-foreground">Purchase Date</div>
+                <div className="text-sm">{new Date(tire.purchase_date).toLocaleDateString()}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Purchase Cost</div>
+                <div className="text-sm font-medium">KES {tire.purchase_cost.toLocaleString()}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Location</div>
+                <div className="text-sm">{tire.current_location}</div>
+              </div>
+              {tire.supplier_name && (
+                <div>
+                  <div className="text-xs text-muted-foreground">Supplier</div>
+                  <div className="text-sm">{tire.supplier_name}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => onViewDetails(tire.id)}
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                Details
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1"
+                onClick={() => onSelect(tire.id)}
+              >
+                {selected ? (
+                  <>
+                    <XCircle className="h-4 w-4 mr-2" />
+                    Deselect
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle className="h-4 w-4 mr-2" />
+                    Select
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
+// Mobile Movement Card Component
+const MobileMovementCard = ({
+  movement,
+  formatDate,
+  getMovementTypeColor,
+  getStatusColor,
+}: {
+  movement: RetreadMovement;
+  formatDate: (dateString?: string) => string;
+  getMovementTypeColor: (type: string) => string;
+  getStatusColor: (status: string) => string;
+}) => {
+  return (
+    <Card className="mb-2 last:mb-0">
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className={getMovementTypeColor(movement.movement_type)}
+              >
+                {movement.movement_type === "STORE_TO_RETREAD_SUPPLIER"
+                  ? "→ Sent"
+                  : "← Returned"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {formatDate(movement.movement_date)}
+              </span>
+            </div>
+            <div className="mt-2">
+              <div className="font-mono text-sm font-medium">{movement.serial_number}</div>
+              <div className="text-xs text-muted-foreground">
+                {movement.size} • {movement.brand}
+              </div>
+            </div>
+            <div className="mt-1 text-xs">
+              <span className="text-muted-foreground">Supplier:</span> {movement.supplier_name}
+            </div>
+          </div>
+          <Badge
+            variant="outline"
+            className={getStatusColor(movement.status)}
+          >
+            {movement.status.replace(/_/g, " ")}
+          </Badge>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// Mobile Supplier Card Component
+const MobileSupplierCard = ({
+  supplier,
+  formatCurrency,
+  formatNumber,
+}: {
+  supplier: Supplier;
+  formatCurrency: (amount: number) => string;
+  formatNumber: (num?: number) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="font-medium">{supplier.name}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {supplier.contact_person || "No contact"}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-8 w-8 p-0"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+
+        {/* Basic Stats */}
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="text-center p-2 bg-muted/30 rounded">
+            <div className="text-xs text-muted-foreground">Orders</div>
+            <div className="text-lg font-bold">{formatNumber(supplier.total_orders)}</div>
+          </div>
+          <div className="text-center p-2 bg-muted/30 rounded">
+            <div className="text-xs text-muted-foreground">Tires</div>
+            <div className="text-lg font-bold">{formatNumber(supplier.total_tires_processed)}</div>
+          </div>
+        </div>
+
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-xs text-muted-foreground">Avg Cost/Tire:</span>
+                <span className="text-sm font-medium">{formatCurrency(supplier.average_cost_per_tire || 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-xs text-muted-foreground">Avg Turnaround:</span>
+                <span className="text-sm font-medium">
+                  {supplier.avg_turnaround_days ? 
+                    `${Math.round(supplier.avg_turnaround_days)} days` : "N/A"}
+                </span>
+              </div>
+              {supplier.phone && (
+                <div className="flex justify-between">
+                  <span className="text-xs text-muted-foreground">Phone:</span>
+                  <span className="text-sm">{supplier.phone}</span>
+                </div>
+              )}
+              {supplier.email && (
+                <div className="flex justify-between">
+                  <span className="text-xs text-muted-foreground">Email:</span>
+                  <span className="text-sm truncate">{supplier.email}</span>
+                </div>
+              )}
+              {supplier.address && (
+                <div>
+                  <span className="text-xs text-muted-foreground">Address:</span>
+                  <p className="text-sm mt-1">{supplier.address}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
 
 export default function RetreadsPage() {
   const router = useRouter();
@@ -140,6 +455,10 @@ export default function RetreadsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedTires, setSelectedTires] = useState<number[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  
+  // Mobile state
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Data states
   const [eligibleTires, setEligibleTires] = useState<Tire[]>([]);
@@ -372,25 +691,25 @@ export default function RetreadsPage() {
   const getStatusColor = (status: string): string => {
     switch (status) {
       case "USED_STORE":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+        return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
       case "AWAITING_RETREAD":
-        return "bg-orange-100 text-orange-800 border-orange-200";
+        return "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800";
       case "AT_RETREAD_SUPPLIER":
-        return "bg-purple-100 text-purple-800 border-purple-200";
+        return "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
   const getOrderStatusBadge = (status: string) => {
     const statusConfig: Record<string, { color: string; icon: any }> = {
-      DRAFT: { color: "bg-gray-100 text-gray-800 border-gray-200", icon: Clock },
-      SENT: { color: "bg-blue-100 text-blue-800 border-blue-200", icon: Truck },
-      IN_PROGRESS: { color: "bg-yellow-100 text-yellow-800 border-yellow-200", icon: Package },
-      COMPLETED: { color: "bg-green-100 text-green-800 border-green-200", icon: CheckCircle },
-      CANCELLED: { color: "bg-red-100 text-red-800 border-red-200", icon: XCircle },
-      RECEIVED: { color: "bg-purple-100 text-purple-800 border-purple-200", icon: CheckCircle },
-      PARTIALLY_RECEIVED: { color: "bg-orange-100 text-orange-800 border-orange-200", icon: AlertCircle },
+      DRAFT: { color: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700", icon: Clock },
+      SENT: { color: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800", icon: Truck },
+      IN_PROGRESS: { color: "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800", icon: Package },
+      COMPLETED: { color: "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800", icon: CheckCircle },
+      CANCELLED: { color: "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800", icon: XCircle },
+      RECEIVED: { color: "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800", icon: CheckCircle },
+      PARTIALLY_RECEIVED: { color: "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800", icon: AlertCircle },
     };
     
     const config = statusConfig[status] || statusConfig.DRAFT;
@@ -407,11 +726,11 @@ export default function RetreadsPage() {
   const getMovementTypeColor = (type: string): string => {
     switch (type) {
       case "STORE_TO_RETREAD_SUPPLIER":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800";
       case "RETREAD_SUPPLIER_TO_STORE":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
     }
   };
 
@@ -458,17 +777,25 @@ export default function RetreadsPage() {
     totalOrders: retreadOrders.length,
   };
 
+  const clearFilters = () => {
+    setSearch("");
+    setSizeFilter("all");
+    setIsFilterSheetOpen(false);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Retreading Management</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Retreading Management</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">
             Manage tire retreading process from selection to return
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        
+        {/* Desktop Actions */}
+        <div className="hidden sm:flex items-center gap-2">
           <Button variant="outline" onClick={refreshData} disabled={loading}>
             {loading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -479,17 +806,177 @@ export default function RetreadsPage() {
           </Button>
           <Button variant="outline" onClick={handleViewOrders}>
             <ListOrdered className="mr-2 h-4 w-4" />
-            Retread Orders
+            Orders
           </Button>
           <Button onClick={handleCreateOrder}>
             <Plus className="mr-2 h-4 w-4" />
-            New Retread Order
+            New Order
+          </Button>
+        </div>
+
+        {/* Mobile Actions */}
+        <div className="flex sm:hidden items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1"
+            onClick={() => setIsFilterSheetOpen(true)}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Filters
+          </Button>
+          
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1"
+            onClick={() => setIsMobileMenuOpen(true)}
+          >
+            <Menu className="mr-2 h-4 w-4" />
+            Menu
           </Button>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+      {/* Mobile Filter Sheet */}
+      <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
+        <SheetContent side="bottom" className="h-auto rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filter Tires
+            </SheetTitle>
+            <SheetDescription>
+              Apply filters to narrow down results
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 py-4">
+            {/* Search */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="Search by serial, brand, size..."
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Size Filter */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Size</Label>
+              <Select value={sizeFilter} onValueChange={setSizeFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Sizes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sizes</SelectItem>
+                  {Array.from(new Set(eligibleTires.map(t => t.size))).map(size => (
+                    <SelectItem key={size} value={size}>{size}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button 
+                className="flex-1" 
+                onClick={() => setIsFilterSheetOpen(false)}
+              >
+                Apply Filters
+              </Button>
+              <Button 
+                variant="outline" 
+                className="flex-1"
+                onClick={clearFilters}
+              >
+                Clear All
+              </Button>
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Mobile Menu Sheet */}
+      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+        <SheetContent side="bottom" className="h-auto rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle>Actions</SheetTitle>
+            <SheetDescription>
+              Choose an action to perform
+            </SheetDescription>
+          </SheetHeader>
+          <div className="grid gap-2 py-4">
+            <Button 
+              variant="outline" 
+              className="w-full justify-start"
+              onClick={() => {
+                refreshData();
+                setIsMobileMenuOpen(false);
+              }}
+              disabled={loading}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh Data
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="w-full justify-start"
+              onClick={() => {
+                handleViewOrders();
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <ListOrdered className="mr-2 h-4 w-4" />
+              View Orders
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="w-full justify-start"
+              onClick={() => {
+                handleCreateOrder();
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              New Order
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="w-full justify-start"
+              onClick={() => {
+                router.push("/retreads/return");
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Return from Retreading
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              className="w-full justify-start"
+              onClick={() => {
+                router.push("/suppliers");
+                setIsMobileMenuOpen(false);
+              }}
+            >
+              <Building className="mr-2 h-4 w-4" />
+              Manage Suppliers
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Stats Cards - Responsive Grid */}
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Eligible Tires</CardTitle>
@@ -548,13 +1035,14 @@ export default function RetreadsPage() {
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="eligible">Eligible Tires</TabsTrigger>
-            <TabsTrigger value="suppliers">Supplier Analysis</TabsTrigger>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="eligible" className="flex-1 sm:flex-initial">Eligible Tires</TabsTrigger>
+            <TabsTrigger value="suppliers" className="flex-1 sm:flex-initial">Supplier Analysis</TabsTrigger>
           </TabsList>
           
-          <div className="flex items-center gap-2">
+          {/* Desktop Search and Filter */}
+          <div className="hidden sm:flex items-center gap-2">
             <div className="relative w-64">
               <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
@@ -580,38 +1068,69 @@ export default function RetreadsPage() {
               </Select>
             )}
           </div>
+
+          {/* Mobile Search and Filter Indicator */}
+          <div className="sm:hidden">
+            {(search || sizeFilter !== "all") && (
+              <Card>
+                <CardContent className="p-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-sm">
+                      {search && <span>Search: "{search}"</span>}
+                      {sizeFilter !== "all" && (
+                        <span className={search ? "ml-2" : ""}>
+                          Size: {sizeFilter}
+                        </span>
+                      )}
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={clearFilters}
+                      className="h-8 px-2"
+                    >
+                      <X className="h-4 w-4 mr-1" />
+                      Clear
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
         </div>
 
         {/* Eligible Tires Tab */}
         <TabsContent value="eligible">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+            <CardHeader className="pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <CardTitle>Tires Eligible for Retreading</CardTitle>
+                  <CardTitle className="text-lg">Tires Eligible for Retreading</CardTitle>
                   <CardDescription>
                     Tires in USED_STORE status that can be sent for retreading
                   </CardDescription>
                 </div>
                 {selectedTires.length > 0 && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col sm:flex-row items-center gap-2">
                     <span className="text-sm text-muted-foreground">
                       {selectedTires.length} selected
                     </span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleMarkForRetreading}
-                    >
-                      Mark for Retreading
-                    </Button>
-                    <Button
-                      size="sm"
-                      onClick={handleSendForRetreading}
-                    >
-                      <ArrowRight className="mr-2 h-4 w-4" />
-                      Send for Retreading
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleMarkForRetreading}
+                      >
+                        Mark
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={handleSendForRetreading}
+                      >
+                        <ArrowRight className="mr-2 h-4 w-4" />
+                        Send
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -625,129 +1144,150 @@ export default function RetreadsPage() {
                   </div>
                 </div>
               ) : filteredEligibleTires.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
+                <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                   <Package className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium">No eligible tires found</h3>
                   <p className="text-muted-foreground mt-1">
-                    {search ? "Try a different search term" : "No tires available for retreading"}
+                    {search || sizeFilter !== "all" 
+                      ? "Try adjusting your filters" 
+                      : "No tires available for retreading"}
                   </p>
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">
-                          <Checkbox
-                            checked={selectedTires.length === filteredEligibleTires.length}
-                            onCheckedChange={handleSelectAll}
-                          />
-                        </TableHead>
-                        <TableHead>Serial #</TableHead>
-                        <TableHead>Size</TableHead>
-                        <TableHead>Brand & Model</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Depth</TableHead>
-                        <TableHead>Distance</TableHead>
-                        <TableHead>Installations</TableHead>
-                        <TableHead>Previous Retreads</TableHead>
-                        <TableHead className="text-right">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredEligibleTires.map((tire) => (
-                        <TableRow key={tire.id}>
-                          <TableCell>
+                <>
+                  {/* Desktop Table */}
+                  <div className="hidden md:block rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">
                             <Checkbox
-                              checked={selectedTires.includes(tire.id)}
-                              onCheckedChange={() => handleSelectTire(tire.id)}
+                              checked={selectedTires.length === filteredEligibleTires.length}
+                              onCheckedChange={handleSelectAll}
                             />
-                          </TableCell>
-                          <TableCell className="font-mono font-medium">
-                            {tire.serial_number}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{tire.size}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{tire.brand}</div>
-                              {tire.model && (
-                                <div className="text-sm text-muted-foreground">
-                                  {tire.model}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={getStatusColor(tire.status)}
-                            >
-                              {tire.status.replace(/_/g, " ")}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="h-2 w-16 rounded-full bg-gray-200">
-                                <div
-                                  className="h-full rounded-full bg-green-500"
-                                  style={{
-                                    width: `${Math.min(
-                                      100,
-                                      (tire.depth_remaining / tire.tread_depth_new) * 100
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                              <span className="text-sm font-medium">
-                                {tire.depth_remaining}mm
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatDistance(tire.total_distance)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{tire.installation_count}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {tire.retread_count || 0}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" className="h-8 w-8 p-0">
-                                  <MoreHorizontal className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                <DropdownMenuItem onClick={() => router.push(`/inventory/${tire.id}`)}>
-                                  <Eye className="mr-2 h-4 w-4" />
-                                  View Details
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleSelectTire(tire.id)}>
-                                  {selectedTires.includes(tire.id) ? (
-                                    <>
-                                      <CheckCircle className="mr-2 h-4 w-4" />
-                                      Deselect
-                                    </>
-                                  ) : (
-                                    <>
-                                      <CheckCircle className="mr-2 h-4 w-4" />
-                                      Select for Retreading
-                                    </>
-                                  )}
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">Serial #</TableHead>
+                          <TableHead className="whitespace-nowrap">Size</TableHead>
+                          <TableHead className="whitespace-nowrap">Brand & Model</TableHead>
+                          <TableHead className="whitespace-nowrap">Status</TableHead>
+                          <TableHead className="whitespace-nowrap">Depth</TableHead>
+                          <TableHead className="whitespace-nowrap">Distance</TableHead>
+                          <TableHead className="whitespace-nowrap">Installs</TableHead>
+                          <TableHead className="whitespace-nowrap">Prev Retreads</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredEligibleTires.map((tire) => (
+                          <TableRow key={tire.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedTires.includes(tire.id)}
+                                onCheckedChange={() => handleSelectTire(tire.id)}
+                              />
+                            </TableCell>
+                            <TableCell className="font-mono font-medium whitespace-nowrap">
+                              {tire.serial_number}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">{tire.size}</Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <div>
+                                <div className="font-medium">{tire.brand}</div>
+                                {tire.model && (
+                                  <div className="text-sm text-muted-foreground">
+                                    {tire.model}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge
+                                variant="outline"
+                                className={getStatusColor(tire.status)}
+                              >
+                                {tire.status.replace(/_/g, " ")}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-16 rounded-full bg-gray-200">
+                                  <div
+                                    className="h-full rounded-full bg-green-500"
+                                    style={{
+                                      width: `${Math.min(
+                                        100,
+                                        (tire.depth_remaining / tire.tread_depth_new) * 100
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="text-sm font-medium">
+                                  {tire.depth_remaining}mm
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{formatDistance(tire.total_distance)}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">{formatNumber(tire.installation_count)}</Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">
+                                {tire.retread_count || 0}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right whitespace-nowrap">
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" className="h-8 w-8 p-0">
+                                    <MoreHorizontal className="h-4 w-4" />
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                  <DropdownMenuItem onClick={() => router.push(`/inventory/${tire.id}`)}>
+                                    <Eye className="mr-2 h-4 w-4" />
+                                    View Details
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem onClick={() => handleSelectTire(tire.id)}>
+                                    {selectedTires.includes(tire.id) ? (
+                                      <>
+                                        <XCircle className="mr-2 h-4 w-4" />
+                                        Deselect
+                                      </>
+                                    ) : (
+                                      <>
+                                        <CheckCircle className="mr-2 h-4 w-4" />
+                                        Select
+                                      </>
+                                    )}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Tire Cards */}
+                  <div className="md:hidden space-y-3">
+                    {filteredEligibleTires.map((tire) => (
+                      <MobileTireCard
+                        key={tire.id}
+                        tire={tire}
+                        selected={selectedTires.includes(tire.id)}
+                        onSelect={handleSelectTire}
+                        onViewDetails={(id) => router.push(`/inventory/${id}`)}
+                        getStatusColor={getStatusColor}
+                        formatDistance={formatDistance}
+                        formatNumber={formatNumber}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
             </CardContent>
             <CardFooter className="border-t px-6 py-4">
@@ -757,9 +1297,9 @@ export default function RetreadsPage() {
             </CardFooter>
           </Card>
 
-          {/* Recent Movements Card */}
+          {/* Recent Movements - Desktop */}
           {retreadMovements.length > 0 && (
-            <Card className="mt-4">
+            <Card className="hidden md:block mt-4">
               <CardHeader>
                 <CardTitle>Recent Movements</CardTitle>
                 <CardDescription>
@@ -767,36 +1307,36 @@ export default function RetreadsPage() {
                 </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
+                <div className="rounded-md border overflow-x-auto">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Serial #</TableHead>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Status</TableHead>
+                        <TableHead className="whitespace-nowrap">Date</TableHead>
+                        <TableHead className="whitespace-nowrap">Type</TableHead>
+                        <TableHead className="whitespace-nowrap">Serial #</TableHead>
+                        <TableHead className="whitespace-nowrap">Supplier</TableHead>
+                        <TableHead className="whitespace-nowrap">Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {retreadMovements.slice(0, 5).map((movement) => (
                         <TableRow key={movement.id}>
-                          <TableCell>{formatDate(movement.movement_date)}</TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">{formatDate(movement.movement_date)}</TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <Badge
                               variant="outline"
                               className={getMovementTypeColor(movement.movement_type)}
                             >
                               {movement.movement_type === "STORE_TO_RETREAD_SUPPLIER"
-                                ? "Sent to Retreader"
-                                : "Returned from Retreader"}
+                                ? "Sent"
+                                : "Returned"}
                             </Badge>
                           </TableCell>
-                          <TableCell className="font-mono font-medium">
+                          <TableCell className="font-mono font-medium whitespace-nowrap">
                             {movement.serial_number}
                           </TableCell>
-                          <TableCell>{movement.supplier_name}</TableCell>
-                          <TableCell>
+                          <TableCell className="whitespace-nowrap">{movement.supplier_name}</TableCell>
+                          <TableCell className="whitespace-nowrap">
                             <Badge
                               variant="outline"
                               className={getStatusColor(movement.status)}
@@ -811,6 +1351,30 @@ export default function RetreadsPage() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* Recent Movements - Mobile */}
+          {retreadMovements.length > 0 && (
+            <div className="md:hidden mt-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base">Recent Movements</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {retreadMovements.slice(0, 3).map((movement) => (
+                      <MobileMovementCard
+                        key={movement.id}
+                        movement={movement}
+                        formatDate={formatDate}
+                        getMovementTypeColor={getMovementTypeColor}
+                        getStatusColor={getStatusColor}
+                      />
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
         </TabsContent>
 
@@ -832,7 +1396,7 @@ export default function RetreadsPage() {
                   </div>
                 </div>
               ) : supplierStats.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
+                <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                   <BarChart3 className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium">No supplier data</h3>
                   <p className="text-muted-foreground mt-1">
@@ -840,65 +1404,80 @@ export default function RetreadsPage() {
                   </p>
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Contact Person</TableHead>
-                        <TableHead>Orders</TableHead>
-                        <TableHead>Tires Processed</TableHead>
-                        <TableHead>Avg Cost per Tire</TableHead>
-                        <TableHead>Avg Turnaround (days)</TableHead>
-                        <TableHead>Phone</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {supplierStats.map((supplier) => (
-                        <TableRow key={`supplier-${supplier.id}`}>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{supplier.name}</div>
-                              {supplier.address && (
-                                <div className="text-xs text-muted-foreground">
-                                  {supplier.address}
+                <>
+                  {/* Desktop Table */}
+                  <div className="hidden md:block rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="whitespace-nowrap">Supplier</TableHead>
+                          <TableHead className="whitespace-nowrap">Contact Person</TableHead>
+                          <TableHead className="whitespace-nowrap">Orders</TableHead>
+                          <TableHead className="whitespace-nowrap">Tires Processed</TableHead>
+                          <TableHead className="whitespace-nowrap">Avg Cost per Tire</TableHead>
+                          <TableHead className="whitespace-nowrap">Avg Turnaround</TableHead>
+                          <TableHead className="whitespace-nowrap">Phone</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {supplierStats.map((supplier) => (
+                          <TableRow key={`supplier-${supplier.id}`}>
+                            <TableCell className="whitespace-nowrap">
+                              <div>
+                                <div className="font-medium">{supplier.name}</div>
+                                {supplier.address && (
+                                  <div className="text-xs text-muted-foreground">
+                                    {supplier.address}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{supplier.contact_person || "-"}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">
+                                {formatNumber(supplier.total_orders)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">
+                                {formatNumber(supplier.total_tires_processed)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap font-medium">
+                              {formatCurrency(supplier.average_cost_per_tire || 0)}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline" className="bg-blue-50">
+                                {supplier.avg_turnaround_days ? 
+                                  `${Math.round(supplier.avg_turnaround_days)}d` : "N/A"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <div className="text-sm">{supplier.phone || "-"}</div>
+                              {supplier.email && (
+                                <div className="text-xs text-muted-foreground truncate max-w-[150px]">
+                                  {supplier.email}
                                 </div>
                               )}
-                            </div>
-                          </TableCell>
-                          <TableCell>{supplier.contact_person || "-"}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {formatNumber(supplier.total_orders)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {formatNumber(supplier.total_tires_processed)}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="font-medium">
-                            {formatCurrency(supplier.average_cost_per_tire || 0)}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className="bg-blue-50">
-                              {supplier.avg_turnaround_days ? 
-                                Math.round(supplier.avg_turnaround_days) : "N/A"}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="text-sm">{supplier.phone || "-"}</div>
-                            {supplier.email && (
-                              <div className="text-xs text-muted-foreground">
-                                {supplier.email}
-                              </div>
-                            )}
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Supplier Cards */}
+                  <div className="md:hidden space-y-3">
+                    {supplierStats.map((supplier) => (
+                      <MobileSupplierCard
+                        key={supplier.id}
+                        supplier={supplier}
+                        formatCurrency={formatCurrency}
+                        formatNumber={formatNumber}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
             </CardContent>
             <CardFooter className="border-t px-6 py-4">
@@ -910,8 +1489,8 @@ export default function RetreadsPage() {
         </TabsContent>
       </Tabs>
 
-      {/* Quick Actions Card */}
-      <div className="grid gap-4 md:grid-cols-3">
+      {/* Quick Actions - Desktop */}
+      <div className="hidden md:grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader>
             <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
@@ -1047,6 +1626,83 @@ export default function RetreadsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Quick Actions - Mobile */}
+      <div className="md:hidden space-y-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={handleCreateOrder}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Create New Retread Order
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={handleViewOrders}
+            >
+              <ListOrdered className="mr-2 h-4 w-4" />
+              View All Retread Orders
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => router.push("/retreads/return")}
+            >
+              <RotateCcw className="mr-2 h-4 w-4" />
+              Return from Retreading
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Retread Overview</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2 text-center">
+                <div className="p-2 bg-muted/30 rounded">
+                  <div className="text-xs text-muted-foreground">Sent</div>
+                  <div className="text-lg font-bold text-blue-600">
+                    {retreadOrders.filter(o => o.status === "SENT").length}
+                  </div>
+                </div>
+                <div className="p-2 bg-muted/30 rounded">
+                  <div className="text-xs text-muted-foreground">In Progress</div>
+                  <div className="text-lg font-bold text-yellow-600">
+                    {retreadOrders.filter(o => o.status === "IN_PROGRESS").length}
+                  </div>
+                </div>
+                <div className="p-2 bg-muted/30 rounded col-span-2">
+                  <div className="text-xs text-muted-foreground">Completed</div>
+                  <div className="text-lg font-bold text-green-600">
+                    {retreadOrders.filter(o => o.status === "COMPLETED" || o.status === "RECEIVED").length}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
+
+// Missing Label component
+const Label = ({ children, className, ...props }: any) => (
+  <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className || ''}`} {...props}>
+    {children}
+  </label>
+);
+
+// Missing X icon
+const X = ({ className }: { className?: string }) => (
+  <XCircle className={className} />
+);

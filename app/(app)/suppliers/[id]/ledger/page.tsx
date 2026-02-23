@@ -20,6 +20,15 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import {
   ArrowLeft,
   Building,
   Phone,
@@ -42,6 +51,12 @@ import {
   ChevronLeft,
   ChevronRight,
   AlertCircle,
+  Menu,
+  Info,
+  X,
+  Clock,
+  TrendingUp,
+  TrendingDown,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -111,6 +126,119 @@ interface ProcessedLedgerEntry extends SupplierLedgerEntry {
   sortKey: string;
 }
 
+// Mobile Transaction Card Component
+const MobileTransactionCard = ({
+  entry,
+  formatCurrency,
+  getTransactionTypeLabel,
+  getTransactionTypeColor,
+}: {
+  entry: ProcessedLedgerEntry;
+  formatCurrency: (amount: number) => string;
+  getTransactionTypeLabel: (type: string) => string;
+  getTransactionTypeColor: (type: string) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isDebit = entry.transaction_type !== "PAYMENT";
+  const isCredit = entry.transaction_type === "PAYMENT";
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="outline"
+                className={getTransactionTypeColor(entry.transaction_type)}
+              >
+                {getTransactionTypeLabel(entry.transaction_type)}
+              </Badge>
+              <span className="text-xs text-muted-foreground">
+                {entry.displayDate}
+              </span>
+            </div>
+            <div className="mt-2 font-medium truncate">
+              {entry.description}
+            </div>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setIsExpanded(!isExpanded)}
+            className="h-8 w-8 p-0 ml-2"
+          >
+            <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+          </Button>
+        </div>
+
+        {/* Amount Summary */}
+        <div className="mt-3 flex justify-between items-center">
+          <div>
+            {isDebit && (
+              <div className="flex items-center gap-1">
+                <TrendingUp className="h-3 w-3 text-red-600" />
+                <span className="text-xs text-muted-foreground">Debit</span>
+              </div>
+            )}
+            {isCredit && (
+              <div className="flex items-center gap-1">
+                <TrendingDown className="h-3 w-3 text-green-600" />
+                <span className="text-xs text-muted-foreground">Credit</span>
+              </div>
+            )}
+          </div>
+          <div className="text-right">
+            {isDebit && (
+              <div className="text-red-600 dark:text-red-400 font-medium">
+                {formatCurrency(entry.amount)}
+              </div>
+            )}
+            {isCredit && (
+              <div className="text-green-600 dark:text-green-400 font-medium">
+                {formatCurrency(entry.amount)}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Running Balance */}
+        <div className="mt-2 flex justify-between items-center border-t pt-2">
+          <span className="text-xs text-muted-foreground">Running Balance</span>
+          <span className={`font-mono font-medium ${
+            entry.running_balance > 0
+              ? "text-red-600 dark:text-red-400"
+              : "text-green-600 dark:text-green-400"
+          }`}>
+            {formatCurrency(entry.running_balance)}
+          </span>
+        </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            {entry.reference_number && (
+              <div className="flex justify-between">
+                <span className="text-xs text-muted-foreground">Reference:</span>
+                <span className="text-xs font-mono">{entry.reference_number}</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-xs text-muted-foreground">Created By:</span>
+              <span className="text-xs">{entry.created_by}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-xs text-muted-foreground">Created At:</span>
+              <span className="text-xs">{entry.displayDate}</span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
+
 // Helper function to safely parse dates
 const safeParseDate = (dateString: string, timeString?: string): Date => {
   try {
@@ -148,6 +276,11 @@ export default function SupplierLedgerPage() {
   const [filters, setFilters] = useState<FilterOptions>({
     searchQuery: "",
   });
+  
+  // Mobile state
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isInfoSheetOpen, setIsInfoSheetOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -577,6 +710,7 @@ export default function SupplierLedgerPage() {
     setFilters({
       searchQuery: "",
     });
+    setIsFilterSheetOpen(false);
   };
 
   // Pagination handlers
@@ -589,7 +723,7 @@ export default function SupplierLedgerPage() {
   if (authLoading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Skeleton className="h-10 w-10" />
             <div>
@@ -619,15 +753,15 @@ export default function SupplierLedgerPage() {
   if (!hasPermission("supplier.view")) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/suppliers">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Supplier Ledger</h1>
-            <p className="text-muted-foreground">View supplier transaction history</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Supplier Ledger</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">View supplier transaction history</p>
           </div>
         </div>
 
@@ -638,7 +772,7 @@ export default function SupplierLedgerPage() {
           </AlertDescription>
         </Alert>
 
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/suppliers">Return to Suppliers</Link>
         </Button>
       </div>
@@ -649,7 +783,7 @@ export default function SupplierLedgerPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Button variant="outline" size="icon" asChild>
               <Link href="/suppliers">
@@ -696,15 +830,15 @@ export default function SupplierLedgerPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/suppliers">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Supplier Ledger</h1>
-            <p className="text-muted-foreground">View supplier transaction history</p>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Supplier Ledger</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">View supplier transaction history</p>
           </div>
         </div>
 
@@ -713,12 +847,12 @@ export default function SupplierLedgerPage() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
 
-        <div className="flex gap-2">
-          <Button onClick={fetchSupplierDetails} variant="outline">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Button onClick={fetchSupplierDetails} variant="outline" className="w-full sm:w-auto">
             <RefreshCw className="mr-2 h-4 w-4" />
             Try Again
           </Button>
-          <Button asChild variant="outline">
+          <Button asChild variant="outline" className="w-full sm:w-auto">
             <Link href="/suppliers">Back to Suppliers</Link>
           </Button>
         </div>
@@ -729,15 +863,15 @@ export default function SupplierLedgerPage() {
   if (!supplier) {
     return (
       <div className="space-y-6">
-        <div className="flex items-center gap-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/suppliers">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Supplier Not Found</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Supplier Not Found</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
               The supplier you're looking for doesn't exist
             </p>
           </div>
@@ -750,7 +884,7 @@ export default function SupplierLedgerPage() {
           </AlertDescription>
         </Alert>
 
-        <Button asChild>
+        <Button asChild className="w-full sm:w-auto">
           <Link href="/suppliers">Return to Suppliers</Link>
         </Button>
       </div>
@@ -761,51 +895,76 @@ export default function SupplierLedgerPage() {
     <PermissionGuard permissionCode="supplier.view" action="view">
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <Button variant="outline" size="icon" asChild>
               <Link href="/suppliers">
                 <ArrowLeft className="h-4 w-4" />
               </Link>
             </Button>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">
-                {supplier.name} - Transaction Ledger
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
+                {supplier.name} - Ledger
               </h1>
-              <p className="text-muted-foreground">
-                Complete transaction history with running balance
+              <p className="text-sm sm:text-base text-muted-foreground">
+                Transaction history with running balance
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={printLedger}>
+          
+          {/* Desktop Actions */}
+          <div className="hidden sm:flex items-center gap-2">
+            <Button variant="outline" onClick={printLedger} size="sm">
               <Printer className="mr-2 h-4 w-4" />
               Print
             </Button>
-            <Button variant="outline" onClick={exportToCSV}>
+            <Button variant="outline" onClick={exportToCSV} size="sm">
               <Download className="mr-2 h-4 w-4" />
-              Export CSV
+              Export
             </Button>
             
             <PermissionGuard permissionCode="accounting.create" action="create">
-              <Button variant="outline" asChild>
+              <Button variant="outline" asChild size="sm">
                 <Link href={`/suppliers/${supplier.id}/payment`}>
                   <CreditCard className="mr-2 h-4 w-4" />
-                  Add Payment
+                  Payment
                 </Link>
               </Button>
             </PermissionGuard>
             
-            <Button variant="outline" onClick={fetchSupplierDetails}>
+            <Button variant="outline" onClick={fetchSupplierDetails} size="sm">
               <RefreshCw className="mr-2 h-4 w-4" />
               Refresh
             </Button>
           </div>
+
+          {/* Mobile Actions */}
+          <div className="flex sm:hidden items-center gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1"
+              onClick={() => setIsFilterSheetOpen(true)}
+            >
+              <Filter className="mr-2 h-4 w-4" />
+              Filters
+            </Button>
+            
+            <Button 
+              variant="outline" 
+              size="sm" 
+              className="flex-1"
+              onClick={() => setIsMobileMenuOpen(true)}
+            >
+              <Menu className="mr-2 h-4 w-4" />
+              Menu
+            </Button>
+          </div>
         </div>
 
-        {/* Filters */}
-        <Card>
-          <CardHeader>
+        {/* Desktop Filters */}
+        <Card className="hidden sm:block">
+          <CardHeader className="pb-2">
             <CardTitle className="text-lg">Filters & Search</CardTitle>
           </CardHeader>
           <CardContent>
@@ -904,10 +1063,294 @@ export default function SupplierLedgerPage() {
           </CardContent>
         </Card>
 
+        {/* Mobile Filter Sheet */}
+        <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
+          <SheetContent side="bottom" className="h-auto max-h-[90vh] rounded-t-xl overflow-y-auto">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5" />
+                Filter Transactions
+              </SheetTitle>
+              <SheetDescription>
+                Apply filters to narrow down results
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 py-4">
+              {/* Search */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search transactions..."
+                    className="pl-8"
+                    value={filters.searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Transaction Type */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Transaction Type</Label>
+                <Select
+                  value={filters.transactionType || "ALL"}
+                  onValueChange={handleTransactionTypeFilter}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Transaction Type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">All Types</SelectItem>
+                    <SelectItem value="PURCHASE">Purchases</SelectItem>
+                    <SelectItem value="RETREAD_SERVICE">Retread Services</SelectItem>
+                    <SelectItem value="PAYMENT">Payments</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Sort Order */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">Sort Order</Label>
+                <Select
+                  value={sortOrder}
+                  onValueChange={(value: "newest" | "oldest") => setSortOrder(value)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sort Order" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">
+                      <div className="flex items-center gap-2">
+                        <ChevronDown className="h-4 w-4" />
+                        Newest First
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="oldest">
+                      <div className="flex items-center gap-2">
+                        <ChevronUp className="h-4 w-4" />
+                        Oldest First
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Date Range */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">From Date</Label>
+                <CalendarComponent
+                  mode="single"
+                  selected={filters.startDate}
+                  onSelect={(date) => handleDateFilter(date, filters.endDate)}
+                  className="rounded-md border w-full"
+                  disabled={(date) => date > new Date()}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium">To Date</Label>
+                <CalendarComponent
+                  mode="single"
+                  selected={filters.endDate}
+                  onSelect={(date) => handleDateFilter(filters.startDate, date)}
+                  className="rounded-md border w-full"
+                  disabled={(date) => date > new Date()}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <Button 
+                  className="flex-1" 
+                  onClick={() => setIsFilterSheetOpen(false)}
+                >
+                  Apply Filters
+                </Button>
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  onClick={clearFilters}
+                >
+                  Clear All
+                </Button>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Mobile Menu Sheet */}
+        <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+          <SheetContent side="bottom" className="h-auto rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle>Actions</SheetTitle>
+              <SheetDescription>
+                Choose an action to perform
+              </SheetDescription>
+            </SheetHeader>
+            <div className="grid gap-2 py-4">
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  printLedger();
+                  setIsMobileMenuOpen(false);
+                }}
+              >
+                <Printer className="mr-2 h-4 w-4" />
+                Print Ledger
+              </Button>
+              
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  exportToCSV();
+                  setIsMobileMenuOpen(false);
+                }}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export CSV
+              </Button>
+              
+              <PermissionGuard permissionCode="accounting.create" action="create">
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  asChild
+                  onClick={() => setIsMobileMenuOpen(false)}
+                >
+                  <Link href={`/suppliers/${supplier.id}/payment`}>
+                    <CreditCard className="mr-2 h-4 w-4" />
+                    Add Payment
+                  </Link>
+                </Button>
+              </PermissionGuard>
+              
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  fetchSupplierDetails();
+                  setIsMobileMenuOpen(false);
+                }}
+                disabled={loading}
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+                Refresh Data
+              </Button>
+
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  setIsInfoSheetOpen(true);
+                  setIsMobileMenuOpen(false);
+                }}
+              >
+                <Info className="mr-2 h-4 w-4" />
+                Supplier Info
+              </Button>
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* Mobile Supplier Info Sheet */}
+        <Sheet open={isInfoSheetOpen} onOpenChange={setIsInfoSheetOpen}>
+          <SheetContent side="bottom" className="h-auto rounded-t-xl">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <Building className="h-5 w-5" />
+                Supplier Information
+              </SheetTitle>
+              <SheetDescription>
+                {supplier.name} details and current balance
+              </SheetDescription>
+            </SheetHeader>
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={getSupplierTypeColor(supplier.type)}
+                >
+                  {getSupplierTypeLabel(supplier.type)}
+                </Badge>
+              </div>
+              
+              {supplier.contact_person && (
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">{supplier.contact_person}</span>
+                </div>
+              )}
+              
+              {supplier.phone && (
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-muted-foreground" />
+                  <a href={`tel:${supplier.phone}`} className="text-sm hover:underline">
+                    {supplier.phone}
+                  </a>
+                </div>
+              )}
+              
+              {supplier.email && (
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-muted-foreground" />
+                  <a href={`mailto:${supplier.email}`} className="text-sm hover:underline break-all">
+                    {supplier.email}
+                  </a>
+                </div>
+              )}
+              
+              {supplier.address && (
+                <div className="flex items-start gap-2">
+                  <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                  <span className="text-sm">{supplier.address}</span>
+                </div>
+              )}
+              
+              <Separator />
+              
+              <div className="text-center p-4 rounded-lg bg-muted">
+                <div className="text-sm font-medium mb-2">Current Balance</div>
+                <div className={`text-2xl font-bold ${
+                  supplier.balance > 0 
+                    ? "text-red-600 dark:text-red-400" 
+                    : "text-green-600 dark:text-green-400"
+                }`}>
+                  {supplier.balance > 0 ? "+" : ""}
+                  {formatCurrency(supplier.balance)}
+                </div>
+                <div className="text-xs text-muted-foreground mt-2">
+                  {supplier.balance > 0 
+                    ? "Amount owed to supplier"
+                    : "Credit balance with supplier"}
+                </div>
+              </div>
+              
+              <div className="text-sm space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Added On:</span>
+                  <span>{formatDate(supplier.created_at)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Total Transactions:</span>
+                  <span>{supplier.ledger.length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Showing:</span>
+                  <span>
+                    {filteredLedger.length} of {supplier.ledger.length}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </SheetContent>
+        </Sheet>
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Supplier Info Card */}
-          <Card className="lg:col-span-1">
-            <CardHeader>
+          {/* Supplier Info Card - Desktop */}
+          <Card className="hidden lg:block lg:col-span-1">
+            <CardHeader className="pb-2">
               <CardTitle>Supplier Information</CardTitle>
               <CardDescription>Supplier details and contact information</CardDescription>
             </CardHeader>
@@ -1013,16 +1456,16 @@ export default function SupplierLedgerPage() {
 
           {/* Transaction Ledger Card */}
           <Card className="lg:col-span-2">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <div>
-                <CardTitle>Transaction History</CardTitle>
-                <CardDescription>
-                  {filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType
-                    ? `Filtered results (${filteredLedger.length} transactions)`
-                    : `All transactions (${supplier.ledger.length} total)`}
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-4">
+            <CardHeader className="pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-lg">Transaction History</CardTitle>
+                  <CardDescription>
+                    {filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType
+                      ? `Filtered results (${filteredLedger.length} transactions)`
+                      : `All transactions (${supplier.ledger.length} total)`}
+                  </CardDescription>
+                </div>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted-foreground">Show:</span>
                   <Select
@@ -1045,7 +1488,7 @@ export default function SupplierLedgerPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent id="ledger-content">
+            <CardContent>
               {filteredLedger.length === 0 ? (
                 <div className="text-center py-8">
                   <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
@@ -1063,34 +1506,35 @@ export default function SupplierLedgerPage() {
                 </div>
               ) : (
                 <>
-                  <div className="rounded-md border">
+                  {/* Desktop Table */}
+                  <div className="hidden md:block rounded-md border overflow-x-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Date & Time</TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Type</TableHead>
-                          <TableHead>Reference</TableHead>
-                          <TableHead className="text-right">Debit</TableHead>
-                          <TableHead className="text-right">Credit</TableHead>
-                          <TableHead className="text-right">Balance</TableHead>
+                          <TableHead className="whitespace-nowrap">Date & Time</TableHead>
+                          <TableHead className="whitespace-nowrap">Description</TableHead>
+                          <TableHead className="whitespace-nowrap">Type</TableHead>
+                          <TableHead className="whitespace-nowrap">Reference</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Debit</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Credit</TableHead>
+                          <TableHead className="text-right whitespace-nowrap">Balance</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {paginatedLedger.map((entry) => (
                           <TableRow key={entry.id}>
-                            <TableCell>
+                            <TableCell className="whitespace-nowrap">
                               <div className="font-medium">
                                 {entry.displayDate}
                               </div>
                             </TableCell>
-                            <TableCell>
-                              <div>{entry.description}</div>
-                              <div className="text-xs text-muted-foreground">
+                            <TableCell className="whitespace-nowrap max-w-xs">
+                              <div className="truncate">{entry.description}</div>
+                              <div className="text-xs text-muted-foreground truncate">
                                 By: {entry.created_by}
                               </div>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="whitespace-nowrap">
                               <Badge
                                 variant="outline"
                                 className={getTransactionTypeColor(entry.transaction_type)}
@@ -1098,10 +1542,10 @@ export default function SupplierLedgerPage() {
                                 {getTransactionTypeLabel(entry.transaction_type)}
                               </Badge>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="whitespace-nowrap">
                               {entry.reference_number || "N/A"}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-right whitespace-nowrap font-mono">
                               {entry.transaction_type !== "PAYMENT" ? (
                                 <div className="text-red-600 dark:text-red-400 font-medium">
                                   {formatCurrency(entry.amount)}
@@ -1110,7 +1554,7 @@ export default function SupplierLedgerPage() {
                                 <div className="text-muted-foreground">-</div>
                               )}
                             </TableCell>
-                            <TableCell className="text-right font-mono">
+                            <TableCell className="text-right whitespace-nowrap font-mono">
                               {entry.transaction_type === "PAYMENT" ? (
                                 <div className="text-green-600 dark:text-green-400 font-medium">
                                   {formatCurrency(entry.amount)}
@@ -1119,7 +1563,7 @@ export default function SupplierLedgerPage() {
                                 <div className="text-muted-foreground">-</div>
                               )}
                             </TableCell>
-                            <TableCell className="text-right">
+                            <TableCell className="text-right whitespace-nowrap">
                               <div className={`font-mono font-medium ${
                                 entry.running_balance > 0
                                   ? "text-red-600 dark:text-red-400"
@@ -1133,83 +1577,169 @@ export default function SupplierLedgerPage() {
                       </TableBody>
                     </Table>
                   </div>
+
+                  {/* Mobile Transaction Cards */}
+                  <div className="md:hidden space-y-3">
+                    {paginatedLedger.map((entry) => (
+                      <MobileTransactionCard
+                        key={entry.id}
+                        entry={entry}
+                        formatCurrency={formatCurrency}
+                        getTransactionTypeLabel={getTransactionTypeLabel}
+                        getTransactionTypeColor={getTransactionTypeColor}
+                      />
+                    ))}
+                  </div>
                   
-                  {/* Pagination */}
+                  {/* Pagination - Desktop */}
                   {filteredLedger.length > 0 && (
-                    <div className="flex items-center justify-between mt-6">
-                      <div className="text-sm text-muted-foreground">
-                        Showing {(currentPage - 1) * pageSize + 1} to{" "}
-                        {Math.min(currentPage * pageSize, filteredLedger.length)} of{" "}
-                        {filteredLedger.length} entries
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={goToFirstPage}
-                          disabled={currentPage === 1}
-                        >
-                          <ChevronFirst className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={goToPrevPage}
-                          disabled={currentPage === 1}
-                        >
-                          <ChevronLeft className="h-4 w-4" />
-                        </Button>
-                        
-                        <div className="flex items-center gap-1">
-                          {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (totalPages <= 5) {
-                              pageNum = i + 1;
-                            } else if (currentPage <= 3) {
-                              pageNum = i + 1;
-                            } else if (currentPage >= totalPages - 2) {
-                              pageNum = totalPages - 4 + i;
-                            } else {
-                              pageNum = currentPage - 2 + i;
-                            }
-                            
-                            return (
-                              <Button
-                                key={pageNum}
-                                variant={currentPage === pageNum ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => setCurrentPage(pageNum)}
-                                className="w-8 h-8 p-0"
-                              >
-                                {pageNum}
-                              </Button>
-                            );
-                          })}
+                    <>
+                      {/* Desktop Pagination */}
+                      <div className="hidden md:flex items-center justify-between mt-6">
+                        <div className="text-sm text-muted-foreground">
+                          Showing {(currentPage - 1) * pageSize + 1} to{" "}
+                          {Math.min(currentPage * pageSize, filteredLedger.length)} of{" "}
+                          {filteredLedger.length} entries
                         </div>
-                        
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={goToNextPage}
-                          disabled={currentPage === totalPages}
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="icon"
-                          onClick={goToLastPage}
-                          disabled={currentPage === totalPages}
-                        >
-                          <ChevronLast className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={goToFirstPage}
+                            disabled={currentPage === 1}
+                          >
+                            <ChevronFirst className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={goToPrevPage}
+                            disabled={currentPage === 1}
+                          >
+                            <ChevronLeft className="h-4 w-4" />
+                          </Button>
+                          
+                          <div className="flex items-center gap-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                              let pageNum;
+                              if (totalPages <= 5) {
+                                pageNum = i + 1;
+                              } else if (currentPage <= 3) {
+                                pageNum = i + 1;
+                              } else if (currentPage >= totalPages - 2) {
+                                pageNum = totalPages - 4 + i;
+                              } else {
+                                pageNum = currentPage - 2 + i;
+                              }
+                              
+                              return (
+                                <Button
+                                  key={pageNum}
+                                  variant={currentPage === pageNum ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setCurrentPage(pageNum)}
+                                  className="w-8 h-8 p-0"
+                                >
+                                  {pageNum}
+                                </Button>
+                              );
+                            })}
+                          </div>
+                          
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalPages}
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="icon"
+                            onClick={goToLastPage}
+                            disabled={currentPage === totalPages}
+                          >
+                            <ChevronLast className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </div>
-                    </div>
+
+                      {/* Mobile Pagination */}
+                      <div className="md:hidden mt-4 space-y-3">
+                        <div className="text-sm text-muted-foreground text-center">
+                          Showing {(currentPage - 1) * pageSize + 1} to{" "}
+                          {Math.min(currentPage * pageSize, filteredLedger.length)} of{" "}
+                          {filteredLedger.length}
+                        </div>
+                        <div className="flex items-center justify-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={goToPrevPage}
+                            disabled={currentPage === 1}
+                            className="h-8 px-3"
+                          >
+                            <ChevronLeft className="h-4 w-4 mr-1" />
+                            Prev
+                          </Button>
+                          <span className="text-sm px-2">
+                            Page {currentPage} of {totalPages}
+                          </span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalPages}
+                            className="h-8 px-3"
+                          >
+                            Next
+                            <ChevronRight className="h-4 w-4 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </>
               )}
             </CardContent>
           </Card>
+        </div>
+
+        {/* Mobile Filter Summary */}
+        <div className="sm:hidden">
+          {(filters.searchQuery || filters.startDate || filters.endDate || filters.transactionType) && (
+            <Card>
+              <CardContent className="p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm">
+                    {filters.searchQuery && <span>Search: "{filters.searchQuery}"</span>}
+                    {filters.transactionType && filters.transactionType !== "ALL" && (
+                      <span className={filters.searchQuery ? "ml-2" : ""}>
+                        Type: {getTransactionTypeLabel(filters.transactionType)}
+                      </span>
+                    )}
+                    {(filters.startDate || filters.endDate) && (
+                      <div className="text-xs text-muted-foreground mt-1">
+                        {filters.startDate && format(filters.startDate, "MMM d, yyyy")}
+                        {filters.startDate && filters.endDate && " - "}
+                        {filters.endDate && format(filters.endDate, "MMM d, yyyy")}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearFilters}
+                    className="h-8 px-2"
+                  >
+                    <X className="h-4 w-4 mr-1" />
+                    Clear
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </PermissionGuard>
