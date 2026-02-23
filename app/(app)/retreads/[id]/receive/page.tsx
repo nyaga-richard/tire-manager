@@ -24,6 +24,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -38,6 +47,10 @@ import {
   Loader2,
   DollarSign,
   FileText,
+  ChevronDown,
+  Truck,
+  Calendar,
+  Info,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -48,7 +61,7 @@ const RETREAD_API = `${API_BASE_URL}/api/retread`;
 const GRN_API = `${API_BASE_URL}/api/grn`;
 
 interface ReceivedTire {
-  order_item_id: number;  // Added - this is the PO item ID from retread_order_items
+  order_item_id: number;
   tire_id: number;
   serial_number: string;
   size: string;
@@ -62,6 +75,186 @@ interface ReceivedTire {
   previous_retread_count?: number;
   estimated_cost?: number;
 }
+
+// Mobile Tire Card Component
+const MobileTireCard = ({
+  tire,
+  costs,
+  onTireChange,
+  onCostChange,
+  onStatusChange,
+  getQualityColor,
+  formatCurrency,
+  submitting,
+}: {
+  tire: ReceivedTire;
+  costs: Record<number, number>;
+  onTireChange: (tireId: number, field: keyof ReceivedTire, value: any) => void;
+  onCostChange: (tireId: number, value: string) => void;
+  onStatusChange: (tireId: number, status: "RECEIVED" | "REJECTED") => void;
+  getQualityColor: (quality: string) => string;
+  formatCurrency: (amount?: number) => string;
+  submitting: boolean;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  return (
+    <Card className={`mb-3 last:mb-0 ${
+      tire.status === "REJECTED" ? "border-red-200 bg-red-50/50 dark:bg-red-950/20" :
+      tire.status === "RECEIVED" ? "border-green-200 bg-green-50/50 dark:bg-green-950/20" : ""
+    }`}>
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="font-mono font-medium text-sm">
+              {tire.serial_number}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              <Badge variant="outline" className="text-xs">
+                {tire.size}
+              </Badge>
+              <span className="text-xs text-muted-foreground">{tire.brand}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Badge variant="outline" className={
+              tire.status === "RECEIVED" ? "bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300" :
+              tire.status === "REJECTED" ? "bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-300" :
+              "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-300"
+            }>
+              {tire.status}
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setIsExpanded(!isExpanded)}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+            </Button>
+          </div>
+        </div>
+
+        {/* Basic Info - Always visible */}
+        <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+          <div>
+            <span className="text-muted-foreground">Depth:</span> {tire.received_depth}mm
+          </div>
+          <div>
+            <span className="text-muted-foreground">Cost:</span> {formatCurrency(costs[tire.tire_id] || 0)}
+          </div>
+        </div>
+
+        {/* Status Selection - Always visible */}
+        <div className="mt-3">
+          <Select
+            value={tire.status}
+            onValueChange={(value: "RECEIVED" | "REJECTED") => onStatusChange(tire.tire_id, value)}
+            disabled={submitting}
+          >
+            <SelectTrigger className="w-full h-9">
+              <SelectValue placeholder="Select status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="PENDING">Pending</SelectItem>
+              <SelectItem value="RECEIVED">Received</SelectItem>
+              <SelectItem value="REJECTED">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-3 border-t pt-3">
+            {/* Model */}
+            {tire.model && (
+              <div>
+                <div className="text-xs text-muted-foreground">Model</div>
+                <div className="text-sm">{tire.model}</div>
+              </div>
+            )}
+
+            {/* Previous Retreads */}
+            <div>
+              <div className="text-xs text-muted-foreground">Previous Retreads</div>
+              <div className="text-sm">{tire.previous_retread_count || 0}</div>
+            </div>
+
+            {/* Depth Input (for received tires) */}
+            {tire.status === "RECEIVED" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Received Depth (mm)</Label>
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="20"
+                  value={tire.received_depth}
+                  onChange={(e) => onTireChange(tire.tire_id, "received_depth", parseFloat(e.target.value) || 0)}
+                  className="h-8"
+                  disabled={submitting}
+                />
+              </div>
+            )}
+
+            {/* Quality Selection (for received tires) */}
+            {tire.status === "RECEIVED" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Quality</Label>
+                <Select
+                  value={tire.quality}
+                  onValueChange={(value: any) => onTireChange(tire.tire_id, "quality", value)}
+                  disabled={submitting}
+                >
+                  <SelectTrigger className="h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="GOOD">Good</SelectItem>
+                    <SelectItem value="ACCEPTABLE">Acceptable</SelectItem>
+                    <SelectItem value="POOR">Poor</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Badge variant="outline" className={`mt-1 ${getQualityColor(tire.quality)}`}>
+                  {tire.quality}
+                </Badge>
+              </div>
+            )}
+
+            {/* Cost Input (for received tires) */}
+            {tire.status === "RECEIVED" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Cost (KSH)</Label>
+                <Input
+                  type="number"
+                  min="0"
+                  step="100"
+                  value={costs[tire.tire_id] || 0}
+                  onChange={(e) => onCostChange(tire.tire_id, e.target.value)}
+                  className="h-8"
+                  disabled={submitting}
+                />
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <Label className="text-xs">Notes</Label>
+              <Input
+                placeholder="Add notes..."
+                value={tire.notes}
+                onChange={(e) => onTireChange(tire.tire_id, "notes", e.target.value)}
+                className="h-8"
+                disabled={submitting}
+              />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+};
 
 export default function ReceiveRetreadOrderPage() {
   const router = useRouter();
@@ -79,6 +272,10 @@ export default function ReceiveRetreadOrderPage() {
   const [notes, setNotes] = useState("");
   const [tires, setTires] = useState<ReceivedTire[]>([]);
   const [costs, setCosts] = useState<Record<number, number>>({});
+
+  // Mobile state
+  const [isDeliverySheetOpen, setIsDeliverySheetOpen] = useState(false);
+  const [isSummarySheetOpen, setIsSummarySheetOpen] = useState(false);
 
   // GRN specific fields
   const [deliveryNoteNumber, setDeliveryNoteNumber] = useState("");
@@ -103,7 +300,7 @@ export default function ReceiveRetreadOrderPage() {
         setSupplierId(data.data.supplier_id);
         
         interface ApiTireData {
-          order_item_id: number;  // Added
+          order_item_id: number;
           tire_id: number;
           serial_number: string;
           size: string;
@@ -115,7 +312,7 @@ export default function ReceiveRetreadOrderPage() {
         }
         
         const initialTires: ReceivedTire[] = data.data.tires.map((tire: ApiTireData) => ({
-          order_item_id: tire.order_item_id,  // Store the PO item ID
+          order_item_id: tire.order_item_id,
           tire_id: tire.tire_id,
           serial_number: tire.serial_number,
           size: tire.size,
@@ -198,7 +395,6 @@ export default function ReceiveRetreadOrderPage() {
       return false;
     }
 
-    // Check for missing order_item_ids (PO item IDs)
     const missingOrderItemIds = receivedTires.some(t => !t.order_item_id);
     if (missingOrderItemIds) {
       toast.error("Some tires are missing PO item IDs. Cannot create GRN. Please contact support.");
@@ -371,13 +567,12 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
   }
 };
 
-
   const getQualityColor = (quality: string) => {
     switch (quality) {
-      case "GOOD": return "bg-green-100 text-green-800";
-      case "ACCEPTABLE": return "bg-yellow-100 text-yellow-800";
-      case "POOR": return "bg-red-100 text-red-800";
-      default: return "bg-gray-100 text-gray-800";
+      case "GOOD": return "bg-green-100 text-green-800 border-green-200 dark:bg-green-900 dark:text-green-300";
+      case "ACCEPTABLE": return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900 dark:text-yellow-300";
+      case "POOR": return "bg-red-100 text-red-800 border-red-200 dark:bg-red-900 dark:text-red-300";
+      default: return "bg-gray-100 text-gray-800 border-gray-200";
     }
   };
 
@@ -397,7 +592,7 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
 
   if (loading) {
     return (
-      <div className="container mx-auto py-6 max-w-6xl">
+      <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 max-w-6xl">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
@@ -414,26 +609,215 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
   const totalCost = calculateTotalCost();
 
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-7xl">
+    <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 space-y-6 max-w-7xl">
       {/* Header */}
       <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={() => router.back()}>
+        <Button variant="outline" size="icon" onClick={() => router.back()} className="shrink-0">
           <ArrowLeft className="h-4 w-4" />
         </Button>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Receive Retread Order</h1>
-          <p className="text-muted-foreground">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
+            Receive Retread Order
+          </h1>
+          <p className="text-sm sm:text-base text-muted-foreground truncate">
             Order #{orderNumber} {supplierName && `- ${supplierName}`}
           </p>
         </div>
       </div>
 
+      {/* Mobile Action Buttons */}
+      <div className="sm:hidden space-y-2">
+        <Button 
+          variant="outline" 
+          className="w-full justify-between"
+          onClick={() => setIsDeliverySheetOpen(true)}
+        >
+          <span className="flex items-center">
+            <Truck className="mr-2 h-4 w-4" />
+            Delivery Information
+          </span>
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+        
+        <Button 
+          variant="outline" 
+          className="w-full justify-between"
+          onClick={() => setIsSummarySheetOpen(true)}
+        >
+          <span className="flex items-center">
+            <Package className="mr-2 h-4 w-4" />
+            View Summary
+          </span>
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {/* Mobile Delivery Sheet */}
+      <Sheet open={isDeliverySheetOpen} onOpenChange={setIsDeliverySheetOpen}>
+        <SheetContent side="bottom" className="h-auto max-h-[80vh] rounded-t-xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Truck className="h-5 w-5" />
+              Delivery Information
+            </SheetTitle>
+            <SheetDescription>
+              Enter delivery details for this receipt
+            </SheetDescription>
+          </SheetHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="mobile-received-date">Received Date *</Label>
+              <Input
+                id="mobile-received-date"
+                type="date"
+                value={receivedDate}
+                onChange={(e) => setReceivedDate(e.target.value)}
+                max={new Date().toISOString().split("T")[0]}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mobile-delivery-note">Delivery Note #</Label>
+              <Input
+                id="mobile-delivery-note"
+                placeholder="e.g., DN-001"
+                value={deliveryNoteNumber}
+                onChange={(e) => setDeliveryNoteNumber(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mobile-vehicle">Vehicle Number</Label>
+              <Input
+                id="mobile-vehicle"
+                placeholder="e.g., Kxx 123A"
+                value={vehicleNumber}
+                onChange={(e) => setVehicleNumber(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mobile-driver">Driver Name</Label>
+              <Input
+                id="mobile-driver"
+                placeholder="Driver's name"
+                value={driverName}
+                onChange={(e) => setDriverName(e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mobile-grn-notes">GRN Notes</Label>
+              <Textarea
+                id="mobile-grn-notes"
+                placeholder="Additional notes for the GRN..."
+                value={grnNotes}
+                onChange={(e) => setGrnNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="mobile-notes">Receiving Notes</Label>
+              <Textarea
+                id="mobile-notes"
+                placeholder="Add any notes about the received order..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+        </SheetContent>
+      </Sheet>
+
+      {/* Mobile Summary Sheet */}
+      <Sheet open={isSummarySheetOpen} onOpenChange={setIsSummarySheetOpen}>
+        <SheetContent side="bottom" className="h-auto rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Package className="h-5 w-5" />
+              Receiving Summary
+            </SheetTitle>
+          </SheetHeader>
+          <div className="space-y-4 py-4">
+            {/* Quick Stats */}
+            <div className="grid grid-cols-2 gap-2">
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Total</div>
+                  <div className="text-lg font-bold">{tires.length}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Pending</div>
+                  <div className="text-lg font-bold text-yellow-600">{pendingCount}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Received</div>
+                  <div className="text-lg font-bold text-green-600">{receivedCount}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <div className="text-xs text-muted-foreground">Rejected</div>
+                  <div className="text-lg font-bold text-red-600">{rejectedCount}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {receivedCount > 0 && (
+              <>
+                <Separator />
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Cost Summary</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Total Cost:</span>
+                      <span className="font-bold">{formatCurrency(totalCost)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Avg per Tire:</span>
+                      <span className="font-medium">{formatCurrency(totalCost / receivedCount)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <Separator />
+                
+                <div>
+                  <h4 className="text-sm font-medium mb-2">Quality Summary</h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Good:</span>
+                      <span>{tires.filter(t => t.status === "RECEIVED" && t.quality === "GOOD").length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Acceptable:</span>
+                      <span>{tires.filter(t => t.status === "RECEIVED" && t.quality === "ACCEPTABLE").length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Poor:</span>
+                      <span>{tires.filter(t => t.status === "RECEIVED" && t.quality === "POOR").length}</span>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Main Form */}
         <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Receiving Information</CardTitle>
+          {/* Desktop Receiving Information */}
+          <Card className="hidden sm:block">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Receiving Information</CardTitle>
               <CardDescription>
                 Enter the receipt date and any notes for this order
               </CardDescription>
@@ -463,7 +847,7 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                 </div>
               </div>
 
-              {/* GRN Delivery Information */}
+              {/* Desktop GRN Delivery Information */}
               {receivedCount > 0 && (
                 <div className="border-t pt-4 mt-4">
                   <h3 className="font-medium mb-3 flex items-center gap-2 text-blue-600">
@@ -527,10 +911,10 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
           </Card>
 
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+            <CardHeader className="pb-2">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <CardTitle>Tires Received</CardTitle>
+                  <CardTitle className="text-lg">Tires Received</CardTitle>
                   <CardDescription>
                     Record the condition and cost of each received tire
                   </CardDescription>
@@ -559,45 +943,41 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
               </div>
             </CardHeader>
             <CardContent>
-              <div className="rounded-md border overflow-x-auto">
+              {/* Desktop Table */}
+              <div className="hidden sm:block rounded-md border overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="min-w-[120px]">Serial #</TableHead>
-                      <TableHead className="min-w-[150px]">Tire Details</TableHead>
-                      <TableHead className="min-w-[100px]">Depth (mm)</TableHead>
-                      <TableHead className="min-w-[100px]">Quality</TableHead>
-                      <TableHead className="min-w-[100px]">Cost (KSH)</TableHead>
-                      <TableHead className="min-w-[120px]">Status</TableHead>
-                      <TableHead className="min-w-[150px]">Notes</TableHead>
+                      <TableHead className="whitespace-nowrap">Serial #</TableHead>
+                      <TableHead className="whitespace-nowrap">Tire Details</TableHead>
+                      <TableHead className="whitespace-nowrap">Depth (mm)</TableHead>
+                      <TableHead className="whitespace-nowrap">Quality</TableHead>
+                      <TableHead className="whitespace-nowrap">Cost (KSH)</TableHead>
+                      <TableHead className="whitespace-nowrap">Status</TableHead>
+                      <TableHead className="whitespace-nowrap">Notes</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {tires.map((tire) => (
                       <TableRow key={`${tire.tire_id}-${tire.serial_number}`} className={
-                        tire.status === "REJECTED" ? "bg-red-50" :
-                        tire.status === "RECEIVED" ? "bg-green-50" : ""
+                        tire.status === "REJECTED" ? "bg-red-50 dark:bg-red-950/20" :
+                        tire.status === "RECEIVED" ? "bg-green-50 dark:bg-green-950/20" : ""
                       }>
-                        <TableCell className="font-mono font-medium">
+                        <TableCell className="font-mono font-medium whitespace-nowrap">
                           {tire.serial_number}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <div>
                             <div>{tire.size}</div>
                             <div className="text-xs text-muted-foreground">
                               {tire.brand} {tire.model}
                             </div>
                             <div className="text-xs text-muted-foreground">
-                              Prev retreads: {tire.previous_retread_count || 0}
+                              Prev: {tire.previous_retread_count || 0}
                             </div>
-                            {tire.order_item_id && (
-                              <div className="text-xs text-blue-600">
-                                Item ID: {tire.order_item_id}
-                              </div>
-                            )}
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <Input
                             type="number"
                             step="0.1"
@@ -609,7 +989,7 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                             disabled={tire.status !== "RECEIVED" || submitting}
                           />
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <Select
                             value={tire.quality}
                             onValueChange={(value: any) => handleTireChange(tire.tire_id, "quality", value)}
@@ -630,7 +1010,7 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                             </Badge>
                           )}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <div className="flex items-center gap-1">
                             <span className="text-xs">KSH</span>
                             <Input
@@ -644,7 +1024,7 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                             />
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <Select
                             value={tire.status}
                             onValueChange={(value: "RECEIVED" | "REJECTED") => handleStatusChange(tire.tire_id, value)}
@@ -660,12 +1040,12 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                             </SelectContent>
                           </Select>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="whitespace-nowrap">
                           <Input
                             placeholder="Notes"
                             value={tire.notes}
                             onChange={(e) => handleTireChange(tire.tire_id, "notes", e.target.value)}
-                            className="h-8"
+                            className="h-8 w-32"
                             disabled={submitting}
                           />
                         </TableCell>
@@ -674,15 +1054,32 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                   </TableBody>
                 </Table>
               </div>
+
+              {/* Mobile Tire Cards */}
+              <div className="sm:hidden space-y-3">
+                {tires.map((tire) => (
+                  <MobileTireCard
+                    key={`${tire.tire_id}-${tire.serial_number}`}
+                    tire={tire}
+                    costs={costs}
+                    onTireChange={handleTireChange}
+                    onCostChange={handleCostChange}
+                    onStatusChange={handleStatusChange}
+                    getQualityColor={getQualityColor}
+                    formatCurrency={formatCurrency}
+                    submitting={submitting}
+                  />
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Summary Sidebar */}
-        <div className="space-y-6">
+        {/* Summary Sidebar - Desktop */}
+        <div className="hidden sm:block space-y-6">
           <Card>
-            <CardHeader>
-              <CardTitle>Receiving Summary</CardTitle>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Receiving Summary</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
@@ -713,7 +1110,8 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
 
                 {receivedCount > 0 && (
                   <>
-                    <div className="border-t pt-4">
+                    <Separator />
+                    <div>
                       <h4 className="font-medium mb-2">Cost Summary</h4>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
@@ -729,7 +1127,9 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                       </div>
                     </div>
 
-                    <div className="border-t pt-4">
+                    <Separator />
+                    
+                    <div>
                       <h4 className="font-medium mb-2">Quality Summary</h4>
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
@@ -792,7 +1192,7 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
           </Card>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-2">
               <CardTitle className="text-sm">Important Notes</CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
@@ -801,16 +1201,14 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                 <li>Record the actual tread depth for received tires (mm)</li>
                 <li>Enter the actual cost for each received tire</li>
                 <li>Rejected tires will be marked as DISPOSED</li>
-                <li>Poor quality tires may require additional review</li>
-                <li className="text-green-600">✓ A GRN will be created automatically for received tires</li>
+                <li className="text-green-600">✓ A GRN will be created automatically</li>
               </ul>
             </CardContent>
           </Card>
 
-          {/* Quick Stats */}
           {receivedCount > 0 && (
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-2">
                 <CardTitle className="text-sm">Quick Stats</CardTitle>
               </CardHeader>
               <CardContent>
@@ -831,6 +1229,34 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
                 </div>
               </CardContent>
             </Card>
+          )}
+        </div>
+
+        {/* Mobile Submit Button */}
+        <div className="sm:hidden">
+          <Button
+            className="w-full"
+            onClick={handleSubmit}
+            disabled={submitting || pendingCount > 0}
+            size="lg"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Processing...
+              </>
+            ) : (
+              <>
+                <CheckCircle className="mr-2 h-4 w-4" />
+                Complete Receiving
+              </>
+            )}
+          </Button>
+          
+          {pendingCount > 0 && (
+            <p className="text-xs text-yellow-600 text-center mt-2">
+              {pendingCount} tire{pendingCount !== 1 ? 's' : ''} still pending
+            </p>
           )}
         </div>
       </div>

@@ -25,6 +25,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
+import {
   Search,
   ArrowRight,
   Package,
@@ -38,6 +47,16 @@ import {
   MapPin,
   ArrowLeft,
   Loader2,
+  Filter,
+  Menu,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  Gauge,
+  RotateCcw,
+  DollarSign,
+  Info,
+  CheckCircle,
 } from "lucide-react";
 import {
   Select,
@@ -99,6 +118,166 @@ interface ApiResponse<T> {
   message?: string;
 }
 
+// Mobile Tire Card Component
+const MobileTireCard = ({
+  tire,
+  selected,
+  onSelect,
+  formatDistance,
+}: {
+  tire: Tire;
+  selected: boolean;
+  onSelect: (id: number) => void;
+  formatDistance: (distance?: number) => string;
+}) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const treadPercentage = (tire.depth_remaining / tire.tread_depth_new) * 100;
+
+  return (
+    <Card className="mb-3 last:mb-0">
+      <CardContent className="p-4">
+        {/* Header */}
+        <div className="flex items-start gap-3">
+          <Checkbox
+            checked={selected}
+            onCheckedChange={() => onSelect(tire.id)}
+            className="mt-1"
+          />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="font-mono font-medium text-sm truncate">
+                  {tire.serial_number}
+                </div>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant="outline" className="text-xs">
+                    {tire.size}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={
+                      tire.status === "USED_STORE"
+                        ? "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800"
+                        : "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800"
+                    }
+                  >
+                    {tire.status.replace("_", " ")}
+                  </Badge>
+                </div>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="h-8 w-8 p-0"
+              >
+                <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+              </Button>
+            </div>
+
+            {/* Basic Info */}
+            <div className="mt-3">
+              <div className="font-medium">{tire.brand}</div>
+              {tire.model && (
+                <div className="text-sm text-muted-foreground">{tire.model}</div>
+              )}
+            </div>
+
+            {/* Tread Depth */}
+            <div className="mt-2">
+              <div className="flex items-center justify-between text-xs mb-1">
+                <span className="text-muted-foreground">Tread Depth</span>
+                <span className="font-medium">{tire.depth_remaining}mm</span>
+              </div>
+              <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-green-500"
+                  style={{ width: `${Math.min(100, treadPercentage)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Stats Grid */}
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+              <div>
+                <div className="text-xs text-muted-foreground">Distance</div>
+                <div className="text-sm font-medium">{formatDistance(tire.total_distance)}</div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Installs</div>
+                <div className="text-sm font-medium">
+                  <Badge variant="outline" className="text-xs">
+                    {tire.installation_count}
+                  </Badge>
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-muted-foreground">Retreads</div>
+                <div className="text-sm font-medium">
+                  <Badge variant="outline" className="text-xs">
+                    {tire.retread_count || 0}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+// Mobile Supplier Card Component
+const MobileSupplierCard = ({
+  supplier,
+  selected,
+  onSelect,
+  formatCurrency,
+}: {
+  supplier: Supplier;
+  selected: boolean;
+  onSelect: (supplier: Supplier) => void;
+  formatCurrency: (amount?: number) => string;
+}) => {
+  return (
+    <Card 
+      className={`mb-2 last:mb-0 cursor-pointer transition-colors ${
+        selected ? 'border-primary bg-primary/5' : ''
+      }`}
+      onClick={() => onSelect(supplier)}
+    >
+      <CardContent className="p-3">
+        <div className="flex items-start justify-between">
+          <div className="flex-1">
+            <div className="font-medium">{supplier.name}</div>
+            <div className="text-xs text-muted-foreground mt-1">
+              {supplier.contact_person || "No contact"}
+            </div>
+          </div>
+          {selected && (
+            <CheckCircle className="h-5 w-5 text-primary" />
+          )}
+        </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+          {supplier.phone && (
+            <div className="flex items-center gap-1">
+              <Phone className="h-3 w-3 text-muted-foreground" />
+              <span>{supplier.phone}</span>
+            </div>
+          )}
+          {supplier.average_cost_per_tire && (
+            <div className="flex items-center gap-1">
+              <DollarSign className="h-3 w-3 text-muted-foreground" />
+              <span>{formatCurrency(supplier.average_cost_per_tire)}/tire</span>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
 export default function CreateRetreadBatchPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -108,6 +287,10 @@ export default function CreateRetreadBatchPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [initializing, setInitializing] = useState(false);
+  
+  // Mobile state
+  const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
+  const [isSupplierSheetOpen, setIsSupplierSheetOpen] = useState(false);
   
   // Selection state
   const [selectedTires, setSelectedTires] = useState<number[]>([]);
@@ -319,7 +502,7 @@ export default function CreateRetreadBatchPage() {
             setActiveTab("review");
         }
     }
-};
+  };
 
   const handleBack = () => {
     router.push('/retreads');
@@ -329,6 +512,7 @@ export default function CreateRetreadBatchPage() {
     setSelectedSupplier(supplier);
     setSupplierSearch(supplier.name);
     setSupplierOpen(false);
+    setIsSupplierSheetOpen(false);
   };
 
   const handleClearSupplier = () => {
@@ -400,9 +584,15 @@ export default function CreateRetreadBatchPage() {
     avgDepth: selectedTiresData.reduce((sum, t) => sum + t.depth_remaining, 0) / (selectedTires.length || 1),
   }), [selectedTiresData, selectedTires.length]);
 
+  const clearFilters = () => {
+    setSearch("");
+    setSizeFilter("all");
+    setIsFilterSheetOpen(false);
+  };
+
   if (loading) {
     return (
-      <div className="container mx-auto py-6 max-w-6xl">
+      <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 max-w-6xl">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
@@ -414,68 +604,97 @@ export default function CreateRetreadBatchPage() {
   }
 
   return (
-    <div className="container mx-auto py-6 space-y-6 max-w-6xl">
+    <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 space-y-6 max-w-6xl">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Button 
-          variant="outline" 
-          size="icon"
-          onClick={handleBack}
-          className="cursor-pointer"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Create Retread Order</h1>
-          <p className="text-muted-foreground">
-            Select tires and configure retreading parameters
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex items-center gap-4">
+          <Button 
+            variant="outline" 
+            size="icon"
+            onClick={handleBack}
+            className="cursor-pointer"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create Retread Order</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Select tires and configure retreading parameters
+            </p>
+          </div>
         </div>
-        {selectedTires.length > 0 && (
-          <div className="flex items-center gap-2 ml-auto">
-            <span className="text-sm text-muted-foreground">
-              {selectedTires.length} tire{selectedTires.length !== 1 ? 's' : ''} selected
-            </span>
-            <Button onClick={handleNext} disabled={submitting}>
-              {submitting ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowRight className="mr-2 h-4 w-4" />
-              )}
-              {activeTab === "review" ? "Create Order" : "Continue"}
+        {selectedTires.length > 0 && activeTab === "tires" && (
+          <div className="sm:hidden">
+            <Button onClick={handleNext} className="w-full" disabled={submitting}>
+              Continue to Supplier
+              <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           </div>
         )}
       </div>
 
+      {/* Mobile Continue Button (for tabs after tires) */}
+      {selectedTires.length > 0 && activeTab !== "tires" && (
+        <div className="sm:hidden">
+          <Button onClick={handleNext} className="w-full" disabled={submitting}>
+            {submitting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : activeTab === "review" ? (
+              "Create Order"
+            ) : (
+              "Continue"
+            )}
+          </Button>
+        </div>
+      )}
+
+      {/* Desktop Continue Button */}
+      {selectedTires.length > 0 && (
+        <div className="hidden sm:flex items-center gap-2 ml-auto">
+          <span className="text-sm text-muted-foreground">
+            {selectedTires.length} tire{selectedTires.length !== 1 ? 's' : ''} selected
+          </span>
+          <Button onClick={handleNext} disabled={submitting}>
+            {submitting ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowRight className="mr-2 h-4 w-4" />
+            )}
+            {activeTab === "review" ? "Create Order" : "Continue"}
+          </Button>
+        </div>
+      )}
+
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-        <TabsList className="grid w-full grid-cols-3 max-w-md">
-          <TabsTrigger value="tires" disabled={initializing}>
-            <Package className="mr-2 h-4 w-4" />
-            Select Tires
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="tires" disabled={initializing} className="text-xs sm:text-sm">
+            <Package className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="hidden xs:inline">Select</span> Tires
           </TabsTrigger>
-          <TabsTrigger value="supplier" disabled={selectedTires.length === 0 || initializing}>
-            <Building className="mr-2 h-4 w-4" />
-            Choose Supplier
+          <TabsTrigger value="supplier" disabled={selectedTires.length === 0 || initializing} className="text-xs sm:text-sm">
+            <Building className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="hidden xs:inline">Choose</span> Supplier
           </TabsTrigger>
-          <TabsTrigger value="review" disabled={selectedTires.length === 0 || !selectedSupplier || initializing}>
-            <Calendar className="mr-2 h-4 w-4" />
-            Review & Create
+          <TabsTrigger value="review" disabled={selectedTires.length === 0 || !selectedSupplier || initializing} className="text-xs sm:text-sm">
+            <Calendar className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+            <span className="hidden xs:inline">Review &</span> Create
           </TabsTrigger>
         </TabsList>
 
         {/* Select Tires Tab */}
         <TabsContent value="tires">
           <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+            <CardHeader className="pb-2 sm:pb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <CardTitle>Select Tires for Retreading</CardTitle>
+                  <CardTitle className="text-lg sm:text-xl">Select Tires for Retreading</CardTitle>
                   <CardDescription>
                     Choose tires from USED_STORE status to send for retreading
                   </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
+                
+                {/* Desktop Search and Filter */}
+                <div className="hidden sm:flex items-center gap-2">
                   <div className="relative w-64">
                     <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
@@ -498,11 +717,116 @@ export default function CreateRetreadBatchPage() {
                     </SelectContent>
                   </Select>
                 </div>
+
+                {/* Mobile Filter Button */}
+                <div className="sm:hidden">
+                  <Button 
+                    variant="outline" 
+                    className="w-full"
+                    onClick={() => setIsFilterSheetOpen(true)}
+                  >
+                    <Filter className="mr-2 h-4 w-4" />
+                    Filter Tires
+                  </Button>
+                </div>
               </div>
             </CardHeader>
+
+            {/* Mobile Filter Sheet */}
+            <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
+              <SheetContent side="bottom" className="h-auto rounded-t-xl">
+                <SheetHeader>
+                  <SheetTitle className="flex items-center gap-2">
+                    <Filter className="h-5 w-5" />
+                    Filter Tires
+                  </SheetTitle>
+                  <SheetDescription>
+                    Apply filters to narrow down results
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="space-y-4 py-4">
+                  {/* Search */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Search</Label>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        type="search"
+                        placeholder="Search by serial, brand, size..."
+                        className="pl-8"
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Size Filter */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Size</Label>
+                    <Select value={sizeFilter} onValueChange={setSizeFilter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="All Sizes" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Sizes</SelectItem>
+                        {uniqueSizes.map(size => (
+                          <SelectItem key={size} value={size}>{size}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex gap-2 pt-4">
+                    <Button 
+                      className="flex-1" 
+                      onClick={() => setIsFilterSheetOpen(false)}
+                    >
+                      Apply Filters
+                    </Button>
+                    <Button 
+                      variant="outline" 
+                      className="flex-1"
+                      onClick={clearFilters}
+                    >
+                      Clear All
+                    </Button>
+                  </div>
+                </div>
+              </SheetContent>
+            </Sheet>
+
             <CardContent>
+              {/* Mobile Filter Summary */}
+              <div className="sm:hidden mb-4">
+                {(search || sizeFilter !== "all") && (
+                  <Card>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm">
+                          {search && <span>Search: "{search}"</span>}
+                          {sizeFilter !== "all" && (
+                            <span className={search ? "ml-2" : ""}>
+                              Size: {sizeFilter}
+                            </span>
+                          )}
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={clearFilters}
+                          className="h-8 px-2"
+                        >
+                          <X className="h-4 w-4 mr-1" />
+                          Clear
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+
               {filteredTires.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-64 text-center">
+                <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                   <Package className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium">No tires found</h3>
                   <p className="text-muted-foreground mt-1">
@@ -519,95 +843,111 @@ export default function CreateRetreadBatchPage() {
                   )}
                 </div>
               ) : (
-                <div className="rounded-md border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-12">
-                          <Checkbox
-                            checked={selectedTires.length === filteredTires.length}
-                            onCheckedChange={handleSelectAll}
-                          />
-                        </TableHead>
-                        <TableHead>Serial #</TableHead>
-                        <TableHead>Size</TableHead>
-                        <TableHead>Brand & Model</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Depth</TableHead>
-                        <TableHead>Distance</TableHead>
-                        <TableHead>Installations</TableHead>
-                        <TableHead>Prev Retreads</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredTires.map((tire) => (
-                        <TableRow key={tire.id}>
-                          <TableCell>
+                <>
+                  {/* Desktop Table */}
+                  <div className="hidden md:block rounded-md border overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">
                             <Checkbox
-                              checked={selectedTires.includes(tire.id)}
-                              onCheckedChange={() => handleSelectTire(tire.id)}
+                              checked={selectedTires.length === filteredTires.length}
+                              onCheckedChange={handleSelectAll}
                             />
-                          </TableCell>
-                          <TableCell className="font-mono font-medium">
-                            {tire.serial_number}
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{tire.size}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">{tire.brand}</div>
-                              {tire.model && (
-                                <div className="text-sm text-muted-foreground">
-                                  {tire.model}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={
-                              tire.status === "USED_STORE"
-                                ? "bg-yellow-100 text-yellow-800 border-yellow-200"
-                                : "bg-orange-100 text-orange-800 border-orange-200"
-                            }>
-                              {tire.status.replace("_", " ")}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <div className="h-2 w-16 rounded-full bg-gray-200">
-                                <div
-                                  className="h-full rounded-full bg-green-500"
-                                  style={{
-                                    width: `${Math.min(
-                                      100,
-                                      (tire.depth_remaining / tire.tread_depth_new) * 100
-                                    )}%`,
-                                  }}
-                                />
-                              </div>
-                              <span className="text-sm font-medium">
-                                {tire.depth_remaining}mm
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>{formatDistance(tire.total_distance)}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline">{tire.installation_count}</Badge>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline">
-                              {tire.retread_count || 0}
-                            </Badge>
-                          </TableCell>
+                          </TableHead>
+                          <TableHead className="whitespace-nowrap">Serial #</TableHead>
+                          <TableHead className="whitespace-nowrap">Size</TableHead>
+                          <TableHead className="whitespace-nowrap">Brand & Model</TableHead>
+                          <TableHead className="whitespace-nowrap">Status</TableHead>
+                          <TableHead className="whitespace-nowrap">Depth</TableHead>
+                          <TableHead className="whitespace-nowrap">Distance</TableHead>
+                          <TableHead className="whitespace-nowrap">Installs</TableHead>
+                          <TableHead className="whitespace-nowrap">Prev Retreads</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredTires.map((tire) => (
+                          <TableRow key={tire.id}>
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedTires.includes(tire.id)}
+                                onCheckedChange={() => handleSelectTire(tire.id)}
+                              />
+                            </TableCell>
+                            <TableCell className="font-mono font-medium whitespace-nowrap">
+                              {tire.serial_number}
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">{tire.size}</Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <div>
+                                <div className="font-medium">{tire.brand}</div>
+                                {tire.model && (
+                                  <div className="text-sm text-muted-foreground">
+                                    {tire.model}
+                                  </div>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline" className={
+                                tire.status === "USED_STORE"
+                                  ? "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800"
+                                  : "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800"
+                              }>
+                                {tire.status.replace("_", " ")}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <div className="flex items-center gap-2">
+                                <div className="h-2 w-16 rounded-full bg-gray-200">
+                                  <div
+                                    className="h-full rounded-full bg-green-500"
+                                    style={{
+                                      width: `${Math.min(
+                                        100,
+                                        (tire.depth_remaining / tire.tread_depth_new) * 100
+                                      )}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="text-sm font-medium">
+                                  {tire.depth_remaining}mm
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">{formatDistance(tire.total_distance)}</TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">{tire.installation_count}</Badge>
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              <Badge variant="outline">
+                                {tire.retread_count || 0}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  {/* Mobile Tire Cards */}
+                  <div className="md:hidden space-y-3">
+                    {filteredTires.map((tire) => (
+                      <MobileTireCard
+                        key={tire.id}
+                        tire={tire}
+                        selected={selectedTires.includes(tire.id)}
+                        onSelect={handleSelectTire}
+                        formatDistance={formatDistance}
+                      />
+                    ))}
+                  </div>
+                </>
               )}
             </CardContent>
-            <CardFooter className="border-t px-6 py-4">
+            <CardFooter className="border-t px-4 sm:px-6 py-4">
               <div className="text-sm text-muted-foreground">
                 Showing {filteredTires.length} of {tires.length} eligible tires
               </div>
@@ -619,14 +959,15 @@ export default function CreateRetreadBatchPage() {
         <TabsContent value="supplier">
           <Card>
             <CardHeader>
-              <CardTitle>Choose Retread Supplier</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Choose Retread Supplier</CardTitle>
               <CardDescription>
                 Select a supplier for the retreading job
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                <div className="space-y-2">
+                {/* Desktop Supplier Selection */}
+                <div className="hidden sm:block space-y-2">
                   <Label htmlFor="supplier-search">Search Supplier *</Label>
                   <Popover open={supplierOpen} onOpenChange={setSupplierOpen}>
                     <PopoverTrigger asChild>
@@ -696,13 +1037,76 @@ export default function CreateRetreadBatchPage() {
                   )}
                 </div>
 
+                {/* Mobile Supplier Selection */}
+                <div className="sm:hidden space-y-2">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between"
+                    onClick={() => setIsSupplierSheetOpen(true)}
+                  >
+                    {selectedSupplier ? (
+                      <div className="flex items-center gap-2">
+                        <Building className="h-4 w-4" />
+                        <span>{selectedSupplier.name}</span>
+                      </div>
+                    ) : (
+                      "Select supplier..."
+                    )}
+                    <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+
+                  <Sheet open={isSupplierSheetOpen} onOpenChange={setIsSupplierSheetOpen}>
+                    <SheetContent side="bottom" className="h-[80vh] rounded-t-xl">
+                      <SheetHeader>
+                        <SheetTitle className="flex items-center gap-2">
+                          <Building className="h-5 w-5" />
+                          Select Supplier
+                        </SheetTitle>
+                        <SheetDescription>
+                          Choose a retread supplier for this order
+                        </SheetDescription>
+                      </SheetHeader>
+                      <div className="py-4">
+                        <div className="relative mb-4">
+                          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            type="search"
+                            placeholder="Search suppliers..."
+                            className="pl-8"
+                            value={supplierSearch}
+                            onChange={(e) => setSupplierSearch(e.target.value)}
+                          />
+                        </div>
+                        <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                          {filteredSuppliers.length === 0 ? (
+                            <div className="text-center py-8">
+                              <Building className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                              <p className="text-sm text-muted-foreground">No suppliers found</p>
+                            </div>
+                          ) : (
+                            filteredSuppliers.map((supplier) => (
+                              <MobileSupplierCard
+                                key={supplier.id}
+                                supplier={supplier}
+                                selected={selectedSupplier?.id === supplier.id}
+                                onSelect={handleSupplierSelect}
+                                formatCurrency={formatCurrency}
+                              />
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </SheetContent>
+                  </Sheet>
+                </div>
+
                 {selectedSupplier && (
                   <Card>
-                    <CardContent className="pt-6">
+                    <CardContent className="pt-4 sm:pt-6">
                       <h4 className="font-medium mb-4">Supplier Details</h4>
                       <div className="space-y-3">
                         <div className="flex items-start gap-2">
-                          <Building className="h-4 w-4 text-muted-foreground mt-0.5" />
+                          <Building className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                           <div>
                             <div className="font-medium">{selectedSupplier.name}</div>
                             {selectedSupplier.contact_person && (
@@ -713,17 +1117,17 @@ export default function CreateRetreadBatchPage() {
                           </div>
                         </div>
                         
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {selectedSupplier.phone && (
                             <div className="flex items-center gap-2">
-                              <Phone className="h-4 w-4 text-muted-foreground" />
+                              <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                               <div className="text-sm">{selectedSupplier.phone}</div>
                             </div>
                           )}
                           
                           {selectedSupplier.email && (
                             <div className="flex items-center gap-2">
-                              <Mail className="h-4 w-4 text-muted-foreground" />
+                              <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                               <div className="text-sm truncate">{selectedSupplier.email}</div>
                             </div>
                           )}
@@ -731,7 +1135,7 @@ export default function CreateRetreadBatchPage() {
                         
                         {selectedSupplier.address && (
                           <div className="flex items-start gap-2">
-                            <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                            <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                             <div className="text-sm">{selectedSupplier.address}</div>
                           </div>
                         )}
@@ -751,28 +1155,29 @@ export default function CreateRetreadBatchPage() {
                   </Card>
                 )}
 
+                {/* Selected Tires Summary */}
                 <Card>
-                  <CardContent className="pt-6">
+                  <CardContent className="pt-4 sm:pt-6">
                     <h4 className="font-medium mb-2">Selected Tires Summary</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
-                        <span>Total Tires:</span>
+                        <span className="text-muted-foreground">Total Tires:</span>
                         <span className="font-medium">{summaryStats.totalTires}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Unique Sizes:</span>
+                        <span className="text-muted-foreground">Unique Sizes:</span>
                         <span className="font-medium">{summaryStats.uniqueSizes}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Unique Brands:</span>
+                        <span className="text-muted-foreground">Unique Brands:</span>
                         <span className="font-medium">{summaryStats.uniqueBrands}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Total Previous Retreads:</span>
+                        <span className="text-muted-foreground">Total Previous Retreads:</span>
                         <span className="font-medium">{summaryStats.totalRetreadCount}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>Average Depth:</span>
+                        <span className="text-muted-foreground">Average Depth:</span>
                         <span className="font-medium">{summaryStats.avgDepth.toFixed(1)}mm</span>
                       </div>
                     </div>
@@ -781,16 +1186,16 @@ export default function CreateRetreadBatchPage() {
 
                 {selectedSupplier?.average_cost_per_tire && (
                   <Card>
-                    <CardContent className="pt-6">
+                    <CardContent className="pt-4 sm:pt-6">
                       <h4 className="font-medium mb-2">Estimated Cost</h4>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span>Cost per Tire:</span>
+                          <span className="text-muted-foreground">Cost per Tire:</span>
                           <span className="font-medium">{formatCurrency(selectedSupplier.average_cost_per_tire)}</span>
                         </div>
                         <div className="flex justify-between border-t pt-2">
                           <span className="font-medium">Total Estimated Cost:</span>
-                          <span className="font-bold text-lg">
+                          <span className="font-bold text-base sm:text-lg">
                             {formatCurrency(selectedSupplier.average_cost_per_tire * selectedTires.length)}
                           </span>
                         </div>
@@ -798,6 +1203,14 @@ export default function CreateRetreadBatchPage() {
                     </CardContent>
                   </Card>
                 )}
+
+                {/* Desktop Continue Button */}
+                <div className="hidden sm:flex justify-end">
+                  <Button onClick={handleNext} disabled={!selectedSupplier}>
+                    Continue to Review
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -807,18 +1220,19 @@ export default function CreateRetreadBatchPage() {
         <TabsContent value="review">
           <Card>
             <CardHeader>
-              <CardTitle>Review & Create Order</CardTitle>
+              <CardTitle className="text-lg sm:text-xl">Review & Create Order</CardTitle>
               <CardDescription>
                 Review your selection before creating the retread order
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-6">
-                <div className="flex items-start gap-2 p-4 border border-yellow-200 bg-yellow-50 rounded-md">
-                  <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                {/* Warning Banner */}
+                <div className="flex items-start gap-2 p-3 sm:p-4 border border-yellow-200 bg-yellow-50 dark:bg-yellow-950 dark:border-yellow-800 rounded-md">
+                  <AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5 flex-shrink-0" />
                   <div>
-                    <h4 className="font-medium text-yellow-800">Ready to Create</h4>
-                    <p className="text-sm text-yellow-700 mt-1">
+                    <h4 className="font-medium text-yellow-800 dark:text-yellow-300">Ready to Create</h4>
+                    <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-1">
                       You are about to create a retread order for {selectedTires.length} tire
                       {selectedTires.length !== 1 ? 's' : ''} with {selectedSupplier?.name}. 
                       This will mark the tires as awaiting retreading.
@@ -826,27 +1240,28 @@ export default function CreateRetreadBatchPage() {
                   </div>
                 </div>
 
-                <div className="grid gap-4 md:grid-cols-2">
+                {/* Summary Cards */}
+                <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="pb-2">
                       <CardTitle className="text-sm">Tire Summary</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                          <span>Total Tires:</span>
+                          <span className="text-muted-foreground">Total Tires:</span>
                           <span className="font-medium">{summaryStats.totalTires}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Unique Sizes:</span>
+                          <span className="text-muted-foreground">Unique Sizes:</span>
                           <span className="font-medium">{summaryStats.uniqueSizes}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Unique Brands:</span>
+                          <span className="text-muted-foreground">Unique Brands:</span>
                           <span className="font-medium">{summaryStats.uniqueBrands}</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>Average Depth:</span>
+                          <span className="text-muted-foreground">Average Depth:</span>
                           <span className="font-medium">{summaryStats.avgDepth.toFixed(1)}mm</span>
                         </div>
                       </div>
@@ -854,29 +1269,35 @@ export default function CreateRetreadBatchPage() {
                   </Card>
 
                   <Card>
-                    <CardHeader>
+                    <CardHeader className="pb-2">
                       <CardTitle className="text-sm">Supplier Info</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-1 text-sm">
                         <div className="font-medium">{selectedSupplier?.name}</div>
                         {selectedSupplier?.contact_person && (
-                          <div>Contact: {selectedSupplier.contact_person}</div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Contact:</span>
+                            <span>{selectedSupplier.contact_person}</span>
+                          </div>
                         )}
                         {selectedSupplier?.phone && (
-                          <div>Phone: {selectedSupplier.phone}</div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Phone:</span>
+                            <span>{selectedSupplier.phone}</span>
+                          </div>
                         )}
                         {selectedSupplier?.average_cost_per_tire && (
                           <div className="mt-2 pt-2 border-t">
                             <div className="flex justify-between">
-                              <span>Avg. Cost per Tire:</span>
+                              <span className="text-muted-foreground">Avg. Cost/Tire:</span>
                               <span className="font-medium">
                                 {formatCurrency(selectedSupplier.average_cost_per_tire)}
                               </span>
                             </div>
                             <div className="flex justify-between font-bold mt-1">
                               <span>Total Estimated:</span>
-                              <span>
+                              <span className="text-primary">
                                 {formatCurrency(selectedSupplier.average_cost_per_tire * selectedTires.length)}
                               </span>
                             </div>
@@ -887,6 +1308,7 @@ export default function CreateRetreadBatchPage() {
                   </Card>
                 </div>
 
+                {/* Date and Notes */}
                 <div className="space-y-4">
                   <div className="space-y-2">
                     <Label htmlFor="expected-date">
@@ -898,6 +1320,7 @@ export default function CreateRetreadBatchPage() {
                       value={expectedDate}
                       onChange={(e) => setExpectedDate(e.target.value)}
                       min={new Date().toISOString().split("T")[0]}
+                      className="w-full"
                     />
                     <p className="text-xs text-muted-foreground">
                       Leave empty if not specified
@@ -913,11 +1336,13 @@ export default function CreateRetreadBatchPage() {
                       placeholder="Add any additional notes or instructions..."
                       value={notes}
                       onChange={(e) => setNotes(e.target.value)}
+                      className="w-full"
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2">
+                {/* Desktop Action Buttons */}
+                <div className="hidden sm:flex justify-end gap-2">
                   <Button
                     variant="outline"
                     onClick={() => setActiveTab("supplier")}
@@ -928,6 +1353,7 @@ export default function CreateRetreadBatchPage() {
                   <Button 
                     onClick={handleNext} 
                     disabled={submitting}
+                    className="min-w-[180px]"
                   >
                     {submitting ? (
                       <>
@@ -947,6 +1373,31 @@ export default function CreateRetreadBatchPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Mobile Action Buttons (for review tab) */}
+      {activeTab === "review" && (
+        <div className="sm:hidden flex gap-2">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => setActiveTab("supplier")}
+            disabled={submitting}
+          >
+            Back
+          </Button>
+          <Button 
+            className="flex-1"
+            onClick={handleNext} 
+            disabled={submitting}
+          >
+            {submitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              "Create Order"
+            )}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
