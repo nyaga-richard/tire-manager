@@ -54,6 +54,7 @@ import {
   Mail,
   MapPin,
   Info,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
@@ -63,9 +64,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, parseISO, isValid } from "date-fns";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
 
-// API Base URL constant
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Tire {
@@ -99,9 +104,13 @@ interface Supplier {
 const MobileTireCard = ({
   tire,
   formatDistance,
+  formatDate,
+  formatCurrency,
 }: {
   tire: Tire;
   formatDistance: (distance?: number) => string;
+  formatDate: (dateString: string) => string;
+  formatCurrency: (amount: number) => string;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const treadPercentage = (tire.depth_remaining / tire.tread_depth_new) * 100;
@@ -178,11 +187,11 @@ const MobileTireCard = ({
             )}
             <div className="flex justify-between">
               <span className="text-xs text-muted-foreground">Purchase Date:</span>
-              <span className="text-sm">{new Date(tire.purchase_date).toLocaleDateString()}</span>
+              <span className="text-sm">{formatDate(tire.purchase_date)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-xs text-muted-foreground">Purchase Cost:</span>
-              <span className="text-sm">KSH {tire.purchase_cost.toLocaleString()}</span>
+              <span className="text-sm">{formatCurrency(tire.purchase_cost)}</span>
             </div>
           </div>
         )}
@@ -192,7 +201,13 @@ const MobileTireCard = ({
 };
 
 // Mobile Supplier Info Card
-const MobileSupplierCard = ({ supplier }: { supplier: Supplier | undefined }) => {
+const MobileSupplierCard = ({ 
+  supplier,
+  formatCurrency 
+}: { 
+  supplier: Supplier | undefined;
+  formatCurrency: (amount: number) => string;
+}) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!supplier) return null;
@@ -245,7 +260,7 @@ const MobileSupplierCard = ({ supplier }: { supplier: Supplier | undefined }) =>
             {supplier.average_retread_cost && (
               <div className="flex justify-between pt-2 border-t">
                 <span className="text-xs text-muted-foreground">Avg Cost/Tire:</span>
-                <span className="font-medium">KSH {supplier.average_retread_cost.toFixed(2)}</span>
+                <span className="font-medium">{formatCurrency(supplier.average_retread_cost)}</span>
               </div>
             )}
           </div>
@@ -255,15 +270,30 @@ const MobileSupplierCard = ({ supplier }: { supplier: Supplier | undefined }) =>
   );
 };
 
+// Skeleton Components
+const TireCardSkeleton = () => (
+  <Card className="mb-3">
+    <CardContent className="p-4">
+      <Skeleton className="h-4 w-32 mb-2" />
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-8 w-full mt-3" />
+    </CardContent>
+  </Card>
+);
+
 export default function SendForRetreadingPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const tireIdsParam = searchParams.get("tires");
+  
+  const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
 
   const [selectedTires, setSelectedTires] = useState<Tire[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Mobile state
   const [isNoticeSheetOpen, setIsNoticeSheetOpen] = useState(false);
@@ -274,34 +304,76 @@ export default function SendForRetreadingPage() {
     send_date: new Date(),
     expected_cost: "",
     notes: "",
-    user_id: "1", // Get from auth context
+    user_id: user?.id?.toString() || "",
   });
 
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+
+  // Check authentication and permission
   useEffect(() => {
-    if (tireIdsParam) {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("tire.retread")) {
+        toast.error("You don't have permission to send tires for retreading");
+        router.push("/retreads");
+      }
+    }
+  }, [authLoading, isAuthenticated, hasPermission, router]);
+
+  useEffect(() => {
+    if (tireIdsParam && isAuthenticated && hasPermission("tire.retread")) {
       fetchSelectedTires();
     }
-    fetchSuppliers();
-  }, [tireIdsParam]);
+    if (isAuthenticated && hasPermission("tire.retread")) {
+      fetchSuppliers();
+    }
+  }, [tireIdsParam, isAuthenticated, hasPermission]);
 
   const fetchSelectedTires = async () => {
     try {
+      setError(null);
       const tireIds = tireIdsParam?.split(",").map(Number);
-      const promises = tireIds?.map(id =>
-        fetch(`${API_BASE_URL}/api/tires/${id}`).then(res => res.json())
-      );
+      const tireData: Tire[] = [];
       
-      const results = await Promise.all(promises || []);
-      setSelectedTires(results.filter(tire => tire && tire.id));
+      for (const id of tireIds || []) {
+        try {
+          const response = await authFetch(`${API_BASE_URL}/api/tires/${id}`);
+          if (response.ok) {
+            const tire = await response.json();
+            if (tire && tire.id) {
+              tireData.push(tire);
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching tire ${id}:`, err);
+        }
+      }
+      
+      setSelectedTires(tireData);
+      
+      if (tireData.length === 0) {
+        setError("No valid tires found. Please go back and select tires.");
+      }
     } catch (error) {
       console.error("Error fetching tires:", error);
+      setError("Failed to load selected tires");
+      toast.error("Failed to load selected tires");
     }
   };
 
   const fetchSuppliers = async () => {
     try {
       setLoading(true);
-      const response = await fetch(`${API_BASE_URL}/api/suppliers`);
+      setError(null);
+      const response = await authFetch(`${API_BASE_URL}/api/suppliers`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data: Supplier[] = await response.json(); // API returns raw array
 
       if (Array.isArray(data) && data.length > 0) {
@@ -309,14 +381,18 @@ export default function SendForRetreadingPage() {
         setFormData(prev => ({
           ...prev,
           supplier_id: data[0].id.toString(), // auto-select first supplier
+          user_id: user?.id?.toString() || "",
         }));
       } else {
         console.warn("No suppliers found", data);
         setSuppliers([]);
         setFormData(prev => ({ ...prev, supplier_id: "" }));
+        setError("No retread suppliers found. Please add suppliers first.");
       }
     } catch (error) {
       console.error("Error fetching suppliers:", error);
+      setError("Failed to load suppliers");
+      toast.error("Failed to load suppliers");
       setSuppliers([]);
       setFormData(prev => ({ ...prev, supplier_id: "" }));
     } finally {
@@ -331,45 +407,57 @@ export default function SendForRetreadingPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to send tires for retreading");
+      return;
+    }
+
     if (selectedTires.length === 0) {
-      alert("No tires selected");
+      toast.error("No tires selected");
       return;
     }
 
     if (!formData.supplier_id) {
-      alert("Please select a retread supplier");
+      toast.error("Please select a retread supplier");
+      return;
+    }
+
+    if (!formData.expected_cost || parseFloat(formData.expected_cost) <= 0) {
+      toast.error("Please enter a valid expected cost");
       return;
     }
 
     setSubmitting(true);
+    setError(null);
 
     try {
       const payload = {
         tire_ids: selectedTires.map(t => t.id),
         supplier_id: parseInt(formData.supplier_id),
         send_date: format(formData.send_date, "yyyy-MM-dd"),
-        expected_cost: parseFloat(formData.expected_cost) || 0,
-        user_id: parseInt(formData.user_id),
+        expected_cost: parseFloat(formData.expected_cost),
+        user_id: user?.id,
+        user_name: user?.full_name || user?.username || "System",
         notes: formData.notes,
       };
 
-      const response = await fetch(`${API_BASE_URL}/api/tires/retread/send-batch`, {
+      const response = await authFetch(`${API_BASE_URL}/api/tires/retread/send-batch`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       const data = await response.json();
 
       if (data.success) {
-        alert(`Successfully sent ${data.sent_tires.length} tires for retreading`);
+        toast.success(`Successfully sent ${data.sent_tires.length} tires for retreading`);
         router.push("/retreads");
       } else {
-        alert("Failed to send tires: " + (data.error || "Unknown error"));
+        throw new Error(data.error || "Failed to send tires");
       }
     } catch (error) {
       console.error("Error sending tires:", error);
-      alert("Failed to send tires for retreading");
+      setError(error instanceof Error ? error.message : "Failed to send tires for retreading");
+      toast.error("Failed to send tires for retreading");
     } finally {
       setSubmitting(false);
     }
@@ -384,10 +472,138 @@ export default function SendForRetreadingPage() {
     return suppliers.find(s => s.id.toString() === formData.supplier_id);
   };
 
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return "N/A";
+    try {
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      
+      const formatStr = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (formatStr === "dd/MM/yyyy") {
+        return format(date, "dd/MM/yyyy");
+      } else if (formatStr === "MM/dd/yyyy") {
+        return format(date, "MM/dd/yyyy");
+      } else if (formatStr === "yyyy-MM-dd") {
+        return format(date, "yyyy-MM-dd");
+      } else if (formatStr === "dd-MM-yyyy") {
+        return format(date, "dd-MM-yyyy");
+      } else if (formatStr === "dd MMM yyyy") {
+        return format(date, "dd MMM yyyy");
+      } else {
+        return format(date, "MMM dd, yyyy");
+      }
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
+  const formatDateTime = (dateString: string): string => {
+    if (!dateString) return "N/A";
+    try {
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      const timeFormat = systemSettings?.time_format || "HH:mm";
+      return `${formatDate(dateString)} ${format(date, timeFormat)}`;
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
+  const formatCurrency = (amount: number): string => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(amount).replace(currency, currencySymbol);
+  };
+
   const formatDistance = (distance?: number) => {
     if (!distance && distance !== 0) return "N/A";
     return distance.toLocaleString() + " km";
   };
+
+  // Show loading state
+  if (authLoading || settingsLoading) {
+    return (
+      <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 space-y-6 max-w-6xl">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-10 w-10" />
+          <div className="flex-1">
+            <Skeleton className="h-8 w-64 mb-2" />
+            <Skeleton className="h-4 w-48" />
+          </div>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="lg:col-span-2 space-y-6">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-6 w-48 mb-2" />
+                <Skeleton className="h-4 w-32" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-40 w-full" />
+              </CardContent>
+            </Card>
+          </div>
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <Skeleton className="h-6 w-32 mb-2" />
+                <Skeleton className="h-4 w-24" />
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-10 w-full" />
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show authentication error
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  // Show permission denied - fallback if redirect doesn't happen
+  if (!hasPermission("tire.retread")) {
+    return (
+      <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 space-y-6 max-w-6xl">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/retreads">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight">
+              Send Tires for Retreading
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              You don't have permission to access this page
+            </p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You don't have permission to send tires for retreading. Please contact your administrator.
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild className="w-full sm:w-auto">
+          <Link href="/retreads">Return to Retreads</Link>
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 space-y-6 max-w-6xl">
@@ -405,13 +621,26 @@ export default function SendForRetreadingPage() {
           <p className="text-sm sm:text-base text-muted-foreground truncate">
             {selectedTires.length} tire{selectedTires.length !== 1 ? 's' : ''} selected
           </p>
+          {systemSettings?.company_name && (
+            <p className="text-xs text-muted-foreground mt-1 truncate">
+              {systemSettings.company_name} • {currencySymbol} ({currency})
+            </p>
+          )}
         </div>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+            <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
             <p className="mt-2 text-muted-foreground">Loading...</p>
           </div>
         </div>
@@ -491,7 +720,7 @@ export default function SendForRetreadingPage() {
                                 </div>
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
-                                {(tire.total_distance || 0).toLocaleString()} km
+                                {formatDistance(tire.total_distance)}
                               </TableCell>
                               <TableCell className="whitespace-nowrap">
                                 <Badge variant="outline">{tire.installation_count}</Badge>
@@ -541,6 +770,8 @@ export default function SendForRetreadingPage() {
                         key={tire.id}
                         tire={tire}
                         formatDistance={formatDistance}
+                        formatDate={formatDate}
+                        formatCurrency={formatCurrency}
                       />
                     ))}
                   </>
@@ -673,7 +904,10 @@ export default function SendForRetreadingPage() {
 
                   {/* Mobile Supplier Card */}
                   <div className="sm:hidden">
-                    <MobileSupplierCard supplier={getSelectedSupplier()} />
+                    <MobileSupplierCard 
+                      supplier={getSelectedSupplier()} 
+                      formatCurrency={formatCurrency}
+                    />
                   </div>
 
                   {/* Send Date */}
@@ -709,7 +943,7 @@ export default function SendForRetreadingPage() {
 
                   {/* Expected Cost */}
                   <div className="space-y-2">
-                    <Label htmlFor="expected_cost">Expected Cost per Tire (KSH) *</Label>
+                    <Label htmlFor="expected_cost">Expected Cost per Tire ({currencySymbol}) *</Label>
                     <div className="flex items-center gap-2">
                       <DollarSign className="h-4 w-4 text-muted-foreground shrink-0" />
                       <Input
@@ -733,7 +967,7 @@ export default function SendForRetreadingPage() {
                         <div className="flex justify-between text-sm">
                           <span className="text-muted-foreground">Cost per tire:</span>
                           <span className="font-medium">
-                            KSH {parseFloat(formData.expected_cost || "0").toFixed(2)}
+                            {formatCurrency(parseFloat(formData.expected_cost || "0"))}
                           </span>
                         </div>
                         <div className="flex justify-between text-sm">
@@ -743,7 +977,7 @@ export default function SendForRetreadingPage() {
                         <Separator className="my-2" />
                         <div className="flex justify-between font-bold">
                           <span>Estimated Total:</span>
-                          <span className="text-primary">KSH {calculateTotalCost().toFixed(2)}</span>
+                          <span className="text-primary">{formatCurrency(calculateTotalCost())}</span>
                         </div>
                       </div>
                     </CardContent>
@@ -809,7 +1043,7 @@ export default function SendForRetreadingPage() {
                       >
                         {submitting ? (
                           <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             Processing...
                           </>
                         ) : (
@@ -827,6 +1061,24 @@ export default function SendForRetreadingPage() {
           </div>
         </form>
       )}
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

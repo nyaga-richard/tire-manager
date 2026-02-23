@@ -81,10 +81,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, parseISO, isValid } from "date-fns";
+import { useAuth } from "@/contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { cn } from "@/lib/utils";
+import Link from "next/link";
 import router from "next/router";
 
-// API Base URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface RetreadOrder {
@@ -277,8 +282,29 @@ const MobileOrderCard = ({
   );
 };
 
+// Skeleton Components
+const StatCardSkeleton = () => (
+  <Card>
+    <CardHeader className="pb-2">
+      <Skeleton className="h-4 w-24" />
+    </CardHeader>
+    <CardContent>
+      <Skeleton className="h-8 w-16" />
+    </CardContent>
+  </Card>
+);
+
+const TableRowSkeleton = () => (
+  <div className="border-b p-4">
+    <Skeleton className="h-12 w-full" />
+  </div>
+);
+
 export default function RetreadOrdersPage() {
   const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState<RetreadOrder[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -308,179 +334,197 @@ export default function RetreadOrdersPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [apiError, setApiError] = useState<string | null>(null);
 
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+
+  // Check authentication and permission
   useEffect(() => {
-    fetchOrders();
-    fetchSuppliers();
-  }, [currentPage, statusFilter, supplierFilter, sortBy, sortOrder]);
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("tire.retread") && !hasPermission("inventory.view")) {
+        toast.error("You don't have permission to view retread orders");
+        router.push("/dashboard");
+      }
+    }
+  }, [authLoading, isAuthenticated, hasPermission, router]);
+
+  useEffect(() => {
+    if (isAuthenticated && (hasPermission("tire.retread") || hasPermission("inventory.view"))) {
+      fetchOrders();
+      fetchSuppliers();
+    }
+  }, [currentPage, statusFilter, supplierFilter, sortBy, sortOrder, search, dateRange, isAuthenticated, hasPermission]);
 
   const fetchOrders = async () => {
-  try {
-    setLoading(true);
-    setApiError(null);
-    
-    // Build query parameters
-    const params = new URLSearchParams({
-      page: currentPage.toString(),
-      limit: itemsPerPage.toString(),
-      sort_by: sortBy,
-      sort_order: sortOrder,
-    });
-    
-    if (statusFilter !== "all") params.append("status", statusFilter);
-    if (supplierFilter !== "all") params.append("supplier_id", supplierFilter);
-    if (search) params.append("search", search);
-    if (dateRange.from) params.append("from_date", dateRange.from.toISOString());
-    if (dateRange.to) params.append("to_date", dateRange.to.toISOString());
-    
-    const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders?${params}`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log("API Response:", data); // For debugging
-    
-    // Handle empty object response
-    if (data && typeof data === 'object' && Object.keys(data).length === 0) {
-      console.log("API returned empty object, treating as empty array");
-      setOrders([]);
-      setTotalPages(1);
-      setTotalOrders(0);
-      setLoading(false);
-      return;
-    }
-    
-    // Handle array response directly
-    if (Array.isArray(data)) {
-      console.log("API returned array directly");
-      setOrders(data);
-      setTotalPages(Math.ceil(data.length / itemsPerPage) || 1);
-      setTotalOrders(data.length);
-      setLoading(false);
-      return;
-    }
-    
-    // Handle standard API response with success flag
-    if (data && typeof data === 'object') {
-      // Check if it's a success response with data array
-      if (data.success === true) {
-        if (Array.isArray(data.data)) {
+    try {
+      setLoading(true);
+      setApiError(null);
+      
+      // Build query parameters
+      const params = new URLSearchParams({
+        page: currentPage.toString(),
+        limit: itemsPerPage.toString(),
+        sort_by: sortBy,
+        sort_order: sortOrder,
+      });
+      
+      if (statusFilter !== "all") params.append("status", statusFilter);
+      if (supplierFilter !== "all") params.append("supplier_id", supplierFilter);
+      if (search) params.append("search", search);
+      if (dateRange.from) params.append("from_date", dateRange.from.toISOString());
+      if (dateRange.to) params.append("to_date", dateRange.to.toISOString());
+      
+      const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders?${params}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("API Response:", data); // For debugging
+      
+      // Handle empty object response
+      if (data && typeof data === 'object' && Object.keys(data).length === 0) {
+        console.log("API returned empty object, treating as empty array");
+        setOrders([]);
+        setTotalPages(1);
+        setTotalOrders(0);
+        setLoading(false);
+        return;
+      }
+      
+      // Handle array response directly
+      if (Array.isArray(data)) {
+        console.log("API returned array directly");
+        setOrders(data);
+        setTotalPages(Math.ceil(data.length / itemsPerPage) || 1);
+        setTotalOrders(data.length);
+        setLoading(false);
+        return;
+      }
+      
+      // Handle standard API response with success flag
+      if (data && typeof data === 'object') {
+        // Check if it's a success response with data array
+        if (data.success === true) {
+          if (Array.isArray(data.data)) {
+            setOrders(data.data);
+            setTotalPages(data.pagination?.pages || Math.ceil(data.data.length / itemsPerPage) || 1);
+            setTotalOrders(data.pagination?.total || data.data.length);
+            setLoading(false);
+            return;
+          } else {
+            console.warn("Success response but data is not an array:", data.data);
+            setOrders([]);
+            setTotalPages(1);
+            setTotalOrders(0);
+            setLoading(false);
+            return;
+          }
+        }
+        
+        // Check if it's an error response
+        if (data.success === false) {
+          setApiError(data.error || data.message || "Failed to fetch orders");
+          setOrders([]);
+          setTotalPages(1);
+          setTotalOrders(0);
+          toast.error(data.error || data.message || "Failed to fetch orders");
+          setLoading(false);
+          return;
+        }
+        
+        // Check if data has a data property that's an array (alternative format)
+        if (data.data && Array.isArray(data.data)) {
           setOrders(data.data);
           setTotalPages(data.pagination?.pages || Math.ceil(data.data.length / itemsPerPage) || 1);
           setTotalOrders(data.pagination?.total || data.data.length);
           setLoading(false);
           return;
-        } else {
-          console.warn("Success response but data is not an array:", data.data);
-          setOrders([]);
-          setTotalPages(1);
-          setTotalOrders(0);
-          setLoading(false);
-          return;
         }
-      }
-      
-      // Check if it's an error response
-      if (data.success === false) {
-        setApiError(data.error || data.message || "Failed to fetch orders");
+        
+        // If we get here, it's an unexpected structure
+        console.error("Unexpected API response structure:", data);
         setOrders([]);
         setTotalPages(1);
         setTotalOrders(0);
-        toast.error(data.error || data.message || "Failed to fetch orders");
-        setLoading(false);
-        return;
-      }
-      
-      // Check if data has a data property that's an array (alternative format)
-      if (data.data && Array.isArray(data.data)) {
-        setOrders(data.data);
-        setTotalPages(data.pagination?.pages || Math.ceil(data.data.length / itemsPerPage) || 1);
-        setTotalOrders(data.pagination?.total || data.data.length);
-        setLoading(false);
-        return;
-      }
-      
-      // If we get here, it's an unexpected structure
-      console.error("Unexpected API response structure:", data);
-      setOrders([]);
-      setTotalPages(1);
-      setTotalOrders(0);
-      
-      // Show a more helpful error message
-      if (process.env.NODE_ENV === 'development') {
-        toast.error(`Unexpected API response format. Check console for details.`);
+        
+        // Show a more helpful error message
+        if (process.env.NODE_ENV === 'development') {
+          toast.error(`Unexpected API response format. Check console for details.`);
+        } else {
+          toast.error("Failed to parse orders data");
+        }
       } else {
-        toast.error("Failed to parse orders data");
+        console.error("Invalid API response type:", typeof data);
+        setOrders([]);
+        setTotalPages(1);
+        setTotalOrders(0);
+        toast.error("Invalid response from server");
       }
-    } else {
-      console.error("Invalid API response type:", typeof data);
+    } catch (error) {
+      console.error("Error fetching orders:", error);
+      setApiError(error instanceof Error ? error.message : "Failed to fetch orders");
       setOrders([]);
       setTotalPages(1);
       setTotalOrders(0);
-      toast.error("Invalid response from server");
+      toast.error("Failed to fetch orders. Please check your connection.");
+    } finally {
+      setLoading(false);
     }
-  } catch (error) {
-    console.error("Error fetching orders:", error);
-    setApiError(error instanceof Error ? error.message : "Failed to fetch orders");
-    setOrders([]);
-    setTotalPages(1);
-    setTotalOrders(0);
-    toast.error("Failed to fetch orders. Please check your connection.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   const fetchSuppliers = async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/suppliers?type=RETREAD`);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log("Suppliers API Response:", data); // For debugging
-    
-    // Handle empty object
-    if (data && typeof data === 'object' && Object.keys(data).length === 0) {
-      setSuppliers([]);
-      return;
-    }
-    
-    // Handle array response directly
-    if (Array.isArray(data)) {
-      setSuppliers(data);
-      return;
-    }
-    
-    // Handle object response
-    if (data && typeof data === 'object') {
-      // Check for success response with data array
-      if (data.success === true && Array.isArray(data.data)) {
-        setSuppliers(data.data);
+    try {
+      const response = await authFetch(`${API_BASE_URL}/api/suppliers?type=RETREAD`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log("Suppliers API Response:", data); // For debugging
+      
+      // Handle empty object
+      if (data && typeof data === 'object' && Object.keys(data).length === 0) {
+        setSuppliers([]);
         return;
       }
       
-      // Check for data property that's an array
-      if (data.data && Array.isArray(data.data)) {
-        setSuppliers(data.data);
+      // Handle array response directly
+      if (Array.isArray(data)) {
+        setSuppliers(data);
         return;
       }
       
-      // If it's an object but not what we expect, log and set empty
-      console.warn("Unexpected suppliers response format:", data);
+      // Handle object response
+      if (data && typeof data === 'object') {
+        // Check for success response with data array
+        if (data.success === true && Array.isArray(data.data)) {
+          setSuppliers(data.data);
+          return;
+        }
+        
+        // Check for data property that's an array
+        if (data.data && Array.isArray(data.data)) {
+          setSuppliers(data.data);
+          return;
+        }
+        
+        // If it's an object but not what we expect, log and set empty
+        console.warn("Unexpected suppliers response format:", data);
+        setSuppliers([]);
+      } else {
+        setSuppliers([]);
+      }
+    } catch (error) {
+      console.error("Error fetching suppliers:", error);
       setSuppliers([]);
-    } else {
-      setSuppliers([]);
+      // Don't show toast for suppliers error as it's not critical
     }
-  } catch (error) {
-    console.error("Error fetching suppliers:", error);
-    setSuppliers([]);
-    // Don't show toast for suppliers error as it's not critical
-  }
-};
+  };
 
   const refreshData = () => {
     fetchOrders();
@@ -499,21 +543,36 @@ export default function RetreadOrdersPage() {
   };
 
   const handleEditOrder = (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to edit orders");
+      return;
+    }
     router.push(`/retreads/${orderId}/edit`);
     setIsMobileMenuOpen(false);
   };
 
   const handleReceiveOrder = (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to receive orders");
+      return;
+    }
     router.push(`/retreads/${orderId}/receive`);
     setIsMobileMenuOpen(false);
   };
 
   const handleSendOrder = async (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to send orders");
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/send`, {
+      const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/send`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: 1 }) // Get from auth context
+        body: JSON.stringify({ 
+          user_id: user?.id,
+          user_name: user?.full_name || user?.username || "System"
+        })
       });
 
       if (!response.ok) {
@@ -535,13 +594,20 @@ export default function RetreadOrdersPage() {
   };
 
   const handleCancelOrder = async (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to cancel orders");
+      return;
+    }
+
     if (!confirm("Are you sure you want to cancel this order?")) return;
     
     try {
-      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/cancel`, {
+      const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/cancel`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: 1 }) // Get from auth context
+        body: JSON.stringify({ 
+          user_id: user?.id,
+          user_name: user?.full_name || user?.username || "System"
+        })
       });
 
       if (!response.ok) {
@@ -565,8 +631,13 @@ export default function RetreadOrdersPage() {
   const handleDeleteOrder = async () => {
     if (!selectedOrder) return;
     
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to delete orders");
+      return;
+    }
+    
     try {
-      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${selectedOrder.id}`, {
+      const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders/${selectedOrder.id}`, {
         method: "DELETE",
       });
 
@@ -590,11 +661,18 @@ export default function RetreadOrdersPage() {
   };
 
   const handleDuplicateOrder = async (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to duplicate orders");
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/duplicate`, {
+      const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/duplicate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: 1 }) // Get from auth context
+        body: JSON.stringify({ 
+          user_id: user?.id,
+          user_name: user?.full_name || user?.username || "System"
+        })
       });
 
       if (!response.ok) {
@@ -616,6 +694,11 @@ export default function RetreadOrdersPage() {
   };
 
   const handleExportOrders = () => {
+    if (!hasPermission("inventory.export")) {
+      toast.error("You don't have permission to export orders");
+      return;
+    }
+
     if (orders.length === 0) {
       toast.error("No orders to export");
       return;
@@ -641,7 +724,7 @@ export default function RetreadOrdersPage() {
       ].join("\n");
       
       // Download CSV
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -750,7 +833,24 @@ export default function RetreadOrdersPage() {
   const formatDate = (dateString?: string): string => {
     if (!dateString) return "—";
     try {
-      return format(new Date(dateString), "MMM d, yyyy");
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      
+      const formatStr = systemSettings?.date_format || "MMM d, yyyy";
+      
+      if (formatStr === "dd/MM/yyyy") {
+        return format(date, "dd/MM/yyyy");
+      } else if (formatStr === "MM/dd/yyyy") {
+        return format(date, "MM/dd/yyyy");
+      } else if (formatStr === "yyyy-MM-dd") {
+        return format(date, "yyyy-MM-dd");
+      } else if (formatStr === "dd-MM-yyyy") {
+        return format(date, "dd-MM-yyyy");
+      } else if (formatStr === "dd MMM yyyy") {
+        return format(date, "dd MMM yyyy");
+      } else {
+        return format(date, "MMM d, yyyy");
+      }
     } catch {
       return "—";
     }
@@ -759,7 +859,10 @@ export default function RetreadOrdersPage() {
   const formatDateTime = (dateString?: string): string => {
     if (!dateString) return "—";
     try {
-      return format(new Date(dateString), "MMM d, yyyy HH:mm");
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      const timeFormat = systemSettings?.time_format || "HH:mm";
+      return `${formatDate(dateString)} ${format(date, timeFormat)}`;
     } catch {
       return "—";
     }
@@ -768,10 +871,11 @@ export default function RetreadOrdersPage() {
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount || 0);
+    }).format(amount || 0).replace(currency, currencySymbol);
   };
 
   const clearFilters = () => {
@@ -785,6 +889,11 @@ export default function RetreadOrdersPage() {
     setIsFilterSheetOpen(false);
   };
 
+  // Permission checks
+  const canView = hasPermission("tire.retread") || hasPermission("inventory.view");
+  const canManage = hasPermission("tire.retread");
+  const canExport = hasPermission("inventory.export");
+
   // Calculate stats from current orders
   const stats = {
     total: totalOrders,
@@ -793,8 +902,70 @@ export default function RetreadOrdersPage() {
     draft: orders.filter(o => o.status === "DRAFT").length,
   };
 
+  // Show loading state
+  if (authLoading || settingsLoading) {
+    return (
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <div className="flex items-center gap-4">
+          <Skeleton className="h-8 w-8" />
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+        </div>
+        <div className="grid gap-4 grid-cols-2 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <TableRowSkeleton key={i} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show authentication error
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  // Show permission denied - fallback if redirect doesn't happen
+  if (!canView) {
+    return (
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-8 w-8 shrink-0">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Retread Orders</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Access denied</p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You don't have permission to view retread orders. Please contact your administrator.
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild className="w-full sm:w-auto">
+          <Link href="/dashboard">Return to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       {/* Header with Back Button */}
       <div className="flex items-center gap-4">
         <Button
@@ -810,15 +981,22 @@ export default function RetreadOrdersPage() {
           <p className="text-sm sm:text-base text-muted-foreground">
             Manage and track all retread orders
           </p>
+          {systemSettings?.company_name && (
+            <p className="text-xs text-muted-foreground mt-1 truncate">
+              {systemSettings.company_name} • {currencySymbol} ({currency})
+            </p>
+          )}
         </div>
       </div>
 
       {/* Desktop Actions */}
       <div className="hidden sm:flex items-center gap-2">
-        <Button variant="outline" onClick={handleExportOrders} disabled={orders.length === 0}>
-          <Download className="mr-2 h-4 w-4" />
-          Export
-        </Button>
+        {canExport && (
+          <Button variant="outline" onClick={handleExportOrders} disabled={orders.length === 0}>
+            <Download className="mr-2 h-4 w-4" />
+            Export
+          </Button>
+        )}
         <Button variant="outline" onClick={refreshData} disabled={loading}>
           {loading ? (
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -827,10 +1005,12 @@ export default function RetreadOrdersPage() {
           )}
           Refresh
         </Button>
-        <Button onClick={() => router.push("/retreads/create-batch")}>
-          <Plus className="mr-2 h-4 w-4" />
-          New Order
-        </Button>
+        {canManage && (
+          <Button onClick={() => router.push("/retreads/create-batch")}>
+            <Plus className="mr-2 h-4 w-4" />
+            New Order
+          </Button>
+        )}
       </div>
 
       {/* Mobile Actions - Stacked below title */}
@@ -855,14 +1035,16 @@ export default function RetreadOrdersPage() {
             Actions
           </Button>
         </div>
-        <Button 
-          size="sm" 
-          className="w-full"
-          onClick={() => router.push("/retreads/create-batch")}
-        >
-          <Plus className="mr-2 h-4 w-4" />
-          Create New Order
-        </Button>
+        {canManage && (
+          <Button 
+            size="sm" 
+            className="w-full"
+            onClick={() => router.push("/retreads/create-batch")}
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Create New Order
+          </Button>
+        )}
       </div>
 
       {/* Mobile Filter Sheet */}
@@ -980,18 +1162,20 @@ export default function RetreadOrdersPage() {
             </SheetDescription>
           </SheetHeader>
           <div className="grid gap-2 py-4">
-            <Button 
-              variant="outline" 
-              className="w-full justify-start"
-              onClick={() => {
-                handleExportOrders();
-                setIsMobileMenuOpen(false);
-              }}
-              disabled={orders.length === 0}
-            >
-              <Download className="mr-2 h-4 w-4" />
-              Export Orders
-            </Button>
+            {canExport && (
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  handleExportOrders();
+                  setIsMobileMenuOpen(false);
+                }}
+                disabled={orders.length === 0}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Export Orders
+              </Button>
+            )}
             <Button 
               variant="outline" 
               className="w-full justify-start"
@@ -1184,7 +1368,7 @@ export default function RetreadOrdersPage() {
                   Clear Filters
                 </Button>
               )}
-              {!search && statusFilter === "all" && supplierFilter === "all" && (
+              {!search && statusFilter === "all" && supplierFilter === "all" && canManage && (
                 <Button onClick={() => router.push("/retreads/create-batch")} className="mt-4">
                   <Plus className="mr-2 h-4 w-4" />
                   Create Order
@@ -1287,7 +1471,7 @@ export default function RetreadOrdersPage() {
                             
                             <DropdownMenuSeparator />
                             
-                            {order.status === "DRAFT" && (
+                            {order.status === "DRAFT" && canManage && (
                               <>
                                 <DropdownMenuItem onClick={() => handleEditOrder(order.id)}>
                                   <FileText className="mr-2 h-4 w-4" />
@@ -1319,7 +1503,7 @@ export default function RetreadOrdersPage() {
                               </>
                             )}
                             
-                            {(order.status === "SENT" || order.status === "IN_PROGRESS") && (
+                            {(order.status === "SENT" || order.status === "IN_PROGRESS") && canManage && (
                               <>
                                 <DropdownMenuItem onClick={() => handleReceiveOrder(order.id)}>
                                   <CheckCircle className="mr-2 h-4 w-4" />
@@ -1333,7 +1517,7 @@ export default function RetreadOrdersPage() {
                               </>
                             )}
                             
-                            {(order.status === "COMPLETED" || order.status === "PARTIALLY_RECEIVED") && (
+                            {(order.status === "COMPLETED" || order.status === "PARTIALLY_RECEIVED") && canManage && (
                               <DropdownMenuItem onClick={() => handleReceiveOrder(order.id)}>
                                 <CheckCircle className="mr-2 h-4 w-4" />
                                 {order.status === "COMPLETED" ? "Receive Order" : "Continue Receiving"}
@@ -1342,7 +1526,7 @@ export default function RetreadOrdersPage() {
                             
                             <DropdownMenuSeparator />
                             
-                            <DropdownMenuItem onClick={() => window.location.href = `mailto:?subject=Retread Order ${order.order_number}&body=Order Details: ${window.location.origin}/retreads/${order.id}`}>
+                            <DropdownMenuItem onClick={() => window.open(`mailto:?subject=Retread Order ${order.order_number}&body=Order Details: ${window.location.origin}/retreads/${order.id}`, '_blank')}>
                               <Mail className="mr-2 h-4 w-4" />
                               Email Order
                             </DropdownMenuItem>
@@ -1516,6 +1700,24 @@ export default function RetreadOrdersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

@@ -57,6 +57,7 @@ import {
   RotateCcw,
   Calendar,
   DollarSign,
+  Link,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -75,8 +76,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { format, parseISO, isValid } from "date-fns";
 
-// API Base URL - make sure this points to your backend
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Tire {
@@ -152,6 +157,8 @@ const MobileTireCard = ({
   getStatusColor,
   formatDistance,
   formatNumber,
+  formatDate,
+  formatCurrency,
 }: {
   tire: Tire;
   selected: boolean;
@@ -160,6 +167,8 @@ const MobileTireCard = ({
   getStatusColor: (status: string) => string;
   formatDistance: (distance?: number) => string;
   formatNumber: (num?: number) => string;
+  formatDate: (dateString?: string) => string;
+  formatCurrency: (amount: number) => string;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const treadPercentage = (tire.depth_remaining / tire.tread_depth_new) * 100;
@@ -258,11 +267,11 @@ const MobileTireCard = ({
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <div className="text-xs text-muted-foreground">Purchase Date</div>
-                <div className="text-sm">{new Date(tire.purchase_date).toLocaleDateString()}</div>
+                <div className="text-sm">{formatDate(tire.purchase_date)}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Purchase Cost</div>
-                <div className="text-sm font-medium">KES {tire.purchase_cost.toLocaleString()}</div>
+                <div className="text-sm font-medium">{formatCurrency(tire.purchase_cost)}</div>
               </div>
               <div>
                 <div className="text-xs text-muted-foreground">Location</div>
@@ -448,8 +457,30 @@ const MobileSupplierCard = ({
   );
 };
 
+// Skeleton Components
+const StatCardSkeleton = () => (
+  <Card>
+    <CardHeader className="pb-2">
+      <Skeleton className="h-4 w-24" />
+    </CardHeader>
+    <CardContent>
+      <Skeleton className="h-8 w-16 mb-2" />
+      <Skeleton className="h-3 w-32" />
+    </CardContent>
+  </Card>
+);
+
+const TableRowSkeleton = () => (
+  <div className="border-b p-4">
+    <Skeleton className="h-12 w-full" />
+  </div>
+);
+
 export default function RetreadsPage() {
   const router = useRouter();
+  const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [activeTab, setActiveTab] = useState("eligible");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -468,20 +499,36 @@ export default function RetreadsPage() {
   
   // Filters
   const [sizeFilter, setSizeFilter] = useState("all");
-  const [supplierFilter, setSupplierFilter] = useState("all");
-  const [statusFilter, setStatusFilter] = useState("all");
+
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+
+  // Check authentication and permission
+  useEffect(() => {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("tire.retread") && !hasPermission("inventory.view")) {
+        toast.error("You don't have permission to view retreading");
+        router.push("/dashboard");
+      }
+    }
+  }, [authLoading, isAuthenticated, hasPermission, router]);
 
   useEffect(() => {
-    fetchData();
-    fetchSuppliers();
-  }, [activeTab]);
+    if (isAuthenticated && (hasPermission("tire.retread") || hasPermission("inventory.view"))) {
+      fetchData();
+      fetchSuppliers();
+    }
+  }, [activeTab, isAuthenticated, hasPermission]);
 
   const fetchData = async () => {
     try {
       setLoading(true);
       
       if (activeTab === "eligible") {
-        const response = await fetch(`${API_BASE_URL}/api/tires/retread/eligible`);
+        const response = await authFetch(`${API_BASE_URL}/api/tires/retread/eligible`);
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -499,7 +546,7 @@ export default function RetreadsPage() {
           toast.error("Failed to parse eligible tires data");
         }
       } else if (activeTab === "suppliers") {
-        const response = await fetch(`${API_BASE_URL}/api/tires/retread/cost-analysis`);
+        const response = await authFetch(`${API_BASE_URL}/api/tires/retread/cost-analysis`);
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
@@ -519,7 +566,7 @@ export default function RetreadsPage() {
       }
 
       // Always fetch orders and movements for stats and recent movements
-      const ordersResponse = await fetch(`${API_BASE_URL}/api/retread/retread-orders`);
+      const ordersResponse = await authFetch(`${API_BASE_URL}/api/retread/retread-orders`);
       
       if (ordersResponse.ok) {
         const ordersData = await ordersResponse.json();
@@ -531,7 +578,7 @@ export default function RetreadsPage() {
         }
       }
 
-      const movementsResponse = await fetch(`${API_BASE_URL}/api/tires/retread/status`);
+      const movementsResponse = await authFetch(`${API_BASE_URL}/api/tires/retread/status`);
       
       if (movementsResponse.ok) {
         const movementsData = await movementsResponse.json();
@@ -552,7 +599,7 @@ export default function RetreadsPage() {
 
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/suppliers`);
+      const response = await authFetch(`${API_BASE_URL}/api/suppliers`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -605,6 +652,11 @@ export default function RetreadsPage() {
   };
 
   const handleSendForRetreading = async () => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to send tires for retreading");
+      return;
+    }
+
     if (selectedTires.length === 0) {
       toast.error("Please select at least one tire");
       return;
@@ -614,18 +666,23 @@ export default function RetreadsPage() {
   };
 
   const handleMarkForRetreading = async () => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to mark tires for retreading");
+      return;
+    }
+
     if (selectedTires.length === 0) {
       toast.error("Please select at least one tire");
       return;
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/tires/retread/mark`, {
+      const response = await authFetch(`${API_BASE_URL}/api/tires/retread/mark`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tire_ids: selectedTires,
-          user_id: 1, // Get from auth context
+          user_id: user?.id,
+          user_name: user?.full_name || user?.username || "System",
           notes: "Marked for retreading from dashboard"
         })
       });
@@ -648,6 +705,10 @@ export default function RetreadsPage() {
   };
 
   const handleCreateOrder = () => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to create retread orders");
+      return;
+    }
     router.push("/retreads/create-batch");
   };
 
@@ -660,15 +721,26 @@ export default function RetreadsPage() {
   };
 
   const handleReceiveOrder = (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to receive retread orders");
+      return;
+    }
     router.push(`/retreads/${orderId}/receive`);
   };
 
   const handleSendOrder = async (orderId: number) => {
+    if (!hasPermission("tire.retread")) {
+      toast.error("You don't have permission to send retread orders");
+      return;
+    }
+
     try {
-      const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/send`, {
+      const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders/${orderId}/send`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: 1 }) // Get from auth context
+        body: JSON.stringify({ 
+          user_id: user?.id,
+          user_name: user?.full_name || user?.username || "System"
+        })
       });
 
       if (!response.ok) {
@@ -736,20 +808,50 @@ export default function RetreadsPage() {
 
   const formatDate = (dateString?: string): string => {
     if (!dateString) return "N/A";
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
+    try {
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      
+      const formatStr = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (formatStr === "dd/MM/yyyy") {
+        return format(date, "dd/MM/yyyy");
+      } else if (formatStr === "MM/dd/yyyy") {
+        return format(date, "MM/dd/yyyy");
+      } else if (formatStr === "yyyy-MM-dd") {
+        return format(date, "yyyy-MM-dd");
+      } else if (formatStr === "dd-MM-yyyy") {
+        return format(date, "dd-MM-yyyy");
+      } else if (formatStr === "dd MMM yyyy") {
+        return format(date, "dd MMM yyyy");
+      } else {
+        return format(date, "MMM dd, yyyy");
+      }
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
+  const formatDateTime = (dateString?: string): string => {
+    if (!dateString) return "N/A";
+    try {
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      const timeFormat = systemSettings?.time_format || "HH:mm";
+      return `${formatDate(dateString)} ${format(date, timeFormat)}`;
+    } catch {
+      return "Invalid Date";
+    }
   };
 
   const formatCurrency = (amount: number): string => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   const formatDistance = (distance?: number): string =>
@@ -783,8 +885,77 @@ export default function RetreadsPage() {
     setIsFilterSheetOpen(false);
   };
 
+  // Permission checks
+  const canViewRetread = hasPermission("tire.retread") || hasPermission("inventory.view");
+  const canCreateRetread = hasPermission("tire.retread");
+  const canManageOrders = hasPermission("tire.retread");
+
+  // Show loading state
+  if (authLoading || settingsLoading) {
+    return (
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <Skeleton className="h-8 w-48 mb-2" />
+            <Skeleton className="h-4 w-64" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-24" />
+            <Skeleton className="h-10 w-32" />
+          </div>
+        </div>
+        <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <StatCardSkeleton key={i} />
+          ))}
+        </div>
+        <Card>
+          <CardContent className="p-6">
+            <div className="space-y-4">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <TableRowSkeleton key={i} />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Show authentication error
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  // Show permission denied - fallback if redirect doesn't happen
+  if (!canViewRetread) {
+    return (
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Retreading Management</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Manage tire retreading process</p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You don't have permission to view retreading. Please contact your administrator.
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild className="w-full sm:w-auto">
+          <Link href="/dashboard">Return to Dashboard</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // If user has permission, render the page
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -792,6 +963,11 @@ export default function RetreadsPage() {
           <p className="text-sm sm:text-base text-muted-foreground">
             Manage tire retreading process from selection to return
           </p>
+          {systemSettings?.company_name && (
+            <p className="text-xs text-muted-foreground mt-1 truncate">
+              {systemSettings.company_name} • {currencySymbol} ({currency})
+            </p>
+          )}
         </div>
         
         {/* Desktop Actions */}
@@ -804,14 +980,18 @@ export default function RetreadsPage() {
             )}
             Refresh
           </Button>
-          <Button variant="outline" onClick={handleViewOrders}>
-            <ListOrdered className="mr-2 h-4 w-4" />
-            Orders
-          </Button>
-          <Button onClick={handleCreateOrder}>
-            <Plus className="mr-2 h-4 w-4" />
-            New Order
-          </Button>
+          {canManageOrders && (
+            <>
+              <Button variant="outline" onClick={handleViewOrders}>
+                <ListOrdered className="mr-2 h-4 w-4" />
+                Orders
+              </Button>
+              <Button onClick={handleCreateOrder}>
+                <Plus className="mr-2 h-4 w-4" />
+                New Order
+              </Button>
+            </>
+          )}
         </div>
 
         {/* Mobile Actions */}
@@ -924,41 +1104,47 @@ export default function RetreadsPage() {
               Refresh Data
             </Button>
             
-            <Button 
-              variant="outline" 
-              className="w-full justify-start"
-              onClick={() => {
-                handleViewOrders();
-                setIsMobileMenuOpen(false);
-              }}
-            >
-              <ListOrdered className="mr-2 h-4 w-4" />
-              View Orders
-            </Button>
+            {canManageOrders && (
+              <>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => {
+                    handleViewOrders();
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  <ListOrdered className="mr-2 h-4 w-4" />
+                  View Orders
+                </Button>
+                
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start"
+                  onClick={() => {
+                    handleCreateOrder();
+                    setIsMobileMenuOpen(false);
+                  }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  New Order
+                </Button>
+              </>
+            )}
             
-            <Button 
-              variant="outline" 
-              className="w-full justify-start"
-              onClick={() => {
-                handleCreateOrder();
-                setIsMobileMenuOpen(false);
-              }}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Order
-            </Button>
-            
-            <Button 
-              variant="outline" 
-              className="w-full justify-start"
-              onClick={() => {
-                router.push("/retreads/return");
-                setIsMobileMenuOpen(false);
-              }}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Return from Retreading
-            </Button>
+            {canCreateRetread && (
+              <Button 
+                variant="outline" 
+                className="w-full justify-start"
+                onClick={() => {
+                  router.push("/retreads/return");
+                  setIsMobileMenuOpen(false);
+                }}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Return from Retreading
+              </Button>
+            )}
             
             <Button 
               variant="outline" 
@@ -1089,7 +1275,7 @@ export default function RetreadsPage() {
                       onClick={clearFilters}
                       className="h-8 px-2"
                     >
-                      <X className="h-4 w-4 mr-1" />
+                      <XCircle className="h-4 w-4 mr-1" />
                       Clear
                     </Button>
                   </div>
@@ -1110,7 +1296,7 @@ export default function RetreadsPage() {
                     Tires in USED_STORE status that can be sent for retreading
                   </CardDescription>
                 </div>
-                {selectedTires.length > 0 && (
+                {selectedTires.length > 0 && canCreateRetread && (
                   <div className="flex flex-col sm:flex-row items-center gap-2">
                     <span className="text-sm text-muted-foreground">
                       {selectedTires.length} selected
@@ -1161,10 +1347,12 @@ export default function RetreadsPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-12">
-                            <Checkbox
-                              checked={selectedTires.length === filteredEligibleTires.length}
-                              onCheckedChange={handleSelectAll}
-                            />
+                            {canCreateRetread && (
+                              <Checkbox
+                                checked={selectedTires.length === filteredEligibleTires.length}
+                                onCheckedChange={handleSelectAll}
+                              />
+                            )}
                           </TableHead>
                           <TableHead className="whitespace-nowrap">Serial #</TableHead>
                           <TableHead className="whitespace-nowrap">Size</TableHead>
@@ -1181,10 +1369,12 @@ export default function RetreadsPage() {
                         {filteredEligibleTires.map((tire) => (
                           <TableRow key={tire.id}>
                             <TableCell>
-                              <Checkbox
-                                checked={selectedTires.includes(tire.id)}
-                                onCheckedChange={() => handleSelectTire(tire.id)}
-                              />
+                              {canCreateRetread && (
+                                <Checkbox
+                                  checked={selectedTires.includes(tire.id)}
+                                  onCheckedChange={() => handleSelectTire(tire.id)}
+                                />
+                              )}
                             </TableCell>
                             <TableCell className="font-mono font-medium whitespace-nowrap">
                               {tire.serial_number}
@@ -1250,19 +1440,21 @@ export default function RetreadsPage() {
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => handleSelectTire(tire.id)}>
-                                    {selectedTires.includes(tire.id) ? (
-                                      <>
-                                        <XCircle className="mr-2 h-4 w-4" />
-                                        Deselect
-                                      </>
-                                    ) : (
-                                      <>
-                                        <CheckCircle className="mr-2 h-4 w-4" />
-                                        Select
-                                      </>
-                                    )}
-                                  </DropdownMenuItem>
+                                  {canCreateRetread && (
+                                    <DropdownMenuItem onClick={() => handleSelectTire(tire.id)}>
+                                      {selectedTires.includes(tire.id) ? (
+                                        <>
+                                          <XCircle className="mr-2 h-4 w-4" />
+                                          Deselect
+                                        </>
+                                      ) : (
+                                        <>
+                                          <CheckCircle className="mr-2 h-4 w-4" />
+                                          Select
+                                        </>
+                                      )}
+                                    </DropdownMenuItem>
+                                  )}
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </TableCell>
@@ -1279,11 +1471,13 @@ export default function RetreadsPage() {
                         key={tire.id}
                         tire={tire}
                         selected={selectedTires.includes(tire.id)}
-                        onSelect={handleSelectTire}
+                        onSelect={canCreateRetread ? handleSelectTire : () => {}}
                         onViewDetails={(id) => router.push(`/inventory/${id}`)}
                         getStatusColor={getStatusColor}
                         formatDistance={formatDistance}
                         formatNumber={formatNumber}
+                        formatDate={formatDate}
+                        formatCurrency={formatCurrency}
                       />
                     ))}
                   </div>
@@ -1496,14 +1690,26 @@ export default function RetreadsPage() {
             <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={handleCreateOrder}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Create New Retread Order
-            </Button>
+            {canCreateRetread && (
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={handleCreateOrder}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Create New Retread Order
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start"
+                  onClick={() => router.push("/retreads/return")}
+                >
+                  <RotateCcw className="mr-2 h-4 w-4" />
+                  Return from Retreading
+                </Button>
+              </>
+            )}
             <Button
               variant="outline"
               className="w-full justify-start"
@@ -1511,14 +1717,6 @@ export default function RetreadsPage() {
             >
               <ListOrdered className="mr-2 h-4 w-4" />
               View All Retread Orders
-            </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => router.push("/retreads/return")}
-            >
-              <CheckCircle className="mr-2 h-4 w-4" />
-              Return from Retreading
             </Button>
             <Button
               variant="outline"
@@ -1634,14 +1832,16 @@ export default function RetreadsPage() {
             <CardTitle className="text-sm font-medium">Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={handleCreateOrder}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              Create New Retread Order
-            </Button>
+            {canCreateRetread && (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={handleCreateOrder}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Create New Retread Order
+              </Button>
+            )}
             <Button
               variant="outline"
               className="w-full justify-start"
@@ -1650,14 +1850,16 @@ export default function RetreadsPage() {
               <ListOrdered className="mr-2 h-4 w-4" />
               View All Retread Orders
             </Button>
-            <Button
-              variant="outline"
-              className="w-full justify-start"
-              onClick={() => router.push("/retreads/return")}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Return from Retreading
-            </Button>
+            {canCreateRetread && (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push("/retreads/return")}
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Return from Retreading
+              </Button>
+            )}
           </CardContent>
         </Card>
 
@@ -1691,6 +1893,24 @@ export default function RetreadsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1700,9 +1920,4 @@ const Label = ({ children, className, ...props }: any) => (
   <label className={`text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className || ''}`} {...props}>
     {children}
   </label>
-);
-
-// Missing X icon
-const X = ({ className }: { className?: string }) => (
-  <XCircle className={className} />
 );

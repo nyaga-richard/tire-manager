@@ -215,18 +215,15 @@ export default function MovementHistoryClient() {
   const currency = systemSettings?.currency || 'KES';
   const currencySymbol = systemSettings?.currency_symbol || 'KSH';
 
-  // Check authentication
+  // Check authentication and permission
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [authLoading, isAuthenticated, router]);
-
-  // Check permission for inventory movement view
-  useEffect(() => {
-    if (!authLoading && isAuthenticated && !hasPermission("inventory.view")) {
-      router.push("/dashboard");
-      toast.error("You don't have permission to view inventory movements");
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("inventory.view")) {
+        toast.error("You don't have permission to view inventory movements");
+        router.push("/dashboard");
+      }
     }
   }, [authLoading, isAuthenticated, hasPermission, router]);
 
@@ -900,7 +897,7 @@ export default function MovementHistoryClient() {
     );
   }
 
-  // Show permission denied
+  // Show permission denied - fallback if redirect doesn't happen
   if (!hasPermission("inventory.view")) {
     return (
       <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6">
@@ -968,812 +965,821 @@ export default function MovementHistoryClient() {
 
   const sortedLedger = getSortedLedger();
 
+  // If user has permission, render the page
   return (
-    <PermissionGuard permissionCode="inventory.view" action="view">
-      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* Print Styles */}
-        <style jsx global>{`
-          @media print {
-            body * {
-              visibility: hidden;
-            }
-            .printable-area,
-            .printable-area * {
-              visibility: visible;
-            }
-            .printable-area {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 100%;
-              padding: 20px;
-            }
-            .no-print {
-              display: none !important;
-            }
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      {/* Print Styles */}
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
           }
-        `}</style>
+          .printable-area,
+          .printable-area * {
+            visibility: visible;
+          }
+          .printable-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            padding: 20px;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/inventory">
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
-                {tireId 
-                  ? "Tire Movement History" 
-                  : size 
-                  ? `Stock Movements: ${size}` 
-                  : "Tire Stock Ledger"}
-              </h1>
-              <p className="text-sm sm:text-base text-muted-foreground truncate">
-                {tireId
-                  ? "Viewing stock movements for specific tire"
-                  : size
-                  ? `Viewing stock movements for size: ${size}`
-                  : "Complete stock movement ledger"}
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/inventory">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
+              {tireId 
+                ? "Tire Movement History" 
+                : size 
+                ? `Stock Movements: ${size}` 
+                : "Tire Stock Ledger"}
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground truncate">
+              {tireId
+                ? "Viewing stock movements for specific tire"
+                : size
+                ? `Viewing stock movements for size: ${size}`
+                : "Complete stock movement ledger"}
+            </p>
+            {systemSettings?.company_name && (
+              <p className="text-xs text-muted-foreground mt-1 truncate">
+                {systemSettings.company_name} • {currencySymbol} ({currency})
               </p>
-              {systemSettings?.company_name && (
-                <p className="text-xs text-muted-foreground mt-1 truncate">
-                  {systemSettings.company_name} • {currencySymbol} ({currency})
-                </p>
-              )}
-            </div>
-          </div>
-          
-          {/* Action Buttons - Horizontal scroll on mobile */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
-            <Button variant="outline" size="sm" onClick={handlePrint} className="whitespace-nowrap">
-              <Printer className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Print</span>
-            </Button>
-            <Button variant="outline" size="sm" onClick={refreshData} disabled={loading} className="whitespace-nowrap">
-              <RefreshCw className={`h-4 w-4 sm:mr-2 ${loading ? "animate-spin" : ""}`} />
-              <span className="hidden sm:inline">Refresh</span>
-            </Button>
-            <PermissionGuard permissionCode="inventory.view" action="view" fallback={null}>
-              <Button variant="outline" size="sm" onClick={exportToCSV} disabled={filteredLedger.length === 0} className="whitespace-nowrap">
-                <Download className="h-4 w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Export</span>
-              </Button>
-            </PermissionGuard>
+            )}
           </div>
         </div>
+        
+        {/* Action Buttons - Horizontal scroll on mobile */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+          <Button variant="outline" size="sm" onClick={handlePrint} className="whitespace-nowrap">
+            <Printer className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Print</span>
+          </Button>
+          <Button variant="outline" size="sm" onClick={refreshData} disabled={loading} className="whitespace-nowrap">
+            <RefreshCw className={`h-4 w-4 sm:mr-2 ${loading ? "animate-spin" : ""}`} />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+          
+          {/* Only show Export button if user has export permission */}
+          {hasPermission("inventory.export") && (
+            <Button variant="outline" size="sm" onClick={exportToCSV} disabled={filteredLedger.length === 0} className="whitespace-nowrap">
+              <Download className="h-4 w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Export</span>
+            </Button>
+          )}
+        </div>
+      </div>
 
-        {/* Date Range Selector - Collapsible on mobile */}
-        <Collapsible
-          open={expandedSections.filters}
-          onOpenChange={() => toggleSection('filters')}
-          className="border rounded-lg sm:border-0 sm:rounded-none no-print"
-        >
-          <div className="flex items-center justify-between p-4 sm:hidden">
-            <h2 className="text-sm font-semibold">Date Range</h2>
-            <CollapsibleTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                {expandedSections.filters ? (
-                  <ChevronUp className="h-3 w-3" />
-                ) : (
-                  <ChevronDown className="h-3 w-3" />
-                )}
-              </Button>
-            </CollapsibleTrigger>
-          </div>
-          <CollapsibleContent className="sm:block">
-            <Card className="border-0 sm:border">
-              <CardContent className="p-4 sm:p-6">
-                <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
-                    <div className="space-y-2">
-                      <label className="text-xs sm:text-sm font-medium">Start Date</label>
-                      <DatePicker
-                        date={startDate}
-                        onSelect={setStartDate}
-                        className="w-full"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-xs sm:text-sm font-medium">End Date</label>
-                      <DatePicker
-                        date={endDate}
-                        onSelect={setEndDate}
-                        className="w-full"
-                      />
-                    </div>
+      {/* Date Range Selector - Collapsible on mobile */}
+      <Collapsible
+        open={expandedSections.filters}
+        onOpenChange={() => toggleSection('filters')}
+        className="border rounded-lg sm:border-0 sm:rounded-none no-print"
+      >
+        <div className="flex items-center justify-between p-4 sm:hidden">
+          <h2 className="text-sm font-semibold">Date Range</h2>
+          <CollapsibleTrigger asChild>
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+              {expandedSections.filters ? (
+                <ChevronUp className="h-3 w-3" />
+              ) : (
+                <ChevronDown className="h-3 w-3" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+        </div>
+        <CollapsibleContent className="sm:block">
+          <Card className="border-0 sm:border">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1">
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium">Start Date</label>
+                    <DatePicker
+                      date={startDate}
+                      onSelect={setStartDate}
+                      className="w-full"
+                    />
                   </div>
-                  <Button onClick={refreshData} disabled={loading} size="sm" className="w-full sm:w-auto">
-                    <Calendar className="mr-2 h-4 w-4" />
-                    Apply Date Range
-                  </Button>
+                  <div className="space-y-2">
+                    <label className="text-xs sm:text-sm font-medium">End Date</label>
+                    <DatePicker
+                      date={endDate}
+                      onSelect={setEndDate}
+                      className="w-full"
+                    />
+                  </div>
                 </div>
-              </CardContent>
-            </Card>
-          </CollapsibleContent>
-        </Collapsible>
-
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
-            <TabsList className="w-full sm:w-auto">
-              <TabsTrigger value="ledger" className="flex-1 sm:flex-none">Stock Ledger</TabsTrigger>
-              <TabsTrigger value="summary" className="flex-1 sm:flex-none">Summary View</TabsTrigger>
-            </TabsList>
-            
-            {/* Filters - Collapsible on mobile */}
-            <Collapsible
-              open={expandedSections.filters}
-              onOpenChange={() => toggleSection('filters')}
-              className="sm:hidden"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">Search & Sort</span>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    {expandedSections.filters ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
+                <Button onClick={refreshData} disabled={loading} size="sm" className="w-full sm:w-auto">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Apply Date Range
+                </Button>
               </div>
-              <CollapsibleContent className="mt-3 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Select value={sortBy} onValueChange={setSortBy}>
-                    <SelectTrigger className="flex-1">
-                      <SelectValue placeholder="Sort by" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="date">Date</SelectItem>
-                      <SelectItem value="type">Transaction Type</SelectItem>
-                      <SelectItem value="user">User</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-                    className="shrink-0"
-                  >
-                    {sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  </Button>
-                </div>
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    type="search"
-                    placeholder="Search transactions..."
-                    className="pl-8 w-full"
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                  />
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
+            </CardContent>
+          </Card>
+        </CollapsibleContent>
+      </Collapsible>
 
-            {/* Desktop filters */}
-            <div className="hidden sm:flex items-center gap-2">
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-[130px]">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="date">Date</SelectItem>
-                  <SelectItem value="type">Transaction Type</SelectItem>
-                  <SelectItem value="user">User</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              >
-                {sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              </Button>
-              <div className="relative w-64">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 no-print">
+          <TabsList className="w-full sm:w-auto">
+            <TabsTrigger value="ledger" className="flex-1 sm:flex-none">Stock Ledger</TabsTrigger>
+            <TabsTrigger value="summary" className="flex-1 sm:flex-none">Summary View</TabsTrigger>
+          </TabsList>
+          
+          {/* Filters - Collapsible on mobile */}
+          <Collapsible
+            open={expandedSections.filters}
+            onOpenChange={() => toggleSection('filters')}
+            className="sm:hidden"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-muted-foreground">Search & Sort</span>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  {expandedSections.filters ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent className="mt-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="date">Date</SelectItem>
+                    <SelectItem value="type">Transaction Type</SelectItem>
+                    <SelectItem value="user">User</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                  className="shrink-0"
+                >
+                  {sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                </Button>
+              </div>
+              <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                 <Input
                   type="search"
                   placeholder="Search transactions..."
-                  className="pl-8"
+                  className="pl-8 w-full"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Desktop filters */}
+          <div className="hidden sm:flex items-center gap-2">
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-[130px]">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Date</SelectItem>
+                <SelectItem value="type">Transaction Type</SelectItem>
+                <SelectItem value="user">User</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+            >
+              {sortOrder === "asc" ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </Button>
+            <div className="relative w-64">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                type="search"
+                placeholder="Search transactions..."
+                className="pl-8"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
             </div>
           </div>
+        </div>
 
-          {/* Stock Ledger Tab */}
-          <TabsContent value="ledger" className="space-y-4">
-            <Card ref={printRef}>
-              <CardHeader className="no-print pb-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div>
-                    <CardTitle className="text-base sm:text-lg">Stock Movement Ledger</CardTitle>
-                    <CardDescription className="text-xs sm:text-sm">
-                      Complete transaction history with running stock totals
-                    </CardDescription>
-                  </div>
-                  <Badge variant="outline" className="text-xs sm:text-sm w-fit">
-                    {formatNumber(totalEntries)} total entries
-                  </Badge>
+        {/* Stock Ledger Tab */}
+        <TabsContent value="ledger" className="space-y-4">
+          <Card ref={printRef}>
+            <CardHeader className="no-print pb-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <CardTitle className="text-base sm:text-lg">Stock Movement Ledger</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
+                    Complete transaction history with running stock totals
+                  </CardDescription>
                 </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                {loading ? (
-                  <div className="p-4 space-y-3">
-                    {[1, 2, 3].map((i) => (
-                      <LedgerEntrySkeleton key={i} />
-                    ))}
-                  </div>
-                ) : filteredLedger.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                    <Receipt className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mb-3 sm:mb-4" />
-                    <h3 className="text-base sm:text-lg font-medium">No ledger entries found</h3>
-                    <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                      {search
-                        ? "Try a different search term"
-                        : "No transactions recorded in this date range"}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="sm:rounded-md border">
-                    {/* Desktop Table */}
-                    <div className="hidden sm:block">
-                      <div className="relative overflow-auto max-h-[600px]">
-                        <Table>
-                          <TableHeader className="sticky top-0 bg-background z-10">
-                            <TableRow>
-                              <TableHead className="w-[180px]">Date</TableHead>
-                              <TableHead className="w-[140px]">User Name</TableHead>
-                              <TableHead className="w-[140px]">Location</TableHead>
-                              <TableHead className="w-[120px] text-right">Opening</TableHead>
-                              <TableHead className="w-[100px] text-right">In</TableHead>
-                              <TableHead className="w-[100px] text-right">Out</TableHead>
-                              <TableHead className="w-[120px] text-right">Closing</TableHead>
-                              <TableHead className="w-[100px] text-right">Price</TableHead>
-                              <TableHead className="w-[200px]">Reference</TableHead>
-                              <TableHead className="w-[120px]">Doc No</TableHead>
-                              <TableHead className="w-[140px]">Type</TableHead>
-                              <TableHead className="w-[80px] text-right no-print">Actions</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {sortedLedger.map((entry) => (
-                              <TableRow key={entry.id} className="hover:bg-accent/50">
-                                <TableCell className="font-medium text-xs">
-                                  {formatDate(entry.date)}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <User className="h-3 w-3 text-muted-foreground shrink-0" />
-                                    <span className="truncate max-w-[100px]" title={entry.user_name}>
-                                      {entry.user_name}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
-                                    <span>{entry.location}</span>
-                                  </div>
-                                  {entry.movement.from_location && entry.movement.to_location && (
-                                    <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
-                                      <MapPin className="h-2 w-2 shrink-0" />
-                                      <span className="truncate max-w-[100px]" title={`${entry.movement.from_location} → ${entry.movement.to_location}`}>
-                                        {entry.movement.from_location} → {entry.movement.to_location}
-                                      </span>
-                                    </div>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right font-mono">
-                                  <span className="text-muted-foreground">
-                                    {formatNumber(entry.opening_stock)}
+                <Badge variant="outline" className="text-xs sm:text-sm w-fit">
+                  {formatNumber(totalEntries)} total entries
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="p-4 space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <LedgerEntrySkeleton key={i} />
+                  ))}
+                </div>
+              ) : filteredLedger.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                  <Receipt className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mb-3 sm:mb-4" />
+                  <h3 className="text-base sm:text-lg font-medium">No ledger entries found</h3>
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                    {search
+                      ? "Try a different search term"
+                      : "No transactions recorded in this date range"}
+                  </p>
+                </div>
+              ) : (
+                <div className="sm:rounded-md border">
+                  {/* Desktop Table */}
+                  <div className="hidden sm:block">
+                    <div className="relative overflow-auto max-h-[600px]">
+                      <Table>
+                        <TableHeader className="sticky top-0 bg-background z-10">
+                          <TableRow>
+                            <TableHead className="w-[180px]">Date</TableHead>
+                            <TableHead className="w-[140px]">User Name</TableHead>
+                            <TableHead className="w-[140px]">Location</TableHead>
+                            <TableHead className="w-[120px] text-right">Opening</TableHead>
+                            <TableHead className="w-[100px] text-right">In</TableHead>
+                            <TableHead className="w-[100px] text-right">Out</TableHead>
+                            <TableHead className="w-[120px] text-right">Closing</TableHead>
+                            <TableHead className="w-[100px] text-right">Price</TableHead>
+                            <TableHead className="w-[200px]">Reference</TableHead>
+                            <TableHead className="w-[120px]">Doc No</TableHead>
+                            <TableHead className="w-[140px]">Type</TableHead>
+                            <TableHead className="w-[80px] text-right no-print">Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {sortedLedger.map((entry) => (
+                            <TableRow key={entry.id} className="hover:bg-accent/50">
+                              <TableCell className="font-medium text-xs">
+                                {formatDate(entry.date)}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <User className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <span className="truncate max-w-[100px]" title={entry.user_name}>
+                                    {entry.user_name}
                                   </span>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {entry.quantity_in > 0 ? (
-                                    <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800 whitespace-nowrap">
-                                      <Plus className="mr-1 h-3 w-3" />
-                                      {formatNumber(entry.quantity_in)}
-                                    </Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground">0</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                  {entry.quantity_out > 0 ? (
-                                    <Badge className="bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 whitespace-nowrap">
-                                      <Minus className="mr-1 h-3 w-3" />
-                                      {formatNumber(entry.quantity_out)}
-                                    </Badge>
-                                  ) : (
-                                    <span className="text-muted-foreground">0</span>
-                                  )}
-                                </TableCell>
-                                <TableCell className="text-right font-mono font-semibold">
-                                  {formatNumber(entry.closing_stock)}
-                                </TableCell>
-                                <TableCell className="text-right font-mono">
-                                  {entry.price ? formatCurrency(entry.price) : "-"}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    {getTransactionIcon(entry.type)}
-                                    <span className="truncate max-w-[150px]" title={entry.reference}>
-                                      {entry.reference}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <div className="flex items-center gap-2">
-                                    <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
-                                    <span className="font-mono text-xs truncate max-w-[80px]" title={entry.document_no}>
-                                      {entry.document_no}
-                                    </span>
-                                  </div>
-                                </TableCell>
-                                <TableCell>
-                                  <Badge
-                                    variant="outline"
-                                    className={cn("text-xs whitespace-nowrap", getTransactionTypeColor(entry.type))}
-                                  >
-                                    {entry.type}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-right no-print">
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" className="h-8 w-8 p-0">
-                                        <MoreHorizontal className="h-4 w-4" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                                      <PermissionGuard permissionCode="inventory.view" action="view">
-                                        <DropdownMenuItem asChild>
-                                          <Link href={`/inventory/${entry.movement.tire_id}`}>
-                                            <Eye className="mr-2 h-4 w-4" />
-                                            View Tire
-                                          </Link>
-                                        </DropdownMenuItem>
-                                      </PermissionGuard>
-                                      {entry.movement.vehicle_id && (
-                                        <PermissionGuard permissionCode="vehicle.view" action="view">
-                                          <DropdownMenuItem asChild>
-                                            <Link href={`/vehicles/${entry.movement.vehicle_id}`}>
-                                              <Car className="mr-2 h-4 w-4" />
-                                              View Vehicle
-                                            </Link>
-                                          </DropdownMenuItem>
-                                        </PermissionGuard>
-                                      )}
-                                      {entry.movement.supplier_id && (
-                                        <PermissionGuard permissionCode="supplier.view" action="view">
-                                          <DropdownMenuItem asChild>
-                                            <Link href={`/suppliers/${entry.movement.supplier_id}`}>
-                                              <Building className="mr-2 h-4 w-4" />
-                                              View Supplier
-                                            </Link>
-                                          </DropdownMenuItem>
-                                        </PermissionGuard>
-                                      )}
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem asChild>
-                                        <Link href={`/inventory/movement?tire=${entry.movement.tire_id}`}>
-                                          <History className="mr-2 h-4 w-4" />
-                                          View All Movements
-                                        </Link>
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </div>
-
-                    {/* Mobile Cards */}
-                    <div className="sm:hidden space-y-3 p-3">
-                      {sortedLedger.map((entry) => (
-                        <Card key={entry.id} className="overflow-hidden">
-                          <CardContent className="p-4">
-                            {/* Header with Date and Actions */}
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <div className="flex items-center gap-2 mb-1">
-                                  <Clock className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-xs font-medium">{formatDate(entry.date)}</span>
                                 </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <Building2 className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <span>{entry.location}</span>
+                                </div>
+                                {entry.movement.from_location && entry.movement.to_location && (
+                                  <div className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                    <MapPin className="h-2 w-2 shrink-0" />
+                                    <span className="truncate max-w-[100px]" title={`${entry.movement.from_location} → ${entry.movement.to_location}`}>
+                                      {entry.movement.from_location} → {entry.movement.to_location}
+                                    </span>
+                                  </div>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                <span className="text-muted-foreground">
+                                  {formatNumber(entry.opening_stock)}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {entry.quantity_in > 0 ? (
+                                  <Badge className="bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800 whitespace-nowrap">
+                                    <Plus className="mr-1 h-3 w-3" />
+                                    {formatNumber(entry.quantity_in)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">0</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {entry.quantity_out > 0 ? (
+                                  <Badge className="bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800 whitespace-nowrap">
+                                    <Minus className="mr-1 h-3 w-3" />
+                                    {formatNumber(entry.quantity_out)}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-muted-foreground">0</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right font-mono font-semibold">
+                                {formatNumber(entry.closing_stock)}
+                              </TableCell>
+                              <TableCell className="text-right font-mono">
+                                {entry.price ? formatCurrency(entry.price) : "-"}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  {getTransactionIcon(entry.type)}
+                                  <span className="truncate max-w-[150px]" title={entry.reference}>
+                                    {entry.reference}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center gap-2">
+                                  <FileText className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <span className="font-mono text-xs truncate max-w-[80px]" title={entry.document_no}>
+                                    {entry.document_no}
+                                  </span>
+                                </div>
+                              </TableCell>
+                              <TableCell>
                                 <Badge
                                   variant="outline"
-                                  className={cn("text-xs", getTransactionTypeColor(entry.type))}
+                                  className={cn("text-xs whitespace-nowrap", getTransactionTypeColor(entry.type))}
                                 >
                                   {entry.type}
                                 </Badge>
+                              </TableCell>
+                              <TableCell className="text-right no-print">
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" className="h-8 w-8 p-0">
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end">
+                                    <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                    
+                                    {/* Only show View Tire button if user has inventory view permission */}
+                                    {hasPermission("inventory.view") && (
+                                      <DropdownMenuItem asChild>
+                                        <Link href={`/inventory/${entry.movement.tire_id}`}>
+                                          <Eye className="mr-2 h-4 w-4" />
+                                          View Tire
+                                        </Link>
+                                      </DropdownMenuItem>
+                                    )}
+                                    
+                                    {/* Only show View Vehicle button if user has vehicle view permission */}
+                                    {entry.movement.vehicle_id && hasPermission("vehicle.view") && (
+                                      <DropdownMenuItem asChild>
+                                        <Link href={`/vehicles/${entry.movement.vehicle_id}`}>
+                                          <Car className="mr-2 h-4 w-4" />
+                                          View Vehicle
+                                        </Link>
+                                      </DropdownMenuItem>
+                                    )}
+                                    
+                                    {/* Only show View Supplier button if user has supplier view permission */}
+                                    {entry.movement.supplier_id && hasPermission("supplier.view") && (
+                                      <DropdownMenuItem asChild>
+                                        <Link href={`/suppliers/${entry.movement.supplier_id}`}>
+                                          <Building className="mr-2 h-4 w-4" />
+                                          View Supplier
+                                        </Link>
+                                      </DropdownMenuItem>
+                                    )}
+                                    
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem asChild>
+                                      <Link href={`/inventory/movement?tire=${entry.movement.tire_id}`}>
+                                        <History className="mr-2 h-4 w-4" />
+                                        View All Movements
+                                      </Link>
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+
+                  {/* Mobile Cards */}
+                  <div className="sm:hidden space-y-3 p-3">
+                    {sortedLedger.map((entry) => (
+                      <Card key={entry.id} className="overflow-hidden">
+                        <CardContent className="p-4">
+                          {/* Header with Date and Actions */}
+                          <div className="flex items-start justify-between mb-3">
+                            <div>
+                              <div className="flex items-center gap-2 mb-1">
+                                <Clock className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs font-medium">{formatDate(entry.date)}</span>
                               </div>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" className="h-8 w-8 p-0">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <Badge
+                                variant="outline"
+                                className={cn("text-xs", getTransactionTypeColor(entry.type))}
+                              >
+                                {entry.type}
+                              </Badge>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" className="h-8 w-8 p-0">
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                                
+                                {/* Only show View Tire button if user has inventory view permission */}
+                                {hasPermission("inventory.view") && (
                                   <DropdownMenuItem asChild>
                                     <Link href={`/inventory/${entry.movement.tire_id}`}>
                                       <Eye className="mr-2 h-4 w-4" />
                                       View Tire
                                     </Link>
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem asChild>
-                                    <Link href={`/inventory/movement?tire=${entry.movement.tire_id}`}>
-                                      <History className="mr-2 h-4 w-4" />
-                                      All Movements
-                                    </Link>
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
+                                )}
+                                
+                                <DropdownMenuItem asChild>
+                                  <Link href={`/inventory/movement?tire=${entry.movement.tire_id}`}>
+                                    <History className="mr-2 h-4 w-4" />
+                                    All Movements
+                                  </Link>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
 
-                            {/* Tire Info */}
-                            <div className="bg-muted/30 rounded p-3 mb-3">
-                              <div className="flex items-center gap-2 mb-1">
-                                <Package className="h-3 w-3 text-muted-foreground" />
-                                <span className="font-mono text-xs">{entry.movement.serial_number}</span>
-                              </div>
-                              <p className="text-sm font-medium">{entry.movement.brand} - {entry.movement.pattern}</p>
-                              <p className="text-xs text-muted-foreground">{entry.movement.size}</p>
+                          {/* Tire Info */}
+                          <div className="bg-muted/30 rounded p-3 mb-3">
+                            <div className="flex items-center gap-2 mb-1">
+                              <Package className="h-3 w-3 text-muted-foreground" />
+                              <span className="font-mono text-xs">{entry.movement.serial_number}</span>
                             </div>
+                            <p className="text-sm font-medium">{entry.movement.brand} - {entry.movement.pattern}</p>
+                            <p className="text-xs text-muted-foreground">{entry.movement.size}</p>
+                          </div>
 
-                            {/* Stock Movement Grid */}
-                            <div className="grid grid-cols-3 gap-2 mb-3">
-                              <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded">
-                                <div className="text-xs text-muted-foreground">Opening</div>
-                                <div className="font-bold text-sm">{formatNumber(entry.opening_stock)}</div>
-                              </div>
-                              <div className="text-center p-2 bg-green-50 dark:bg-green-950/30 rounded">
-                                <div className="text-xs text-muted-foreground">In</div>
-                                <div className="font-bold text-sm text-green-600">
-                                  {entry.quantity_in > 0 ? `+${formatNumber(entry.quantity_in)}` : '0'}
-                                </div>
-                              </div>
-                              <div className="text-center p-2 bg-red-50 dark:bg-red-950/30 rounded">
-                                <div className="text-xs text-muted-foreground">Out</div>
-                                <div className="font-bold text-sm text-red-600">
-                                  {entry.quantity_out > 0 ? `-${formatNumber(entry.quantity_out)}` : '0'}
-                                </div>
+                          {/* Stock Movement Grid */}
+                          <div className="grid grid-cols-3 gap-2 mb-3">
+                            <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded">
+                              <div className="text-xs text-muted-foreground">Opening</div>
+                              <div className="font-bold text-sm">{formatNumber(entry.opening_stock)}</div>
+                            </div>
+                            <div className="text-center p-2 bg-green-50 dark:bg-green-950/30 rounded">
+                              <div className="text-xs text-muted-foreground">In</div>
+                              <div className="font-bold text-sm text-green-600">
+                                {entry.quantity_in > 0 ? `+${formatNumber(entry.quantity_in)}` : '0'}
                               </div>
                             </div>
-
-                            {/* Closing Stock */}
-                            <div className="flex items-center justify-between p-2 bg-primary/5 rounded mb-3">
-                              <span className="text-sm font-medium">Closing Stock</span>
-                              <span className="text-lg font-bold">{formatNumber(entry.closing_stock)}</span>
+                            <div className="text-center p-2 bg-red-50 dark:bg-red-950/30 rounded">
+                              <div className="text-xs text-muted-foreground">Out</div>
+                              <div className="font-bold text-sm text-red-600">
+                                {entry.quantity_out > 0 ? `-${formatNumber(entry.quantity_out)}` : '0'}
+                              </div>
                             </div>
+                          </div>
 
-                            {/* Details Grid */}
-                            <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                          {/* Closing Stock */}
+                          <div className="flex items-center justify-between p-2 bg-primary/5 rounded mb-3">
+                            <span className="text-sm font-medium">Closing Stock</span>
+                            <span className="text-lg font-bold">{formatNumber(entry.closing_stock)}</span>
+                          </div>
+
+                          {/* Details Grid */}
+                          <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+                            <div>
+                              <div className="text-xs text-muted-foreground">User</div>
+                              <div className="flex items-center gap-1">
+                                <User className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs truncate">{entry.user_name}</span>
+                              </div>
+                            </div>
+                            <div>
+                              <div className="text-xs text-muted-foreground">Document</div>
+                              <div className="flex items-center gap-1">
+                                <FileText className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-xs font-mono truncate">{entry.document_no}</span>
+                              </div>
+                            </div>
+                            {entry.price && (
                               <div>
-                                <div className="text-xs text-muted-foreground">User</div>
-                                <div className="flex items-center gap-1">
-                                  <User className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-xs truncate">{entry.user_name}</span>
-                                </div>
-                              </div>
-                              <div>
-                                <div className="text-xs text-muted-foreground">Document</div>
-                                <div className="flex items-center gap-1">
-                                  <FileText className="h-3 w-3 text-muted-foreground" />
-                                  <span className="text-xs font-mono truncate">{entry.document_no}</span>
-                                </div>
-                              </div>
-                              {entry.price && (
-                                <div>
-                                  <div className="text-xs text-muted-foreground">Price</div>
-                                  <div className="font-mono text-sm">{formatCurrency(entry.price)}</div>
-                                </div>
-                              )}
-                            </div>
-
-                            {/* Reference */}
-                            <div className="p-2 bg-muted/30 rounded">
-                              <div className="text-xs text-muted-foreground mb-1">Reference</div>
-                              <div className="text-sm break-words">{entry.reference}</div>
-                            </div>
-
-                            {/* Location Info */}
-                            {entry.movement.from_location && entry.movement.to_location && (
-                              <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
-                                <MapPin className="h-3 w-3 shrink-0" />
-                                <span className="truncate">
-                                  {entry.movement.from_location} → {entry.movement.to_location}
-                                </span>
+                                <div className="text-xs text-muted-foreground">Price</div>
+                                <div className="font-mono text-sm">{formatCurrency(entry.price)}</div>
                               </div>
                             )}
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </div>
+                          </div>
+
+                          {/* Reference */}
+                          <div className="p-2 bg-muted/30 rounded">
+                            <div className="text-xs text-muted-foreground mb-1">Reference</div>
+                            <div className="text-sm break-words">{entry.reference}</div>
+                          </div>
+
+                          {/* Location Info */}
+                          {entry.movement.from_location && entry.movement.to_location && (
+                            <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+                              <MapPin className="h-3 w-3 shrink-0" />
+                              <span className="truncate">
+                                {entry.movement.from_location} → {entry.movement.to_location}
+                              </span>
+                            </div>
+                          )}
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                )}
-              </CardContent>
-              {filteredLedger.length > 0 && (
-                <CardFooter className="border-t px-4 sm:px-6 py-3 sm:py-4 no-print">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-4">
-                    <div className="text-xs sm:text-sm text-muted-foreground">
-                      Showing {filteredLedger.length} of {totalEntries} entries
-                      {size && ` for size: ${size}`}
-                      {tireId && ` for tire: ${filteredLedger[0]?.movement.serial_number || tireId}`}
-                    </div>
-                    
-                    {totalPages > 1 && (
-                      <Pagination>
-                        <PaginationContent>
-                          <PaginationItem>
-                            <PaginationPrevious 
-                              onClick={(e) => {
-                                e.preventDefault();
-                                if (currentPage > 1) setCurrentPage(currentPage - 1);
-                              }}
-                              className={cn(
-                                "text-xs sm:text-sm",
-                                currentPage === 1 ? "pointer-events-none opacity-50" : ""
-                              )}
-                            />
-                          </PaginationItem>
-                          
-                          {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
-                            let pageNum;
-                            if (totalPages <= 3) {
-                              pageNum = i + 1;
-                            } else if (currentPage <= 2) {
-                              pageNum = i + 1;
-                            } else if (currentPage >= totalPages - 1) {
-                              pageNum = totalPages - 2 + i;
-                            } else {
-                              pageNum = currentPage - 1 + i;
-                            }
-                            
-                            return (
-                              <PaginationItem key={pageNum} className="hidden xs:inline-block">
-                                <PaginationLink
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    setCurrentPage(pageNum);
-                                  }}
-                                  isActive={currentPage === pageNum}
-                                  className="text-xs sm:text-sm h-8 w-8"
-                                >
-                                  {pageNum}
-                                </PaginationLink>
-                              </PaginationItem>
-                            );
-                          })}
-                          
-                          <PaginationItem>
-                            <PaginationNext 
-                              onClick={(e) => {
-                                e.preventDefault();
-                                if (currentPage < totalPages) setCurrentPage(currentPage + 1);
-                              }}
-                              className={cn(
-                                "text-xs sm:text-sm",
-                                currentPage === totalPages ? "pointer-events-none opacity-50" : ""
-                              )}
-                            />
-                          </PaginationItem>
-                        </PaginationContent>
-                      </Pagination>
-                    )}
-                  </div>
-                </CardFooter>
+                </div>
               )}
-            </Card>
-          </TabsContent>
-
-          {/* Summary Tab - Mobile Friendly */}
-          <TabsContent value="summary" className="space-y-4">
-            <Collapsible
-              open={expandedSections.summary}
-              onOpenChange={() => toggleSection('summary')}
-              className="border rounded-lg sm:border-0 sm:rounded-none"
-            >
-              <div className="flex items-center justify-between p-4 sm:hidden">
-                <h2 className="text-sm font-semibold">Summary Overview</h2>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    {expandedSections.summary ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent className="sm:block">
-                <div className="p-4 sm:p-0">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs sm:text-sm font-medium">Total Transactions</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-lg sm:text-2xl font-bold">{formatNumber(totalEntries)}</div>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          In selected range
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs sm:text-sm font-medium">Qty In</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-lg sm:text-2xl font-bold text-green-600">
-                          {formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
-                        </div>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          Added to stock
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs sm:text-sm font-medium">Qty Out</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-lg sm:text-2xl font-bold text-red-600">
-                          {formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
-                        </div>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          Removed from stock
-                        </p>
-                      </CardContent>
-                    </Card>
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs sm:text-sm font-medium">Current Stock</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="text-lg sm:text-2xl font-bold text-blue-600">
-                          {sortedLedger.length > 0 
-                            ? formatNumber(sortedLedger[sortedLedger.length - 1].closing_stock)
-                            : "0"}
-                        </div>
-                        <p className="text-[10px] sm:text-xs text-muted-foreground">
-                          Latest closing
-                        </p>
-                      </CardContent>
-                    </Card>
+            </CardContent>
+            {filteredLedger.length > 0 && (
+              <CardFooter className="border-t px-4 sm:px-6 py-3 sm:py-4 no-print">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between w-full gap-4">
+                  <div className="text-xs sm:text-sm text-muted-foreground">
+                    Showing {filteredLedger.length} of {totalEntries} entries
+                    {size && ` for size: ${size}`}
+                    {tireId && ` for tire: ${filteredLedger[0]?.movement.serial_number || tireId}`}
                   </div>
+                  
+                  {totalPages > 1 && (
+                    <Pagination>
+                      <PaginationContent>
+                        <PaginationItem>
+                          <PaginationPrevious 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (currentPage > 1) setCurrentPage(currentPage - 1);
+                            }}
+                            className={cn(
+                              "text-xs sm:text-sm",
+                              currentPage === 1 ? "pointer-events-none opacity-50" : ""
+                            )}
+                          />
+                        </PaginationItem>
+                        
+                        {Array.from({ length: Math.min(3, totalPages) }, (_, i) => {
+                          let pageNum;
+                          if (totalPages <= 3) {
+                            pageNum = i + 1;
+                          } else if (currentPage <= 2) {
+                            pageNum = i + 1;
+                          } else if (currentPage >= totalPages - 1) {
+                            pageNum = totalPages - 2 + i;
+                          } else {
+                            pageNum = currentPage - 1 + i;
+                          }
+                          
+                          return (
+                            <PaginationItem key={pageNum} className="hidden xs:inline-block">
+                              <PaginationLink
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  setCurrentPage(pageNum);
+                                }}
+                                isActive={currentPage === pageNum}
+                                className="text-xs sm:text-sm h-8 w-8"
+                              >
+                                {pageNum}
+                              </PaginationLink>
+                            </PaginationItem>
+                          );
+                        })}
+                        
+                        <PaginationItem>
+                          <PaginationNext 
+                            onClick={(e) => {
+                              e.preventDefault();
+                              if (currentPage < totalPages) setCurrentPage(currentPage + 1);
+                            }}
+                            className={cn(
+                              "text-xs sm:text-sm",
+                              currentPage === totalPages ? "pointer-events-none opacity-50" : ""
+                            )}
+                          />
+                        </PaginationItem>
+                      </PaginationContent>
+                    </Pagination>
+                  )}
                 </div>
-              </CollapsibleContent>
-            </Collapsible>
-
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base sm:text-lg">Transaction Type Distribution</CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
-                  Breakdown of transaction types in the selected period
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                {sortedLedger.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Receipt className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mx-auto mb-3 sm:mb-4" />
-                    <p className="text-sm sm:text-base text-muted-foreground">No transaction data available</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {Array.from(new Set(sortedLedger.map(e => e.type))).map((type) => {
-                      const count = sortedLedger.filter(e => e.type === type).length;
-                      const percentage = (count / sortedLedger.length) * 100;
-                      const totalQty = sortedLedger
-                        .filter(e => e.type === type)
-                        .reduce((sum, e) => sum + e.quantity_in + e.quantity_out, 0);
-                      
-                      return (
-                        <div key={type} className="space-y-1 sm:space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 min-w-0">
-                              <div className="shrink-0">{getTransactionIcon(type)}</div>
-                              <span className="text-xs sm:text-sm font-medium truncate">{type}</span>
-                            </div>
-                            <div className="text-xs sm:text-sm font-medium whitespace-nowrap ml-2">
-                              {count} txns • {totalQty} tires
-                            </div>
-                          </div>
-                          <div className="h-1.5 sm:h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full"
-                              style={{
-                                width: `${percentage}%`,
-                                backgroundColor: getTransactionTypeColor(type).includes("green") 
-                                  ? "#10b981" 
-                                  : getTransactionTypeColor(type).includes("red")
-                                  ? "#ef4444"
-                                  : "#3b82f6",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Value Summary */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base sm:text-lg">Value Summary</CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
-                  Financial impact of inventory movements
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  <div className="p-3 sm:p-4 border rounded-lg">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Purchase Value</p>
-                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-green-600 truncate">
-                      {formatCurrency(
-                        sortedLedger
-                          .filter(e => e.type.includes("Purchase"))
-                          .reduce((sum, e) => sum + (e.price || 0), 0)
-                      )}
-                    </p>
-                  </div>
-                  <div className="p-3 sm:p-4 border rounded-lg">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Retread Value</p>
-                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-blue-600 truncate">
-                      {formatCurrency(
-                        sortedLedger
-                          .filter(e => e.type.includes("Retreading"))
-                          .reduce((sum, e) => sum + (e.price || 0), 0)
-                      )}
-                    </p>
-                  </div>
-                  <div className="p-3 sm:p-4 border rounded-lg">
-                    <p className="text-xs sm:text-sm text-muted-foreground">Net Inventory Value</p>
-                    <p className="text-lg sm:text-xl lg:text-2xl font-bold text-purple-600 truncate">
-                      {formatCurrency(
-                        sortedLedger.length > 0
-                          ? (sortedLedger[sortedLedger.length - 1].closing_stock * 
-                             (sortedLedger.find(e => e.price)?.price || 0))
-                          : 0
-                      )}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
-
-        {/* Footer */}
-        <div className="text-xs text-muted-foreground border-t pt-4 space-y-1 no-print">
-          <div className="truncate">
-            Logged in as: {user?.full_name || user?.username}
-          </div>
-          <div className="flex flex-wrap gap-1">
-            <span>Role: {user?.role}</span>
-            {systemSettings?.company_name && (
-              <>
-                <span className="hidden sm:inline">•</span>
-                <span className="block sm:inline text-xs">
-                  {systemSettings.company_name}
-                </span>
-              </>
+              </CardFooter>
             )}
-          </div>
+          </Card>
+        </TabsContent>
+
+        {/* Summary Tab - Mobile Friendly */}
+        <TabsContent value="summary" className="space-y-4">
+          <Collapsible
+            open={expandedSections.summary}
+            onOpenChange={() => toggleSection('summary')}
+            className="border rounded-lg sm:border-0 sm:rounded-none"
+          >
+            <div className="flex items-center justify-between p-4 sm:hidden">
+              <h2 className="text-sm font-semibold">Summary Overview</h2>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  {expandedSections.summary ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent className="sm:block">
+              <div className="p-4 sm:p-0">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs sm:text-sm font-medium">Total Transactions</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-lg sm:text-2xl font-bold">{formatNumber(totalEntries)}</div>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        In selected range
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs sm:text-sm font-medium">Qty In</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-lg sm:text-2xl font-bold text-green-600">
+                        {formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_in, 0))}
+                      </div>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        Added to stock
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs sm:text-sm font-medium">Qty Out</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-lg sm:text-2xl font-bold text-red-600">
+                        {formatNumber(sortedLedger.reduce((sum, entry) => sum + entry.quantity_out, 0))}
+                      </div>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        Removed from stock
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-xs sm:text-sm font-medium">Current Stock</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-lg sm:text-2xl font-bold text-blue-600">
+                        {sortedLedger.length > 0 
+                          ? formatNumber(sortedLedger[sortedLedger.length - 1].closing_stock)
+                          : "0"}
+                      </div>
+                      <p className="text-[10px] sm:text-xs text-muted-foreground">
+                        Latest closing
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base sm:text-lg">Transaction Type Distribution</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
+                Breakdown of transaction types in the selected period
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sortedLedger.length === 0 ? (
+                <div className="text-center py-8">
+                  <Receipt className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mx-auto mb-3 sm:mb-4" />
+                  <p className="text-sm sm:text-base text-muted-foreground">No transaction data available</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {Array.from(new Set(sortedLedger.map(e => e.type))).map((type) => {
+                    const count = sortedLedger.filter(e => e.type === type).length;
+                    const percentage = (count / sortedLedger.length) * 100;
+                    const totalQty = sortedLedger
+                      .filter(e => e.type === type)
+                      .reduce((sum, e) => sum + e.quantity_in + e.quantity_out, 0);
+                    
+                    return (
+                      <div key={type} className="space-y-1 sm:space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <div className="shrink-0">{getTransactionIcon(type)}</div>
+                            <span className="text-xs sm:text-sm font-medium truncate">{type}</span>
+                          </div>
+                          <div className="text-xs sm:text-sm font-medium whitespace-nowrap ml-2">
+                            {count} txns • {totalQty} tires
+                          </div>
+                        </div>
+                        <div className="h-1.5 sm:h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full"
+                            style={{
+                              width: `${percentage}%`,
+                              backgroundColor: getTransactionTypeColor(type).includes("green") 
+                                ? "#10b981" 
+                                : getTransactionTypeColor(type).includes("red")
+                                ? "#ef4444"
+                                : "#3b82f6",
+                            }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Value Summary */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base sm:text-lg">Value Summary</CardTitle>
+              <CardDescription className="text-xs sm:text-sm">
+                Financial impact of inventory movements
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                <div className="p-3 sm:p-4 border rounded-lg">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Purchase Value</p>
+                  <p className="text-lg sm:text-xl lg:text-2xl font-bold text-green-600 truncate">
+                    {formatCurrency(
+                      sortedLedger
+                        .filter(e => e.type.includes("Purchase"))
+                        .reduce((sum, e) => sum + (e.price || 0), 0)
+                    )}
+                  </p>
+                </div>
+                <div className="p-3 sm:p-4 border rounded-lg">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Retread Value</p>
+                  <p className="text-lg sm:text-xl lg:text-2xl font-bold text-blue-600 truncate">
+                    {formatCurrency(
+                      sortedLedger
+                        .filter(e => e.type.includes("Retreading"))
+                        .reduce((sum, e) => sum + (e.price || 0), 0)
+                    )}
+                  </p>
+                </div>
+                <div className="p-3 sm:p-4 border rounded-lg">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Net Inventory Value</p>
+                  <p className="text-lg sm:text-xl lg:text-2xl font-bold text-purple-600 truncate">
+                    {formatCurrency(
+                      sortedLedger.length > 0
+                        ? (sortedLedger[sortedLedger.length - 1].closing_stock * 
+                           (sortedLedger.find(e => e.price)?.price || 0))
+                        : 0
+                    )}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1 no-print">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
+            </>
+          )}
         </div>
       </div>
-    </PermissionGuard>
+    </div>
   );
 }

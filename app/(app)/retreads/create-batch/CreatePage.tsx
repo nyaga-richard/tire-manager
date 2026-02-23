@@ -57,6 +57,7 @@ import {
   DollarSign,
   Info,
   CheckCircle,
+  Link,
 } from "lucide-react";
 import {
   Select,
@@ -79,8 +80,12 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { format, parseISO, isValid } from "date-fns";
 
-// API Base URL - fix the trailing slash
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Tire {
@@ -124,11 +129,15 @@ const MobileTireCard = ({
   selected,
   onSelect,
   formatDistance,
+  formatDate,
+  formatCurrency,
 }: {
   tire: Tire;
   selected: boolean;
   onSelect: (id: number) => void;
   formatDistance: (distance?: number) => string;
+  formatDate: (dateString: string) => string;
+  formatCurrency: (amount: number) => string;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const treadPercentage = (tire.depth_remaining / tire.tread_depth_new) * 100;
@@ -222,6 +231,20 @@ const MobileTireCard = ({
             </div>
           </div>
         </div>
+
+        {/* Expanded Details */}
+        {isExpanded && (
+          <div className="mt-4 space-y-2 border-t pt-3">
+            <div className="flex justify-between">
+              <span className="text-xs text-muted-foreground">Purchase Date:</span>
+              <span className="text-sm">{formatDate(new Date().toISOString())}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-xs text-muted-foreground">Purchase Cost:</span>
+              <span className="text-sm">{formatCurrency(0)}</span>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -278,9 +301,23 @@ const MobileSupplierCard = ({
   );
 };
 
+// Skeleton Components
+const TireCardSkeleton = () => (
+  <Card className="mb-3">
+    <CardContent className="p-4">
+      <Skeleton className="h-4 w-32 mb-2" />
+      <Skeleton className="h-4 w-24" />
+      <Skeleton className="h-8 w-full mt-3" />
+    </CardContent>
+  </Card>
+);
+
 export default function CreateRetreadBatchPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  
+  const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
   
   const [activeTab, setActiveTab] = useState("tires");
   const [tires, setTires] = useState<Tire[]>([]);
@@ -308,6 +345,23 @@ export default function CreateRetreadBatchPage() {
   );
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+
+  // Check authentication and permission
+  useEffect(() => {
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("tire.retread")) {
+        toast.error("You don't have permission to create retread orders");
+        router.push("/retreads");
+      }
+    }
+  }, [authLoading, isAuthenticated, hasPermission, router]);
 
   // Check for pre-selected tires from URL
   useEffect(() => {
@@ -319,12 +373,17 @@ export default function CreateRetreadBatchPage() {
   }, [searchParams]);
 
   useEffect(() => {
-    Promise.all([fetchEligibleTires(), fetchSuppliers()]);
-  }, []);
+    if (isAuthenticated && hasPermission("tire.retread")) {
+      Promise.all([fetchEligibleTires(), fetchSuppliers()]);
+    }
+  }, [isAuthenticated, hasPermission]);
 
   const fetchEligibleTires = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/tires/retread/eligible`);
+      setLoading(true);
+      setError(null);
+      
+      const response = await authFetch(`${API_BASE_URL}/api/tires/retread/eligible`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -351,10 +410,12 @@ export default function CreateRetreadBatchPage() {
       } else {
         console.error("Unexpected API response structure:", data);
         setTires([]);
+        setError(data.error || "Failed to fetch eligible tires");
         toast.error(data.error || "Failed to fetch eligible tires");
       }
     } catch (error) {
       console.error("Error fetching tires:", error);
+      setError(error instanceof Error ? error.message : "Failed to fetch tires");
       toast.error("Failed to fetch tires");
     } finally {
       setLoading(false);
@@ -363,7 +424,7 @@ export default function CreateRetreadBatchPage() {
   
   const fetchSuppliers = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/suppliers`);
+      const response = await authFetch(`${API_BASE_URL}/api/suppliers`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -371,7 +432,6 @@ export default function CreateRetreadBatchPage() {
       
       const data = await response.json();
       
-      // Handle different API response structures
       let suppliersData: Supplier[] = [];
       
       if (data.success && Array.isArray(data.data)) {
@@ -382,24 +442,22 @@ export default function CreateRetreadBatchPage() {
         suppliersData = data.data;
       } else {
         console.error("Unexpected API response structure:", data);
+        setError("Failed to parse suppliers data");
         toast.error("Failed to parse suppliers data");
         setSuppliers([]);
         return;
       }
       
-      // Filter to only show RETREAD type suppliers for retread orders
-      const retreadSuppliers = suppliersData.filter(
-        supplier => supplier.type === "TIRE"
-      );
-      
-      setSuppliers(retreadSuppliers);
-      
-      // Auto-select first supplier if available and no supplier selected
-      if (retreadSuppliers.length > 0 && !selectedSupplier) {
-        setSelectedSupplier(retreadSuppliers[0]);
+      // ✅ no filtering
+      setSuppliers(suppliersData);
+
+      if (suppliersData.length > 0 && !selectedSupplier) {
+        setSelectedSupplier(suppliersData[0]);
       }
+
     } catch (error) {
       console.error("Error fetching suppliers:", error);
+      setError(error instanceof Error ? error.message : "Failed to fetch suppliers");
       toast.error("Failed to fetch suppliers");
       setSuppliers([]);
     }
@@ -436,6 +494,7 @@ export default function CreateRetreadBatchPage() {
         // Create the retread order
         try {
             setSubmitting(true);
+            setError(null);
             
             // Validate expected date
             if (expectedDate && new Date(expectedDate) < new Date()) {
@@ -444,17 +503,15 @@ export default function CreateRetreadBatchPage() {
                 return;
             }
 
-            const response = await fetch(`${API_BASE_URL}/api/retread/retread-orders`, {
+            const response = await authFetch(`${API_BASE_URL}/api/retread/retread-orders`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
                 body: JSON.stringify({
                     supplier_id: selectedSupplier.id,
                     tire_ids: selectedTires,
                     expected_completion_date: expectedDate || undefined,
                     notes: notes || undefined,
-                    user_id: 1, // Get from auth context
+                    user_id: user?.id,
+                    user_name: user?.full_name || user?.username || "System",
                 }),
             });
 
@@ -486,10 +543,12 @@ export default function CreateRetreadBatchPage() {
                     router.push(`/retreads/${data.data.id}?order_number=${data.data.order_number}`);
                 }, 1500);
             } else {
+                setError(data.error || data.message || "Error creating retread order");
                 toast.error(data.error || data.message || "Error creating retread order");
             }
         } catch (error) {
             console.error("Error creating retread order:", error);
+            setError(error instanceof Error ? error.message : "Failed to create retread order");
             toast.error("Failed to create retread order");
         } finally {
             setSubmitting(false);
@@ -520,6 +579,32 @@ export default function CreateRetreadBatchPage() {
     setSupplierSearch("");
   };
 
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return "N/A";
+    try {
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      
+      const formatStr = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (formatStr === "dd/MM/yyyy") {
+        return format(date, "dd/MM/yyyy");
+      } else if (formatStr === "MM/dd/yyyy") {
+        return format(date, "MM/dd/yyyy");
+      } else if (formatStr === "yyyy-MM-dd") {
+        return format(date, "yyyy-MM-dd");
+      } else if (formatStr === "dd-MM-yyyy") {
+        return format(date, "dd-MM-yyyy");
+      } else if (formatStr === "dd MMM yyyy") {
+        return format(date, "dd MMM yyyy");
+      } else {
+        return format(date, "MMM dd, yyyy");
+      }
+    } catch {
+      return "Invalid Date";
+    }
+  };
+
   const formatDistance = (distance?: number) => {
     if (!distance && distance !== 0) return "N/A";
     return distance.toLocaleString() + " km";
@@ -529,10 +614,11 @@ export default function CreateRetreadBatchPage() {
     if (!amount && amount !== 0) return "N/A";
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KSH",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   // Get unique sizes from tires
@@ -590,7 +676,8 @@ export default function CreateRetreadBatchPage() {
     setIsFilterSheetOpen(false);
   };
 
-  if (loading) {
+  // Show loading state
+  if (authLoading || settingsLoading) {
     return (
       <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 max-w-6xl">
         <div className="flex items-center justify-center h-64">
@@ -599,6 +686,39 @@ export default function CreateRetreadBatchPage() {
             <p className="mt-2 text-muted-foreground">Loading...</p>
           </div>
         </div>
+      </div>
+    );
+  }
+
+  // Show authentication error
+  if (!isAuthenticated) {
+    return null;
+  }
+
+  // Show permission denied - fallback if redirect doesn't happen
+  if (!hasPermission("tire.retread")) {
+    return (
+      <div className="container mx-auto py-4 sm:py-6 px-4 sm:px-6 max-w-6xl">
+        <div className="flex items-center gap-4 mb-6">
+          <Button variant="outline" size="icon" onClick={handleBack}>
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create Retread Order</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">Access denied</p>
+          </div>
+        </div>
+
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            You don't have permission to create retread orders. Please contact your administrator.
+          </AlertDescription>
+        </Alert>
+
+        <Button asChild className="mt-4 w-full sm:w-auto">
+          <Link href="/retreads">Return to Retreads</Link>
+        </Button>
       </div>
     );
   }
@@ -621,6 +741,11 @@ export default function CreateRetreadBatchPage() {
             <p className="text-sm sm:text-base text-muted-foreground">
               Select tires and configure retreading parameters
             </p>
+            {systemSettings?.company_name && (
+              <p className="text-xs text-muted-foreground mt-1 truncate">
+                {systemSettings.company_name} • {currencySymbol} ({currency})
+              </p>
+            )}
           </div>
         </div>
         {selectedTires.length > 0 && activeTab === "tires" && (
@@ -632,6 +757,14 @@ export default function CreateRetreadBatchPage() {
           </div>
         )}
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Mobile Continue Button (for tabs after tires) */}
       {selectedTires.length > 0 && activeTab !== "tires" && (
@@ -825,7 +958,13 @@ export default function CreateRetreadBatchPage() {
                 )}
               </div>
 
-              {filteredTires.length === 0 ? (
+              {loading ? (
+                <div className="space-y-3">
+                  {[1, 2, 3].map((i) => (
+                    <TireCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : filteredTires.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 text-center px-4">
                   <Package className="h-12 w-12 text-muted-foreground mb-4" />
                   <h3 className="text-lg font-medium">No tires found</h3>
@@ -941,6 +1080,8 @@ export default function CreateRetreadBatchPage() {
                         selected={selectedTires.includes(tire.id)}
                         onSelect={handleSelectTire}
                         formatDistance={formatDistance}
+                        formatDate={formatDate}
+                        formatCurrency={formatCurrency}
                       />
                     ))}
                   </div>
@@ -1398,6 +1539,24 @@ export default function CreateRetreadBatchPage() {
           </Button>
         </div>
       )}
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

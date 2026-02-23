@@ -231,18 +231,23 @@ export default function VehicleDetailsPage() {
     tireList: true,
   });
 
-  // Check authentication
+  // Check authentication and permission
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("vehicle.view")) {
+        toast.error("You don't have permission to view vehicle details");
+        router.push("/vehicles");
+      }
     }
-  }, [authLoading, isAuthenticated, router]);
+  }, [authLoading, isAuthenticated, hasPermission, router]);
 
   useEffect(() => {
-    if (vehicleId && isAuthenticated) {
+    if (vehicleId && isAuthenticated && hasPermission("vehicle.view")) {
       fetchVehicle();
     }
-  }, [vehicleId, isAuthenticated]);
+  }, [vehicleId, isAuthenticated, hasPermission]);
 
   const fetchVehicle = async () => {
     try {
@@ -254,6 +259,9 @@ export default function VehicleDetailsPage() {
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error("Vehicle not found");
+        }
+        if (response.status === 403) {
+          throw new Error("You don't have permission to view this vehicle");
         }
         throw new Error("Failed to fetch vehicle details");
       }
@@ -905,12 +913,7 @@ export default function VehicleDetailsPage() {
     );
   }
 
-  // Show authentication error
-  if (!isAuthenticated) {
-    return null; // Will redirect to login
-  }
-
-  // Show permission denied for viewing vehicles
+  // Show permission denied for viewing vehicles - fallback if redirect doesn't happen
   if (!hasPermission("vehicle.view")) {
     return (
       <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
@@ -1001,757 +1004,765 @@ export default function VehicleDetailsPage() {
   }
 
   return (
-    <PermissionGuard permissionCode="vehicle.view" action="view">
-      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/vehicles">
-                <ArrowLeft className="h-4 w-4" />
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/vehicles">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+
+          <div className="min-w-0 flex-1">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
+              {vehicle.vehicle_number} - Details
+            </h1>
+            <p className="text-sm sm:text-base text-muted-foreground truncate">
+              Vehicle overview and configuration information
+            </p>
+          </div>
+        </div>
+        
+        {/* Action Buttons - Horizontal scroll on mobile */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+          {/* Only show Edit if user has edit permission */}
+          {hasPermission("vehicle.edit") && (
+            <Button variant="outline" size="sm" asChild className="whitespace-nowrap">
+              <Link href={`/vehicles/${vehicle.id}/edit`}>
+                <Edit className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Edit Vehicle</span>
               </Link>
             </Button>
-
-            <div className="min-w-0 flex-1">
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight truncate">
-                {vehicle.vehicle_number} - Details
-              </h1>
-              <p className="text-sm sm:text-base text-muted-foreground truncate">
-                Vehicle overview and configuration information
-              </p>
-            </div>
-          </div>
+          )}
           
-          {/* Action Buttons - Horizontal scroll on mobile */}
-          <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
-            <PermissionGuard permissionCode="vehicle.edit" action="edit" fallback={null}>
-              <Button variant="outline" size="sm" asChild className="whitespace-nowrap">
-                <Link href={`/vehicles/${vehicle.id}/edit`}>
-                  <Edit className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
-                  <span className="hidden sm:inline">Edit Vehicle</span>
-                </Link>
-              </Button>
-            </PermissionGuard>
-            
-            <PermissionGuard permissionCode="tire.assign" action="create" fallback={null}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleServiceClick()}
-                className="whitespace-nowrap"
-              >
-                <Plus className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
-                <span className="hidden sm:inline">Service</span>
-              </Button>
-            </PermissionGuard>
-            
-            <Button variant="outline" size="sm" onClick={handleRefreshAll} className="whitespace-nowrap">
-              <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Refresh</span>
-            </Button>
-            
+          {/* Only show Service if user has tire assign permission */}
+          {hasPermission("tire.assign") && (
             <Button
               variant="outline"
               size="sm"
-              onClick={handlePrint}
-              className="whitespace-nowrap bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800 dark:text-blue-300"
+              onClick={() => handleServiceClick()}
+              className="whitespace-nowrap"
             >
-              <Printer className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Print</span>
+              <Plus className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+              <span className="hidden sm:inline">Service</span>
             </Button>
-          </div>
+          )}
+          
+          <Button variant="outline" size="sm" onClick={handleRefreshAll} className="whitespace-nowrap">
+            <RefreshCw className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Refresh</span>
+          </Button>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handlePrint}
+            className="whitespace-nowrap bg-blue-50 hover:bg-blue-100 border-blue-200 text-blue-700 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800 dark:text-blue-300"
+          >
+            <Printer className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Print</span>
+          </Button>
         </div>
+      </div>
 
-        {/* Hidden print content */}
-        <div ref={printRef} className="hidden">
-          <div className="print-content">
-            <div className="vehicle-print-info">
-              <h3 className="text-lg font-semibold mb-2">Vehicle Information</h3>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="font-medium">Vehicle Number:</span> {vehicle.vehicle_number}</div>
-                <div><span className="font-medium">Make & Model:</span> {vehicle.make} {vehicle.model} ({vehicle.year})</div>
-                <div><span className="font-medium">Status:</span> {vehicle.status}</div>
-                <div><span className="font-medium">Wheel Config:</span> {vehicle.wheel_config}</div>
-                <div><span className="font-medium">Current Odometer:</span> {formatOdometer(vehicle.current_odometer)}</div>
-              </div>
+      {/* Hidden print content */}
+      <div ref={printRef} className="hidden">
+        <div className="print-content">
+          <div className="vehicle-print-info">
+            <h3 className="text-lg font-semibold mb-2">Vehicle Information</h3>
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              <div><span className="font-medium">Vehicle Number:</span> {vehicle.vehicle_number}</div>
+              <div><span className="font-medium">Make & Model:</span> {vehicle.make} {vehicle.model} ({vehicle.year})</div>
+              <div><span className="font-medium">Status:</span> {vehicle.status}</div>
+              <div><span className="font-medium">Wheel Config:</span> {vehicle.wheel_config}</div>
+              <div><span className="font-medium">Current Odometer:</span> {formatOdometer(vehicle.current_odometer)}</div>
             </div>
-            
-            <div className="tire-print-table mt-4">
-              <h3 className="text-lg font-semibold mb-2">Current Tires</h3>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b">
-                    <th className="text-left py-2">Position</th>
-                    <th className="text-left py-2">Serial Number</th>
-                    <th className="text-left py-2">Type</th>
-                    <th className="text-left py-2">Size</th>
-                    <th className="text-left py-2">Brand</th>
-                    <th className="text-left py-2">Install Date</th>
-                    <th className="text-left py-2">Age (Days)</th>
-                    <th className="text-left py-2">Install Odometer</th>
+          </div>
+          
+          <div className="tire-print-table mt-4">
+            <h3 className="text-lg font-semibold mb-2">Current Tires</h3>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left py-2">Position</th>
+                  <th className="text-left py-2">Serial Number</th>
+                  <th className="text-left py-2">Type</th>
+                  <th className="text-left py-2">Size</th>
+                  <th className="text-left py-2">Brand</th>
+                  <th className="text-left py-2">Install Date</th>
+                  <th className="text-left py-2">Age (Days)</th>
+                  <th className="text-left py-2">Install Odometer</th>
+                </tr>
+              </thead>
+              <tbody>
+                {vehicle.current_tires.map(tire => (
+                  <tr key={tire.id} className="border-b">
+                    <td className="py-2">
+                      <div className="font-medium">{tire.position_code}</div>
+                      <div className="text-xs text-gray-500">{tire.position_name}</div>
+                    </td>
+                    <td className="py-2 font-mono">{tire.serial_number}</td>
+                    <td className="py-2">
+                      <span className={`px-2 py-1 rounded-full text-xs ${getTireTypeColor(tire.type)}`}>
+                        {tire.type}
+                      </span>
+                    </td>
+                    <td className="py-2">{tire.size}</td>
+                    <td className="py-2">{tire.brand || 'N/A'}</td>
+                    <td className="py-2">{formatDate(tire.install_date)}</td>
+                    <td className="py-2">{getTireAge(tire.install_date)}</td>
+                    <td className="py-2">{tire.install_odometer.toLocaleString()} km</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {vehicle.current_tires.map(tire => (
-                    <tr key={tire.id} className="border-b">
-                      <td className="py-2">
-                        <div className="font-medium">{tire.position_code}</div>
-                        <div className="text-xs text-gray-500">{tire.position_name}</div>
-                      </td>
-                      <td className="py-2 font-mono">{tire.serial_number}</td>
-                      <td className="py-2">
-                        <span className={`px-2 py-1 rounded-full text-xs ${getTireTypeColor(tire.type)}`}>
-                          {tire.type}
-                        </span>
-                      </td>
-                      <td className="py-2">{tire.size}</td>
-                      <td className="py-2">{tire.brand || 'N/A'}</td>
-                      <td className="py-2">{formatDate(tire.install_date)}</td>
-                      <td className="py-2">{getTireAge(tire.install_date)}</td>
-                      <td className="py-2">{tire.install_odometer.toLocaleString()} km</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
+      </div>
 
-        {/* Content Grid - Stack on mobile, 3 columns on desktop */}
-        <div className="grid grid-cols-1 lg:grid-cols-7 gap-4 sm:gap-6">
-          {/* LEFT COLUMN: Vehicle Info and History */}
-          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
-            {/* Vehicle Info Card - Collapsible on mobile */}
-            <Collapsible
-              open={expandedSections.vehicleInfo}
-              onOpenChange={() => toggleSection('vehicleInfo')}
-              className="border rounded-lg lg:border-0 lg:rounded-none"
-            >
-              <div className="flex items-center justify-between p-4 lg:hidden">
-                <h2 className="text-sm font-semibold">Vehicle Information</h2>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    {expandedSections.vehicleInfo ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent className="lg:block">
-                <Card>
-                  <CardHeader className="pb-3 lg:block hidden">
-                    <CardTitle className="text-base sm:text-lg">Vehicle Information</CardTitle>
-                    <CardDescription className="text-xs sm:text-sm">
-                      Basic vehicle identification details
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3 sm:space-y-4 p-4">
-                    <div className="flex items-center gap-2">
-                      <Car className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-sm sm:text-base font-medium truncate">
-                        {vehicle.make} {vehicle.model} ({vehicle.year})
-                      </span>
-                    </div>
+      {/* Content Grid - Stack on mobile, 3 columns on desktop */}
+      <div className="grid grid-cols-1 lg:grid-cols-7 gap-4 sm:gap-6">
+        {/* LEFT COLUMN: Vehicle Info and History */}
+        <div className="lg:col-span-2 space-y-4 sm:space-y-6">
+          {/* Vehicle Info Card - Collapsible on mobile */}
+          <Collapsible
+            open={expandedSections.vehicleInfo}
+            onOpenChange={() => toggleSection('vehicleInfo')}
+            className="border rounded-lg lg:border-0 lg:rounded-none"
+          >
+            <div className="flex items-center justify-between p-4 lg:hidden">
+              <h2 className="text-sm font-semibold">Vehicle Information</h2>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  {expandedSections.vehicleInfo ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent className="lg:block">
+              <Card>
+                <CardHeader className="pb-3 lg:block hidden">
+                  <CardTitle className="text-base sm:text-lg">Vehicle Information</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
+                    Basic vehicle identification details
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 sm:space-y-4 p-4">
+                  <div className="flex items-center gap-2">
+                    <Car className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-sm sm:text-base font-medium truncate">
+                      {vehicle.make} {vehicle.model} ({vehicle.year})
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-2">
-                      <Settings className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-xs sm:text-sm">
-                        <span className="font-medium">Wheel Config: </span>
-                        {vehicle.wheel_config}
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <Settings className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-xs sm:text-sm">
+                      <span className="font-medium">Wheel Config: </span>
+                      {vehicle.wheel_config}
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-2">
-                      <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-xs sm:text-sm">
-                        <span className="font-medium">Added: </span>
-                        {formatDate(vehicle.created_at)}
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-xs sm:text-sm">
+                      <span className="font-medium">Added: </span>
+                      {formatDate(vehicle.created_at)}
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-2">
-                      <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
-                      <span className="text-xs sm:text-sm">
-                        <span className="font-medium">Odometer: </span>
-                        {formatOdometer(vehicle.current_odometer)}
-                      </span>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <Hash className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <span className="text-xs sm:text-sm">
+                      <span className="font-medium">Odometer: </span>
+                      {formatOdometer(vehicle.current_odometer)}
+                    </span>
+                  </div>
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs sm:text-sm font-medium">Status:</span>
-                      <Badge
-                        variant="outline"
-                        className={cn("text-xs", getStatusColor(vehicle.status))}
-                      >
-                        {vehicle.status}
-                      </Badge>
-                    </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs sm:text-sm font-medium">Status:</span>
+                    <Badge
+                      variant="outline"
+                      className={cn("text-xs", getStatusColor(vehicle.status))}
+                    >
+                      {vehicle.status}
+                    </Badge>
+                  </div>
 
-                    <div className="pt-2 border-t">
-                      <div className="flex flex-col gap-2">
-                        <span className="text-xs sm:text-sm font-medium">Current Tires:</span>
-                        <div className="grid grid-cols-3 gap-2">
-                          <div className="text-center p-2 bg-green-50 dark:bg-green-950/30 rounded">
-                            <div className="text-sm font-bold text-green-700 dark:text-green-300">
-                              {vehicle.current_tires.filter(t => t.type === "NEW").length}
-                            </div>
-                            <div className="text-[10px] text-green-600 dark:text-green-400">New</div>
+                  <div className="pt-2 border-t">
+                    <div className="flex flex-col gap-2">
+                      <span className="text-xs sm:text-sm font-medium">Current Tires:</span>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="text-center p-2 bg-green-50 dark:bg-green-950/30 rounded">
+                          <div className="text-sm font-bold text-green-700 dark:text-green-300">
+                            {vehicle.current_tires.filter(t => t.type === "NEW").length}
                           </div>
-                          <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded">
-                            <div className="text-sm font-bold text-yellow-700 dark:text-yellow-300">
-                              {vehicle.current_tires.filter(t => t.type === "RETREAD").length}
-                            </div>
-                            <div className="text-[10px] text-yellow-600 dark:text-yellow-400">Retread</div>
+                          <div className="text-[10px] text-green-600 dark:text-green-400">New</div>
+                        </div>
+                        <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded">
+                          <div className="text-sm font-bold text-yellow-700 dark:text-yellow-300">
+                            {vehicle.current_tires.filter(t => t.type === "RETREAD").length}
                           </div>
-                          <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded">
-                            <div className="text-sm font-bold text-blue-700 dark:text-blue-300">
-                              {vehicle.current_tires.filter(t => t.type === "USED").length}
-                            </div>
-                            <div className="text-[10px] text-blue-600 dark:text-blue-400">Used</div>
+                          <div className="text-[10px] text-yellow-600 dark:text-yellow-400">Retread</div>
+                        </div>
+                        <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded">
+                          <div className="text-sm font-bold text-blue-700 dark:text-blue-300">
+                            {vehicle.current_tires.filter(t => t.type === "USED").length}
                           </div>
+                          <div className="text-[10px] text-blue-600 dark:text-blue-400">Used</div>
                         </div>
                       </div>
                     </div>
-                  </CardContent>
-                </Card>
-              </CollapsibleContent>
-            </Collapsible>
-
-            {/* Tire History Card - Collapsible on mobile */}
-            <Collapsible
-              open={expandedSections.tireHistory}
-              onOpenChange={() => toggleSection('tireHistory')}
-              className="border rounded-lg lg:border-0 lg:rounded-none"
-            >
-              <div className="flex items-center justify-between p-4 lg:hidden">
-                <h2 className="text-sm font-semibold">Tire History</h2>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    {expandedSections.tireHistory ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent className="lg:block">
-                <Card>
-                  <CardHeader className="pb-3 lg:block hidden">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-base sm:text-lg">Tire History</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm">
-                          Recent tire changes for this vehicle
-                        </CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="p-4">
-                    {vehicle.history.length === 0 ? (
-                      <div className="text-center py-6 text-muted-foreground">
-                        <History className="h-8 w-8 sm:h-10 sm:w-10 mx-auto mb-2 opacity-50" />
-                        <p className="text-sm">No tire history available</p>
-                        <PermissionGuard permissionCode="tire.assign" action="create" fallback={null}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleServiceClick()}
-                            className="mt-4"
-                          >
-                            <Plus className="mr-2 h-3 w-3" />
-                            Add Tire Service
-                          </Button>
-                        </PermissionGuard>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {/* Mobile: Card view for history */}
-                        <div className="sm:hidden space-y-2">
-                          {vehicle.history.slice(0, 3).map((history) => (
-                            <div key={history.id} className="bg-muted/30 rounded p-3">
-                              <div className="flex items-center justify-between mb-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {history.position_code}
-                                </Badge>
-                                <Badge 
-                                  variant={history.removal_date ? "outline" : "default"}
-                                  className="text-xs"
-                                >
-                                  {history.removal_date ? "Removed" : "Installed"}
-                                </Badge>
-                              </div>
-                              <div className="flex items-center justify-between text-sm">
-                                <span className="font-mono text-xs truncate max-w-[120px]">
-                                  {history.serial_number}
-                                </span>
-                                <span className="text-xs text-muted-foreground">
-                                  {formatDate(history.install_date)}
-                                </span>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Desktop: Table view */}
-                        <div className="hidden sm:block rounded-md border">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="h-8">Date</TableHead>
-                                <TableHead className="h-8">Position</TableHead>
-                                <TableHead className="h-8">Tire Serial</TableHead>
-                                <TableHead className="h-8">Action</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {vehicle.history.slice(0, 5).map((history) => (
-                                <TableRow key={history.id}>
-                                  <TableCell className="py-2">
-                                    <div className="text-xs">
-                                      {formatDate(history.install_date)}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge variant="outline" className="text-xs">
-                                      {history.position_code}
-                                    </Badge>
-                                  </TableCell>
-                                  <TableCell>
-                                    <div className="font-mono text-xs truncate max-w-[100px]" title={history.serial_number}>
-                                      {history.serial_number}
-                                    </div>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Badge 
-                                      variant={history.removal_date ? "outline" : "default"}
-                                      className="text-xs"
-                                    >
-                                      {history.removal_date ? "Removed" : "Installed"}
-                                    </Badge>
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                        
-                        {/* History Summary */}
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div className="text-xs text-muted-foreground">
-                              Showing {Math.min(3, vehicle.history.length)} of {vehicle.history.length} records
-                            </div>
-                          </div>
-                          
-                          {/* Summary Statistics */}
-                          <div className="grid grid-cols-3 gap-1 text-xs">
-                            <div className="text-center p-1 bg-blue-50 dark:bg-blue-950 rounded">
-                              <div className="font-medium text-blue-700 dark:text-blue-300">
-                                {vehicle.history.filter(h => !h.removal_date).length}
-                              </div>
-                              <div className="text-blue-600 dark:text-blue-400">Active</div>
-                            </div>
-                            <div className="text-center p-1 bg-gray-50 dark:bg-gray-800 rounded">
-                              <div className="font-medium text-gray-700 dark:text-gray-300">
-                                {vehicle.history.filter(h => h.removal_date).length}
-                              </div>
-                              <div className="text-gray-600 dark:text-gray-400">Removed</div>
-                            </div>
-                            <div className="text-center p-1 bg-green-50 dark:bg-green-950 rounded">
-                              <div className="font-medium text-green-700 dark:text-green-300">
-                                {vehicle.history.length}
-                              </div>
-                              <div className="text-green-600 dark:text-green-400">Total</div>
-                            </div>
-                          </div>
-                          
-                          {/* Full History Button */}
-                          <PermissionGuard permissionCode="tire.view" action="view" fallback={null}>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setIsHistoryModalOpen(true)}
-                              className="w-full h-8 text-xs mt-2"
-                            >
-                              <History className="mr-2 h-3 w-3" />
-                              View Complete History
-                            </Button>
-                          </PermissionGuard>
-                        </div>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </CollapsibleContent>
-            </Collapsible>
-          </div>
-
-          {/* MIDDLE COLUMN: Wheel Diagram */}
-          <div className="lg:col-span-3">
-            <Card className="h-full">
-              <CardHeader className="pb-3">
-                <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2">
-                  <div>
-                    <CardTitle className="text-base sm:text-lg">Wheel Configuration</CardTitle>
-                    <CardDescription className="text-xs sm:text-sm">
-                      {vehicle.wheel_config} layout
-                      {selectedWheel && (
-                        <span className="ml-2 text-primary font-medium">
-                          • Selected: {selectedWheel}
-                        </span>
-                      )}
-                    </CardDescription>
                   </div>
-                  <div className="text-xs sm:text-sm text-muted-foreground">
-                    {vehicle.current_tires.length}/{vehiclePositions.length}
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="pt-0">
-                <div className="h-full flex flex-col">
-                  <div className="min-h-[300px] sm:min-h-[400px]">
-                    <TruckWheelDiagram
-                      positions={positionsForDiagram}
-                      tireData={tireDataForDiagram}
-                      onWheelSelect={handleWheelSelect}
-                      selectable={true}
-                      multiSelect={false}
-                      showLabels={true}
-                      showAxleNumbers={true}
-                    />
-                  </div>
-                  
-                  <div className="mt-4 pt-4 border-t">
-                    <div className="flex flex-wrap items-center gap-3 text-xs">
-                      <div className="flex items-center gap-1">
-                        <Circle className="h-2 w-2 text-green-500 fill-green-500" />
-                        <span>New: {vehicle.current_tires.filter(t => t.type === "NEW").length}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Circle className="h-2 w-2 text-yellow-500 fill-yellow-500" />
-                        <span>Retread: {vehicle.current_tires.filter(t => t.type === "RETREAD").length}</span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Circle className="h-2 w-2 text-blue-500 fill-blue-500" />
-                        <span>Used: {vehicle.current_tires.filter(t => t.type === "USED").length}</span>
-                      </div>
-                      {vehicle.current_tires.length < vehiclePositions.length && (
-                        <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800">
-                          {vehiclePositions.length - vehicle.current_tires.length} empty
-                        </Badge>
-                      )}
+                </CardContent>
+              </Card>
+            </CollapsibleContent>
+          </Collapsible>
+
+          {/* Tire History Card - Collapsible on mobile */}
+          <Collapsible
+            open={expandedSections.tireHistory}
+            onOpenChange={() => toggleSection('tireHistory')}
+            className="border rounded-lg lg:border-0 lg:rounded-none"
+          >
+            <div className="flex items-center justify-between p-4 lg:hidden">
+              <h2 className="text-sm font-semibold">Tire History</h2>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  {expandedSections.tireHistory ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent className="lg:block">
+              <Card>
+                <CardHeader className="pb-3 lg:block hidden">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base sm:text-lg">Tire History</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        Recent tire changes for this vehicle
+                      </CardDescription>
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* RIGHT COLUMN: Current Tires Table */}
-          <div className="lg:col-span-2">
-            <Collapsible
-              open={expandedSections.tireList}
-              onOpenChange={() => toggleSection('tireList')}
-              className="border rounded-lg lg:border-0 lg:rounded-none h-full"
-            >
-              <div className="flex items-center justify-between p-4 lg:hidden">
-                <h2 className="text-sm font-semibold">Current Tires</h2>
-                <CollapsibleTrigger asChild>
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
-                    {expandedSections.tireList ? (
-                      <ChevronUp className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </Button>
-                </CollapsibleTrigger>
-              </div>
-              <CollapsibleContent className="lg:block h-full">
-                <Card className="h-full">
-                  <CardHeader className="pb-3 lg:block hidden">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-base sm:text-lg">Current Tires</CardTitle>
-                        <CardDescription className="text-xs sm:text-sm">
-                          {selectedWheel 
-                            ? `Showing tire at ${selectedWheel}`
-                            : `All installed tires (${vehicle.current_tires.length})`
-                          }
-                        </CardDescription>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setSelectedWheel(null)}
-                          disabled={!selectedWheel}
-                          className="h-7 text-xs"
-                        >
-                          Show All
-                        </Button>
+                </CardHeader>
+                <CardContent className="p-4">
+                  {vehicle.history.length === 0 ? (
+                    <div className="text-center py-6 text-muted-foreground">
+                      <History className="h-8 w-8 sm:h-10 sm:w-10 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No tire history available</p>
+                      {/* Only show Service button if user has tire assign permission */}
+                      {hasPermission("tire.assign") && (
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={handlePrint}
-                          className="h-7 text-xs"
-                          title="Print tire report"
+                          onClick={() => handleServiceClick()}
+                          className="mt-4"
                         >
-                          <Printer className="h-3 w-3" />
+                          <Plus className="mr-2 h-3 w-3" />
+                          Add Tire Service
                         </Button>
-                      </div>
+                      )}
                     </div>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0 lg:pt-4">
-                    {vehicle.current_tires.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-8 text-center">
-                        <Package className="h-8 w-8 sm:h-12 sm:w-12 mb-3 text-muted-foreground opacity-50" />
-                        <p className="text-sm text-muted-foreground">No tires installed</p>
-                        <PermissionGuard permissionCode="tire.assign" action="create" fallback={null}>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleServiceClick()}
-                            className="mt-4"
-                          >
-                            <Plus className="mr-2 h-3 w-3" />
-                            Install Tires
-                          </Button>
-                        </PermissionGuard>
-                      </div>
-                    ) : (
-                      <div className="space-y-3">
-                        {/* Mobile: Card view for tires */}
-                        <div className="sm:hidden space-y-2 max-h-[400px] overflow-y-auto">
-                          {filteredTires.map((tire) => {
-                            const tireAge = getTireAge(tire.install_date);
-                            const ageColor = tireAge > 365 ? "text-red-500 dark:text-red-400" : 
-                                           tireAge > 180 ? "text-yellow-500 dark:text-yellow-400" : 
-                                           "text-green-500 dark:text-green-400";
-                            const isSelected = selectedWheel === tire.position_code;
-                            
-                            return (
-                              <div 
-                                key={tire.id} 
-                                className={cn(
-                                  "bg-muted/30 rounded p-3 cursor-pointer hover:bg-muted/50 transition-colors",
-                                  isSelected && "bg-primary/5 dark:bg-primary/10 border border-primary/20"
-                                )}
-                                onClick={() => setSelectedWheel(tire.position_code)}
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Mobile: Card view for history */}
+                      <div className="sm:hidden space-y-2">
+                        {vehicle.history.slice(0, 3).map((history) => (
+                          <div key={history.id} className="bg-muted/30 rounded p-3">
+                            <div className="flex items-center justify-between mb-2">
+                              <Badge variant="outline" className="text-xs">
+                                {history.position_code}
+                              </Badge>
+                              <Badge 
+                                variant={history.removal_date ? "outline" : "default"}
+                                className="text-xs"
                               >
-                                <div className="flex items-center justify-between mb-2">
-                                  <div className="flex items-center gap-2">
-                                    {getTireTypeIcon(tire.type)}
-                                    <Badge 
-                                      variant="outline" 
-                                      className={cn("font-mono text-xs", isSelected && "border-primary bg-primary/10")}
-                                    >
-                                      {tire.position_code}
-                                    </Badge>
-                                    <span className="text-xs">{tire.position_name}</span>
-                                  </div>
-                                  <PermissionGuard permissionCode="tire.assign" action="edit" fallback={null}>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 hover:bg-primary/10"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        handleServiceClick(tire.position_code);
-                                      }}
-                                      title="Service this tire"
-                                    >
-                                      <RefreshCw className="h-3 w-3" />
-                                    </Button>
-                                  </PermissionGuard>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2 text-sm">
-                                  <div>
-                                    <div className="text-xs text-muted-foreground">Serial</div>
-                                    <div className="font-mono text-xs truncate">{tire.serial_number}</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-xs text-muted-foreground">Type</div>
-                                    <Badge variant="outline" className={cn("text-xs", getTireTypeColor(tire.type))}>
-                                      {tire.type}
-                                    </Badge>
-                                  </div>
-                                  <div>
-                                    <div className="text-xs text-muted-foreground">Age</div>
-                                    <div className={cn("text-xs font-medium", ageColor)}>{tireAge}d</div>
-                                  </div>
-                                  <div>
-                                    <div className="text-xs text-muted-foreground">Odometer</div>
-                                    <div className="font-mono text-xs">{tire.install_odometer.toLocaleString()}</div>
-                                  </div>
-                                </div>
-                                <div className="mt-2 text-xs text-muted-foreground">
-                                  <span className="font-medium">Size:</span> {tire.size} • <span className="font-medium">Brand:</span> {tire.brand || 'N/A'}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                                {history.removal_date ? "Removed" : "Installed"}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-mono text-xs truncate max-w-[120px]">
+                                {history.serial_number}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDate(history.install_date)}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
 
-                        {/* Desktop: Table view */}
-                        <div className="hidden sm:block h-full">
-                          <div className="h-[400px] overflow-y-auto">
-                            <Table>
-                              <TableHeader className="sticky top-0 bg-background z-10">
-                                <TableRow>
-                                  <TableHead className="h-8 py-1 text-xs">Pos</TableHead>
-                                  <TableHead className="h-8 py-1 text-xs">Serial</TableHead>
-                                  <TableHead className="h-8 py-1 text-xs">Type</TableHead>
-                                  <TableHead className="h-8 py-1 text-xs">Age</TableHead>
-                                  <TableHead className="h-8 py-1 text-xs">Mileage</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {filteredTires.map((tire) => {
-                                  const tireAge = getTireAge(tire.install_date);
-                                  const ageColor = tireAge > 365 ? "text-red-500 dark:text-red-400" : 
-                                                 tireAge > 180 ? "text-yellow-500 dark:text-yellow-400" : 
-                                                 "text-green-500 dark:text-green-400";
-                                  const isSelected = selectedWheel === tire.position_code;
-                                  
-                                  return (
-                                    <TableRow 
-                                      key={tire.id} 
-                                      className={cn(
-                                        "h-10 cursor-pointer",
-                                        isSelected ? 'bg-primary/5 dark:bg-primary/10' : 'hover:bg-muted/50 dark:hover:bg-muted/20'
-                                      )}
-                                      onClick={() => setSelectedWheel(tire.position_code)}
-                                    >
-                                      <TableCell className="py-2">
-                                        <div className="flex items-center gap-2">
-                                          {getTireTypeIcon(tire.type)}
-                                          <div className="flex items-center gap-1">
-                                            <Badge 
-                                              variant="outline" 
-                                              className={cn("font-mono text-xs px-1.5 py-0", isSelected ? 'border-primary bg-primary/10' : '')}
-                                            >
-                                              {tire.position_code}
-                                            </Badge>
-                                            <PermissionGuard permissionCode="tire.assign" action="edit" fallback={null}>
-                                              <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-5 w-5 hover:bg-primary/10"
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  handleServiceClick(tire.position_code);
-                                                }}
-                                                title="Service this tire"
-                                              >
-                                                <RefreshCw className="h-3 w-3" />
-                                              </Button>
-                                            </PermissionGuard>
-                                          </div>
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="py-2">
-                                        <div className="font-mono text-xs truncate max-w-[80px]" title={tire.serial_number}>
-                                          {tire.serial_number}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="py-2">
-                                        <Badge 
-                                          variant="outline" 
-                                          className={cn("text-xs px-1.5 py-0", getTireTypeColor(tire.type))}
-                                        >
-                                          {tire.type}
-                                        </Badge>
-                                      </TableCell>
-                                      <TableCell className="py-2">
-                                        <div className={cn("text-xs font-medium", ageColor)}>
-                                          {tireAge}d
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="py-2">
-                                        <div className="font-mono text-xs truncate max-w-[60px]" title={tire.install_odometer.toString()}>
-                                          {tire.install_odometer.toLocaleString()}
-                                        </div>
-                                      </TableCell>
-                                    </TableRow>
-                                  );
-                                })}
-                              </TableBody>
-                            </Table>
+                      {/* Desktop: Table view */}
+                      <div className="hidden sm:block rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="h-8">Date</TableHead>
+                              <TableHead className="h-8">Position</TableHead>
+                              <TableHead className="h-8">Tire Serial</TableHead>
+                              <TableHead className="h-8">Action</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {vehicle.history.slice(0, 5).map((history) => (
+                              <TableRow key={history.id}>
+                                <TableCell className="py-2">
+                                  <div className="text-xs">
+                                    {formatDate(history.install_date)}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant="outline" className="text-xs">
+                                    {history.position_code}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>
+                                  <div className="font-mono text-xs truncate max-w-[100px]" title={history.serial_number}>
+                                    {history.serial_number}
+                                  </div>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge 
+                                    variant={history.removal_date ? "outline" : "default"}
+                                    className="text-xs"
+                                  >
+                                    {history.removal_date ? "Removed" : "Installed"}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                      
+                      {/* History Summary */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-muted-foreground">
+                            Showing {Math.min(3, vehicle.history.length)} of {vehicle.history.length} records
                           </div>
                         </div>
                         
-                        {/* Footer Actions */}
-                        {vehicle.current_tires.length > 0 && (
-                          <div className="pt-4 border-t mt-2">
-                            <div className="flex flex-col xs:flex-row items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 w-full xs:w-auto">
-                                <PermissionGuard permissionCode="tire.assign" action="create" fallback={null}>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => handleServiceClick()}
-                                    className="flex-1 xs:flex-none h-8 text-xs"
+                        {/* Summary Statistics */}
+                        <div className="grid grid-cols-3 gap-1 text-xs">
+                          <div className="text-center p-1 bg-blue-50 dark:bg-blue-950 rounded">
+                            <div className="font-medium text-blue-700 dark:text-blue-300">
+                              {vehicle.history.filter(h => !h.removal_date).length}
+                            </div>
+                            <div className="text-blue-600 dark:text-blue-400">Active</div>
+                          </div>
+                          <div className="text-center p-1 bg-gray-50 dark:bg-gray-800 rounded">
+                            <div className="font-medium text-gray-700 dark:text-gray-300">
+                              {vehicle.history.filter(h => h.removal_date).length}
+                            </div>
+                            <div className="text-gray-600 dark:text-gray-400">Removed</div>
+                          </div>
+                          <div className="text-center p-1 bg-green-50 dark:bg-green-950 rounded">
+                            <div className="font-medium text-green-700 dark:text-green-300">
+                              {vehicle.history.length}
+                            </div>
+                            <div className="text-green-600 dark:text-green-400">Total</div>
+                          </div>
+                        </div>
+                        
+                        {/* Full History Button - Only show if user has tire view permission */}
+                        {hasPermission("tire.view") && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => setIsHistoryModalOpen(true)}
+                            className="w-full h-8 text-xs mt-2"
+                          >
+                            <History className="mr-2 h-3 w-3" />
+                            View Complete History
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+
+        {/* MIDDLE COLUMN: Wheel Diagram */}
+        <div className="lg:col-span-3">
+          <Card className="h-full">
+            <CardHeader className="pb-3">
+              <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-2">
+                <div>
+                  <CardTitle className="text-base sm:text-lg">Wheel Configuration</CardTitle>
+                  <CardDescription className="text-xs sm:text-sm">
+                    {vehicle.wheel_config} layout
+                    {selectedWheel && (
+                      <span className="ml-2 text-primary font-medium">
+                        • Selected: {selectedWheel}
+                      </span>
+                    )}
+                  </CardDescription>
+                </div>
+                <div className="text-xs sm:text-sm text-muted-foreground">
+                  {vehicle.current_tires.length}/{vehiclePositions.length}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <div className="h-full flex flex-col">
+                <div className="min-h-[300px] sm:min-h-[400px]">
+                  <TruckWheelDiagram
+                    positions={positionsForDiagram}
+                    tireData={tireDataForDiagram}
+                    onWheelSelect={handleWheelSelect}
+                    selectable={true}
+                    multiSelect={false}
+                    showLabels={true}
+                    showAxleNumbers={true}
+                  />
+                </div>
+                
+                <div className="mt-4 pt-4 border-t">
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <div className="flex items-center gap-1">
+                      <Circle className="h-2 w-2 text-green-500 fill-green-500" />
+                      <span>New: {vehicle.current_tires.filter(t => t.type === "NEW").length}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Circle className="h-2 w-2 text-yellow-500 fill-yellow-500" />
+                      <span>Retread: {vehicle.current_tires.filter(t => t.type === "RETREAD").length}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Circle className="h-2 w-2 text-blue-500 fill-blue-500" />
+                      <span>Used: {vehicle.current_tires.filter(t => t.type === "USED").length}</span>
+                    </div>
+                    {vehicle.current_tires.length < vehiclePositions.length && (
+                      <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800">
+                        {vehiclePositions.length - vehicle.current_tires.length} empty
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* RIGHT COLUMN: Current Tires Table */}
+        <div className="lg:col-span-2">
+          <Collapsible
+            open={expandedSections.tireList}
+            onOpenChange={() => toggleSection('tireList')}
+            className="border rounded-lg lg:border-0 lg:rounded-none h-full"
+          >
+            <div className="flex items-center justify-between p-4 lg:hidden">
+              <h2 className="text-sm font-semibold">Current Tires</h2>
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                  {expandedSections.tireList ? (
+                    <ChevronUp className="h-3 w-3" />
+                  ) : (
+                    <ChevronDown className="h-3 w-3" />
+                  )}
+                </Button>
+              </CollapsibleTrigger>
+            </div>
+            <CollapsibleContent className="lg:block h-full">
+              <Card className="h-full">
+                <CardHeader className="pb-3 lg:block hidden">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-base sm:text-lg">Current Tires</CardTitle>
+                      <CardDescription className="text-xs sm:text-sm">
+                        {selectedWheel 
+                          ? `Showing tire at ${selectedWheel}`
+                          : `All installed tires (${vehicle.current_tires.length})`
+                        }
+                      </CardDescription>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setSelectedWheel(null)}
+                        disabled={!selectedWheel}
+                        className="h-7 text-xs"
+                      >
+                        Show All
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handlePrint}
+                        className="h-7 text-xs"
+                        title="Print tire report"
+                      >
+                        <Printer className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-4 pt-0 lg:pt-4">
+                  {vehicle.current_tires.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-8 text-center">
+                      <Package className="h-8 w-8 sm:h-12 sm:w-12 mb-3 text-muted-foreground opacity-50" />
+                      <p className="text-sm text-muted-foreground">No tires installed</p>
+                      {/* Only show Install button if user has tire assign permission */}
+                      {hasPermission("tire.assign") && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleServiceClick()}
+                          className="mt-4"
+                        >
+                          <Plus className="mr-2 h-3 w-3" />
+                          Install Tires
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Mobile: Card view for tires */}
+                      <div className="sm:hidden space-y-2 max-h-[400px] overflow-y-auto">
+                        {filteredTires.map((tire) => {
+                          const tireAge = getTireAge(tire.install_date);
+                          const ageColor = tireAge > 365 ? "text-red-500 dark:text-red-400" : 
+                                         tireAge > 180 ? "text-yellow-500 dark:text-yellow-400" : 
+                                         "text-green-500 dark:text-green-400";
+                          const isSelected = selectedWheel === tire.position_code;
+                          
+                          return (
+                            <div 
+                              key={tire.id} 
+                              className={cn(
+                                "bg-muted/30 rounded p-3 cursor-pointer hover:bg-muted/50 transition-colors",
+                                isSelected && "bg-primary/5 dark:bg-primary/10 border border-primary/20"
+                              )}
+                              onClick={() => setSelectedWheel(tire.position_code)}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <div className="flex items-center gap-2">
+                                  {getTireTypeIcon(tire.type)}
+                                  <Badge 
+                                    variant="outline" 
+                                    className={cn("font-mono text-xs", isSelected && "border-primary bg-primary/10")}
                                   >
-                                    <Plus className="mr-1 h-3 w-3" />
-                                    Service
+                                    {tire.position_code}
+                                  </Badge>
+                                  <span className="text-xs">{tire.position_name}</span>
+                                </div>
+                                {/* Only show Service button if user has tire assign permission */}
+                                {hasPermission("tire.assign") && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 hover:bg-primary/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleServiceClick(tire.position_code);
+                                    }}
+                                    title="Service this tire"
+                                  >
+                                    <RefreshCw className="h-3 w-3" />
                                   </Button>
-                                </PermissionGuard>
+                                )}
+                              </div>
+                              <div className="grid grid-cols-2 gap-2 text-sm">
+                                <div>
+                                  <div className="text-xs text-muted-foreground">Serial</div>
+                                  <div className="font-mono text-xs truncate">{tire.serial_number}</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-muted-foreground">Type</div>
+                                  <Badge variant="outline" className={cn("text-xs", getTireTypeColor(tire.type))}>
+                                    {tire.type}
+                                  </Badge>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-muted-foreground">Age</div>
+                                  <div className={cn("text-xs font-medium", ageColor)}>{tireAge}d</div>
+                                </div>
+                                <div>
+                                  <div className="text-xs text-muted-foreground">Odometer</div>
+                                  <div className="font-mono text-xs">{tire.install_odometer.toLocaleString()}</div>
+                                </div>
+                              </div>
+                              <div className="mt-2 text-xs text-muted-foreground">
+                                <span className="font-medium">Size:</span> {tire.size} • <span className="font-medium">Brand:</span> {tire.brand || 'N/A'}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Desktop: Table view */}
+                      <div className="hidden sm:block h-full">
+                        <div className="h-[400px] overflow-y-auto">
+                          <Table>
+                            <TableHeader className="sticky top-0 bg-background z-10">
+                              <TableRow>
+                                <TableHead className="h-8 py-1 text-xs">Pos</TableHead>
+                                <TableHead className="h-8 py-1 text-xs">Serial</TableHead>
+                                <TableHead className="h-8 py-1 text-xs">Type</TableHead>
+                                <TableHead className="h-8 py-1 text-xs">Age</TableHead>
+                                <TableHead className="h-8 py-1 text-xs">Mileage</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {filteredTires.map((tire) => {
+                                const tireAge = getTireAge(tire.install_date);
+                                const ageColor = tireAge > 365 ? "text-red-500 dark:text-red-400" : 
+                                               tireAge > 180 ? "text-yellow-500 dark:text-yellow-400" : 
+                                               "text-green-500 dark:text-green-400";
+                                const isSelected = selectedWheel === tire.position_code;
+                                
+                                return (
+                                  <TableRow 
+                                    key={tire.id} 
+                                    className={cn(
+                                      "h-10 cursor-pointer",
+                                      isSelected ? 'bg-primary/5 dark:bg-primary/10' : 'hover:bg-muted/50 dark:hover:bg-muted/20'
+                                    )}
+                                    onClick={() => setSelectedWheel(tire.position_code)}
+                                  >
+                                    <TableCell className="py-2">
+                                      <div className="flex items-center gap-2">
+                                        {getTireTypeIcon(tire.type)}
+                                        <div className="flex items-center gap-1">
+                                          <Badge 
+                                            variant="outline" 
+                                            className={cn("font-mono text-xs px-1.5 py-0", isSelected ? 'border-primary bg-primary/10' : '')}
+                                          >
+                                            {tire.position_code}
+                                          </Badge>
+                                          {/* Only show Service button if user has tire assign permission */}
+                                          {hasPermission("tire.assign") && (
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-5 w-5 hover:bg-primary/10"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleServiceClick(tire.position_code);
+                                              }}
+                                              title="Service this tire"
+                                            >
+                                              <RefreshCw className="h-3 w-3" />
+                                            </Button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-2">
+                                      <div className="font-mono text-xs truncate max-w-[80px]" title={tire.serial_number}>
+                                        {tire.serial_number}
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-2">
+                                      <Badge 
+                                        variant="outline" 
+                                        className={cn("text-xs px-1.5 py-0", getTireTypeColor(tire.type))}
+                                      >
+                                        {tire.type}
+                                      </Badge>
+                                    </TableCell>
+                                    <TableCell className="py-2">
+                                      <div className={cn("text-xs font-medium", ageColor)}>
+                                        {tireAge}d
+                                      </div>
+                                    </TableCell>
+                                    <TableCell className="py-2">
+                                      <div className="font-mono text-xs truncate max-w-[60px]" title={tire.install_odometer.toString()}>
+                                        {tire.install_odometer.toLocaleString()}
+                                      </div>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                      
+                      {/* Footer Actions */}
+                      {vehicle.current_tires.length > 0 && (
+                        <div className="pt-4 border-t mt-2">
+                          <div className="flex flex-col xs:flex-row items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 w-full xs:w-auto">
+                              {/* Only show Service button if user has tire assign permission */}
+                              {hasPermission("tire.assign") && (
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={handlePrint}
+                                  onClick={() => handleServiceClick()}
                                   className="flex-1 xs:flex-none h-8 text-xs"
                                 >
-                                  <Printer className="mr-1 h-3 w-3" />
-                                  Print
+                                  <Plus className="mr-1 h-3 w-3" />
+                                  Service
                                 </Button>
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {filteredTires.length} shown
-                              </div>
+                              )}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={handlePrint}
+                                className="flex-1 xs:flex-none h-8 text-xs"
+                              >
+                                <Printer className="mr-1 h-3 w-3" />
+                                Print
+                              </Button>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {filteredTires.length} shown
                             </div>
                           </div>
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </CollapsibleContent>
-            </Collapsible>
-          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </CollapsibleContent>
+          </Collapsible>
         </div>
+      </div>
 
-        {vehicle && (
-          <>
-            <TireServiceModal
-              isOpen={isServiceModalOpen}
-              onClose={() => {
-                setIsServiceModalOpen(false);
-                setSelectedPositionForService(null);
-              }}
-              vehicleId={vehicle.id}
-              vehicleNumber={vehicle.vehicle_number}
-              currentTires={vehicle.current_tires.map(tire => ({
-                id: tire.id,
-                tire_id: tire.tire_id,
-                position_code: tire.position_code,
-                position_name: tire.position_name,
-                serial_number: tire.serial_number,
-                size: tire.size,
-                brand: tire.brand,
-                type: tire.type,
-                install_date: tire.install_date,
-                install_odometer: tire.install_odometer
-              }))}
-              onSuccess={() => {
-                fetchVehicle();
-                setSelectedWheel(null);
-              }}
-            />
-            
+      {vehicle && (
+        <>
+          <TireServiceModal
+            isOpen={isServiceModalOpen}
+            onClose={() => {
+              setIsServiceModalOpen(false);
+              setSelectedPositionForService(null);
+            }}
+            vehicleId={vehicle.id}
+            vehicleNumber={vehicle.vehicle_number}
+            currentTires={vehicle.current_tires.map(tire => ({
+              id: tire.id,
+              tire_id: tire.tire_id,
+              position_code: tire.position_code,
+              position_name: tire.position_name,
+              serial_number: tire.serial_number,
+              size: tire.size,
+              brand: tire.brand,
+              type: tire.type,
+              install_date: tire.install_date,
+              install_odometer: tire.install_odometer
+            }))}
+            onSuccess={() => {
+              fetchVehicle();
+              setSelectedWheel(null);
+            }}
+          />
+          
+          {/* Only show TireHistoryModal if user has tire view permission */}
+          {hasPermission("tire.view") && (
             <TireHistoryModal
               isOpen={isHistoryModalOpen}
               onClose={() => setIsHistoryModalOpen(false)}
@@ -1759,9 +1770,9 @@ export default function VehicleDetailsPage() {
               vehicleNumber={vehicle.vehicle_number}
               historyData={vehicle.history}
             />
-          </>
-        )}
-      </div>
-    </PermissionGuard>
+          )}
+        </>
+      )}
+    </div>
   );
 }
