@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Eye, EyeOff, LogIn, Lock, User, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useTheme } from "@/contexts/ThemeContext";
 
 // Define environment variable for API URL
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -87,6 +88,7 @@ const isAuthenticated = (): boolean => {
 
 export default function LoginPage() {
   const router = useRouter();
+  const { resolvedTheme } = useTheme(); // Get current theme for any conditional styling if needed
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [formData, setFormData] = useState<LoginFormData>({
@@ -203,46 +205,54 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-950 dark:to-gray-900 p-4">
       <div className="w-full max-w-md">
         {/* Logo/Brand Section */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary rounded-full mb-4">
-            <Lock className="h-8 w-8 text-primary-foreground" />
+          <div className="inline-flex items-center justify-center w-16 h-16 bg-primary/10 dark:bg-primary/20 rounded-full mb-4">
+            <Lock className="h-8 w-8 text-primary dark:text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">Tire Management System</h1>
-          <p className="text-muted-foreground mt-2">
+          <h1 className="text-3xl font-bold tracking-tight text-gray-900 dark:text-gray-50">
+            Tire Management System
+          </h1>
+          <p className="text-muted-foreground dark:text-gray-400 mt-2">
             Sign in to your account to continue
           </p>
         </div>
 
         {/* Error Alert */}
         {loginError && (
-          <Alert variant="destructive" className="mb-6 animate-in fade-in duration-300">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{loginError}</AlertDescription>
+          <Alert variant="destructive" className="mb-6 animate-in fade-in duration-300 bg-destructive/10 dark:bg-destructive/20 border-destructive/20 dark:border-destructive/30">
+            <AlertCircle className="h-4 w-4 text-destructive dark:text-destructive-foreground" />
+            <AlertDescription className="text-destructive dark:text-destructive-foreground">
+              {loginError}
+            </AlertDescription>
           </Alert>
         )}
 
-        <Card className="shadow-lg">
+        <Card className="shadow-lg border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-950">
           <CardHeader className="space-y-1">
-            <CardTitle className="text-2xl text-center">Sign In</CardTitle>
-            <CardDescription className="text-center">
+            <CardTitle className="text-2xl text-center text-gray-900 dark:text-gray-50">
+              Sign In
+            </CardTitle>
+            <CardDescription className="text-center text-gray-600 dark:text-gray-400">
               Enter your credentials to access your account
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleSubmit}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username">Username or Email</Label>
+                <Label htmlFor="username" className="text-gray-700 dark:text-gray-300">
+                  Username or Email
+                </Label>
                 <div className="relative">
-                  <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <User className="absolute left-3 top-3 h-4 w-4 text-gray-500 dark:text-gray-400" />
                   <Input
                     id="username"
                     name="username"
                     type="text"
                     placeholder="Enter your username or email"
-                    className="pl-10"
+                    className="pl-10 bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500"
                     value={formData.username}
                     onChange={handleInputChange}
                     required
@@ -255,22 +265,24 @@ export default function LoginPage() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className="text-gray-700 dark:text-gray-300">
+                    Password
+                  </Label>
                   <Link
                     href="/forgot-password"
-                    className="text-sm text-primary hover:underline"
+                    className="text-sm text-primary hover:text-primary/80 dark:text-primary-foreground dark:hover:text-primary-foreground/80 underline-offset-4 hover:underline"
                   >
                     Forgot password?
                   </Link>
                 </div>
                 <div className="relative">
-                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-gray-500 dark:text-gray-400" />
                   <Input
                     id="password"
                     name="password"
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
-                    className="pl-10 pr-10"
+                    className="pl-10 pr-10 bg-white dark:bg-gray-900 border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 placeholder:text-gray-500 dark:placeholder:text-gray-500"
                     value={formData.password}
                     onChange={handleInputChange}
                     required
@@ -280,7 +292,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-3 text-muted-foreground hover:text-foreground"
+                    className="absolute right-3 top-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
                     tabIndex={-1}
                   >
                     {showPassword ? (
@@ -304,10 +316,11 @@ export default function LoginPage() {
                     })
                   }
                   disabled={loading}
+                  className="border-gray-300 dark:border-gray-600 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                 />
                 <Label
                   htmlFor="rememberMe"
-                  className="text-sm font-normal cursor-pointer select-none"
+                  className="text-sm font-normal cursor-pointer select-none text-gray-600 dark:text-gray-400"
                 >
                   Remember me for 7 days
                 </Label>
@@ -317,12 +330,12 @@ export default function LoginPage() {
             <CardFooter className="flex flex-col space-y-4 mt-4">
               <Button
                 type="submit"
-                className="w-full"
+                className="w-full bg-primary hover:bg-primary/90 text-primary-foreground dark:bg-primary-foreground dark:text-primary dark:hover:bg-primary-foreground/90 transition-colors"
                 disabled={loading || !formData.username.trim() || !formData.password.trim()}
               >
                 {loading ? (
                   <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current mr-2"></div>
                     Signing in...
                   </>
                 ) : (
@@ -333,13 +346,13 @@ export default function LoginPage() {
                 )}
               </Button>
 
-              <div className="text-center text-sm text-muted-foreground">
+              <div className="text-center text-sm text-gray-600 dark:text-gray-400">
                 By signing in, you agree to our{" "}
-                <Link href="/terms" className="text-primary hover:underline">
+                <Link href="/terms" className="text-primary hover:text-primary/80 dark:text-primary-foreground dark:hover:text-primary-foreground/80 underline-offset-4 hover:underline">
                   Terms of Service
                 </Link>{" "}
                 and{" "}
-                <Link href="/privacy" className="text-primary hover:underline">
+                <Link href="/privacy" className="text-primary hover:text-primary/80 dark:text-primary-foreground dark:hover:text-primary-foreground/80 underline-offset-4 hover:underline">
                   Privacy Policy
                 </Link>
               </div>
@@ -347,16 +360,15 @@ export default function LoginPage() {
           </form>
         </Card>
 
-
         {/* Footer */}
-        <div className="mt-8 text-center text-sm text-muted-foreground">
+        <div className="mt-8 text-center text-sm text-gray-600 dark:text-gray-400">
           <p>
             © {new Date().getFullYear()} Tire Management System. All rights
             reserved.
           </p>
           <p className="mt-1">
             Version 1.0.0 •{" "}
-            <Link href="/support" className="hover:text-primary hover:underline">
+            <Link href="/support" className="hover:text-primary dark:hover:text-primary-foreground hover:underline transition-colors">
               Get Help
             </Link>
           </p>

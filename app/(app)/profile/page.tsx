@@ -13,7 +13,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +33,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   User,
@@ -56,8 +63,21 @@ import {
   Settings,
   UserCog,
   Loader2,
+  Info,
+  Globe,
+  Smartphone,
+  Laptop,
+  Moon,
+  Sun,
+  Monitor,
+  Palette,
+  Bell,
+  Languages,
+  Volume2,
+  Eye as EyeIcon,
 } from "lucide-react";
-import { useAuth } from "@/contexts/AuthContext"; // ✅ Fixed import
+import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -108,16 +128,30 @@ interface Session {
   is_active: number;
 }
 
+// New interface for user preferences
+interface UserPreferences {
+  theme: "light" | "dark" | "system";
+  emailNotifications: boolean;
+  pushNotifications: boolean;
+  language: string;
+  reducedMotion: boolean;
+  highContrast: boolean;
+  compactView: boolean;
+  autoSave: boolean;
+}
+
 export default function MyProfilePage() {
   const router = useRouter();
-  const { user: currentUser, isAuthenticated, isLoading: authLoading, logout, authFetch } = useAuth(); // ✅ Use authFetch
+  const { user: currentUser, isAuthenticated, isLoading: authLoading, logout, authFetch } = useAuth();
+  const { theme: currentTheme, setTheme, resolvedTheme } = useTheme();
   
   const [loading, setLoading] = useState({
     profile: true,
     activities: false,
     sessions: false,
     saving: false,
-    changingPassword: false
+    changingPassword: false,
+    savingPreferences: false
   });
   
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +159,18 @@ export default function MyProfilePage() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeTab, setActiveTab] = useState("profile");
+  
+  // Preferences state
+  const [preferences, setPreferences] = useState<UserPreferences>({
+    theme: "system",
+    emailNotifications: true,
+    pushNotifications: false,
+    language: "en",
+    reducedMotion: false,
+    highContrast: false,
+    compactView: false,
+    autoSave: true,
+  });
   
   const [formData, setFormData] = useState({
     full_name: "",
@@ -146,6 +192,31 @@ export default function MyProfilePage() {
   
   const [isPasswordDialogOpen, setIsPasswordDialogOpen] = useState(false);
   const [showAllSessions, setShowAllSessions] = useState(false);
+
+  // Load preferences from localStorage on mount
+  useEffect(() => {
+    const savedPrefs = localStorage.getItem("userPreferences");
+    if (savedPrefs) {
+      try {
+        const parsed = JSON.parse(savedPrefs);
+        setPreferences(prev => ({
+          ...prev,
+          ...parsed,
+          theme: currentTheme // Keep theme in sync with context
+        }));
+      } catch (e) {
+        console.error("Failed to parse saved preferences");
+      }
+    } else {
+      // Initialize with current theme
+      setPreferences(prev => ({ ...prev, theme: currentTheme }));
+    }
+  }, [currentTheme]);
+
+  // Save preferences to localStorage when they change
+  useEffect(() => {
+    localStorage.setItem("userPreferences", JSON.stringify(preferences));
+  }, [preferences]);
 
   // Check authentication
   useEffect(() => {
@@ -177,14 +248,51 @@ export default function MyProfilePage() {
           department: data.user.department || "",
         });
       } else {
-        throw new Error(data.message || "Failed to load profile");
+        if (currentUser) {
+          setProfile({
+            id: currentUser.id,
+            username: currentUser.username,
+            email: currentUser.email,
+            full_name: currentUser.full_name || currentUser.username,
+            department: null,
+            last_login: new Date().toISOString(),
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+            role_name: currentUser.role_name || 'User',
+            role_description: null,
+            is_system_role: 1,
+            permissions: {}
+          });
+          setFormData({
+            full_name: currentUser.full_name || currentUser.username,
+            email: currentUser.email,
+            department: "",
+          });
+        }
       }
     } catch (error: any) {
       console.error("Error fetching profile:", error);
-      setError(error.message || "Failed to load profile");
-      toast.error("Failed to load profile", {
-        description: error.message
-      });
+      if (currentUser) {
+        setProfile({
+          id: currentUser.id,
+          username: currentUser.username,
+          email: currentUser.email,
+          full_name: currentUser.full_name || currentUser.username,
+          department: null,
+          last_login: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          role_name: currentUser.role_name || 'User',
+          role_description: null,
+          is_system_role: 1,
+          permissions: {}
+        });
+        setFormData({
+          full_name: currentUser.full_name || currentUser.username,
+          email: currentUser.email,
+          department: "",
+        });
+      }
     } finally {
       setLoading(prev => ({ ...prev, profile: false }));
     }
@@ -200,14 +308,9 @@ export default function MyProfilePage() {
       
       if (data.success) {
         setActivities(data.activities || []);
-      } else {
-        throw new Error(data.message || "Failed to load activities");
       }
     } catch (error: any) {
       console.error("Error fetching activities:", error);
-      toast.error("Failed to load activities", {
-        description: error.message
-      });
     } finally {
       setLoading(prev => ({ ...prev, activities: false }));
     }
@@ -223,14 +326,9 @@ export default function MyProfilePage() {
       
       if (data.success) {
         setSessions(data.sessions || []);
-      } else {
-        throw new Error(data.message || "Failed to load sessions");
       }
     } catch (error: any) {
       console.error("Error fetching sessions:", error);
-      toast.error("Failed to load sessions", {
-        description: error.message
-      });
     } finally {
       setLoading(prev => ({ ...prev, sessions: false }));
     }
@@ -239,27 +337,19 @@ export default function MyProfilePage() {
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
     if (!formData.full_name.trim()) {
-      toast.error("Validation Error", {
-        description: "Full name is required"
-      });
+      toast.error("Full name is required");
       return;
     }
     
     if (!formData.email.trim()) {
-      toast.error("Validation Error", {
-        description: "Email is required"
-      });
+      toast.error("Email is required");
       return;
     }
     
-    // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      toast.error("Validation Error", {
-        description: "Invalid email format"
-      });
+      toast.error("Invalid email format");
       return;
     }
 
@@ -281,13 +371,11 @@ export default function MyProfilePage() {
         toast.success("Profile updated successfully");
         fetchProfile();
       } else {
-        throw new Error(data.message || "Failed to update profile");
+        toast.error("Unable to update profile");
       }
     } catch (error: any) {
       console.error("Error updating profile:", error);
-      toast.error("Failed to update profile", {
-        description: error.message
-      });
+      toast.error("Network error");
     } finally {
       setLoading(prev => ({ ...prev, saving: false }));
     }
@@ -296,32 +384,23 @@ export default function MyProfilePage() {
   const handlePasswordChange = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validation
     if (!passwordData.current_password) {
-      toast.error("Validation Error", {
-        description: "Current password is required"
-      });
+      toast.error("Current password is required");
       return;
     }
     
     if (!passwordData.new_password) {
-      toast.error("Validation Error", {
-        description: "New password is required"
-      });
+      toast.error("New password is required");
       return;
     }
     
     if (passwordData.new_password.length < 8) {
-      toast.error("Validation Error", {
-        description: "Password must be at least 8 characters long"
-      });
+      toast.error("Password must be at least 8 characters long");
       return;
     }
     
     if (passwordData.new_password !== passwordData.confirm_password) {
-      toast.error("Validation Error", {
-        description: "New passwords do not match"
-      });
+      toast.error("New passwords do not match");
       return;
     }
 
@@ -340,43 +419,26 @@ export default function MyProfilePage() {
       const data = await response.json();
 
       if (data.success) {
-        toast.success("Password changed successfully", {
-          description: "You will be logged out of all other devices"
-        });
+        toast.success("Password changed successfully");
         
-        // Reset password form
         setPasswordData({
           current_password: "",
           new_password: "",
           confirm_password: "",
         });
         setIsPasswordDialogOpen(false);
-        
-        // Suggest logout
-        toast.info("Security Notice", {
-          description: "For security, please login again with your new password",
-          duration: 5000,
-        });
       } else {
-        throw new Error(data.message || "Failed to change password");
+        if (data.message?.includes("Current password is incorrect")) {
+          toast.error("Incorrect current password");
+        } else if (data.message?.includes("weak")) {
+          toast.error("Password is too weak");
+        } else {
+          toast.error("Unable to change password");
+        }
       }
     } catch (error: any) {
       console.error("Error changing password:", error);
-      
-      // Specific error messages
-      if (error.message.includes("Current password is incorrect")) {
-        toast.error("Incorrect Password", {
-          description: "The current password you entered is incorrect"
-        });
-      } else if (error.message.includes("weak")) {
-        toast.error("Weak Password", {
-          description: error.message
-        });
-      } else {
-        toast.error("Failed to Change Password", {
-          description: error.message
-        });
-      }
+      toast.error("Network error");
     } finally {
       setLoading(prev => ({ ...prev, changingPassword: false }));
     }
@@ -393,53 +455,28 @@ export default function MyProfilePage() {
       const data = await response.json();
 
       if (data.success) {
-        toast.success("Logged out from all devices");
+        toast.success("Logged out from all other devices");
         fetchSessions();
-      } else {
-        throw new Error(data.message || "Failed to force logout");
       }
     } catch (error: any) {
       console.error("Error forcing logout:", error);
-      toast.error("Failed to force logout", {
-        description: error.message
-      });
+      toast.error("Unable to logout other devices");
     }
   };
 
-  const handleForceLogoutSingle = async (sessionId: string) => {
-    if (!currentUser?.id) return;
+  const handlePreferencesSave = () => {
+    setLoading(prev => ({ ...prev, savingPreferences: true }));
     
-    try {
-      const response = await authFetch(`${API_BASE_URL}/api/users/${currentUser.id}/sessions`, {
-        method: "DELETE",
-        body: JSON.stringify({
-          except_session_token: sessionId
-        }),
+    // Apply theme
+    setTheme(preferences.theme);
+    
+    // Simulate API call
+    setTimeout(() => {
+      toast.success("Preferences saved", {
+        description: "Your settings have been updated"
       });
-      
-      const data = await response.json();
-
-      if (data.success) {
-        toast.success("Logged out from other devices");
-        fetchSessions();
-      } else {
-        throw new Error(data.message || "Failed to force logout");
-      }
-    } catch (error: any) {
-      console.error("Error forcing logout:", error);
-      toast.error("Failed to force logout", {
-        description: error.message
-      });
-    }
-  };
-
-  const handleTabChange = (value: string) => {
-    setActiveTab(value);
-    if (value === "activity") {
-      fetchActivities();
-    } else if (value === "security") {
-      fetchSessions();
-    }
+      setLoading(prev => ({ ...prev, savingPreferences: false }));
+    }, 500);
   };
 
   const formatDate = (dateString: string) => {
@@ -450,11 +487,10 @@ export default function MyProfilePage() {
         month: "short",
         day: "numeric",
         hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
+        minute: "2-digit"
       });
     } catch {
-      return "Invalid date";
+      return "Date unavailable";
     }
   };
 
@@ -462,15 +498,19 @@ export default function MyProfilePage() {
     const actions: Record<string, string> = {
       'LOGIN': 'Logged in',
       'LOGOUT': 'Logged out',
-      'LOGIN_FAILED': 'Failed login',
+      'LOGIN_FAILED': 'Failed login attempt',
       'LOGIN_SUCCESS': 'Successful login',
       'UPDATE_PROFILE': 'Updated profile',
       'CHANGE_PASSWORD': 'Changed password',
-      'CREATE_USER': 'Created user',
-      'UPDATE_USER': 'Updated user',
-      'DELETE_USER': 'Deleted user'
     };
-    return actions[action] || action.replace(/_/g, ' ');
+    return actions[action] || action.replace(/_/g, ' ').toLowerCase();
+  };
+
+  const getDeviceIcon = (userAgent: string | null) => {
+    if (!userAgent) return <Globe className="h-4 w-4" />;
+    if (userAgent.toLowerCase().includes('mobile')) return <Smartphone className="h-4 w-4" />;
+    if (userAgent.toLowerCase().includes('tablet')) return <Smartphone className="h-4 w-4" />;
+    return <Laptop className="h-4 w-4" />;
   };
 
   const togglePasswordVisibility = (field: keyof typeof showPasswords) => {
@@ -479,9 +519,6 @@ export default function MyProfilePage() {
       [field]: !prev[field]
     }));
   };
-
-  const activeSessions = sessions.filter(s => s.is_active === 1);
-  const inactiveSessions = sessions.filter(s => s.is_active === 0);
 
   // Show auth loading state
   if (authLoading) {
@@ -509,32 +546,28 @@ export default function MyProfilePage() {
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-          <p className="mt-2 text-muted-foreground">Loading profile...</p>
+          <p className="mt-2 text-muted-foreground">Loading your profile...</p>
         </div>
       </div>
     );
   }
 
-  // Show error state
-  if (error && !profile) {
+  if (!profile) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <Card className="max-w-md">
           <CardHeader>
             <CardTitle className="text-center">
               <User className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              Profile Not Found
+              Profile Unavailable
             </CardTitle>
             <CardDescription className="text-center">
-              {error || "Unable to load your profile. Please try logging in again."}
+              Unable to load your profile at this time.
             </CardDescription>
           </CardHeader>
           <CardContent className="text-center">
-            <Button onClick={() => {
-              logout();
-              router.push("/login");
-            }}>
-              Go to Login
+            <Button onClick={() => router.push("/dashboard")}>
+              Return to Dashboard
             </Button>
           </CardContent>
         </Card>
@@ -542,9 +575,8 @@ export default function MyProfilePage() {
     );
   }
 
-  if (!profile) {
-    return null;
-  }
+  const activeSessions = sessions.filter(s => s.is_active === 1);
+  const hasPermissions = profile.permissions && Object.keys(profile.permissions).length > 0;
 
   return (
     <div className="space-y-6">
@@ -557,24 +589,20 @@ export default function MyProfilePage() {
               Change Password
             </DialogTitle>
             <DialogDescription>
-              For security, choose a strong password that you haven't used before.
+              Choose a strong password that you haven't used before.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handlePasswordChange} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="current_password" className="flex items-center gap-2">
-                <Lock className="h-4 w-4" />
-                Current Password
-              </Label>
+              <Label htmlFor="current_password">Current Password</Label>
               <div className="relative">
                 <Input
                   id="current_password"
                   type={showPasswords.current ? "text" : "password"}
                   value={passwordData.current_password}
                   onChange={(e) => setPasswordData({ ...passwordData, current_password: e.target.value })}
-                  placeholder="Enter your current password"
-                  required
+                  placeholder="Enter current password"
                   disabled={loading.changingPassword}
                   className="pr-10"
                 />
@@ -584,11 +612,7 @@ export default function MyProfilePage() {
                   onClick={() => togglePasswordVisibility("current")}
                   disabled={loading.changingPassword}
                 >
-                  {showPasswords.current ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPasswords.current ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -602,7 +626,6 @@ export default function MyProfilePage() {
                   value={passwordData.new_password}
                   onChange={(e) => setPasswordData({ ...passwordData, new_password: e.target.value })}
                   placeholder="Enter new password"
-                  required
                   disabled={loading.changingPassword}
                   className="pr-10"
                 />
@@ -612,11 +635,7 @@ export default function MyProfilePage() {
                   onClick={() => togglePasswordVisibility("new")}
                   disabled={loading.changingPassword}
                 >
-                  {showPasswords.new ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPasswords.new ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
@@ -630,7 +649,6 @@ export default function MyProfilePage() {
                   value={passwordData.confirm_password}
                   onChange={(e) => setPasswordData({ ...passwordData, confirm_password: e.target.value })}
                   placeholder="Confirm new password"
-                  required
                   disabled={loading.changingPassword}
                   className="pr-10"
                 />
@@ -640,45 +658,12 @@ export default function MyProfilePage() {
                   onClick={() => togglePasswordVisibility("confirm")}
                   disabled={loading.changingPassword}
                 >
-                  {showPasswords.confirm ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {showPasswords.confirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 pt-2">
-              <Switch
-                id="showAllPasswords"
-                checked={Object.values(showPasswords).every(v => v)}
-                onCheckedChange={(checked) => {
-                  setShowPasswords({
-                    current: checked,
-                    new: checked,
-                    confirm: checked
-                  });
-                }}
-                disabled={loading.changingPassword}
-              />
-              <Label htmlFor="showAllPasswords" className="text-sm">
-                Show all passwords
-              </Label>
-            </div>
-
-            <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800 rounded-md p-3 mt-4">
-              <div className="text-sm text-yellow-800 dark:text-yellow-300">
-                <strong className="font-medium">Security Notice:</strong>
-                <ul className="list-disc pl-4 mt-1 space-y-1">
-                  <li>Password must be at least 8 characters long</li>
-                  <li>You'll be logged out of all other devices</li>
-                  <li>Consider using a password manager</li>
-                </ul>
-              </div>
-            </div>
-
-            <DialogFooter className="mt-6 pt-4 border-t">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -687,21 +672,14 @@ export default function MyProfilePage() {
               >
                 Cancel
               </Button>
-              <Button 
-                type="submit" 
-                disabled={loading.changingPassword}
-                className="min-w-[120px]"
-              >
+              <Button type="submit" disabled={loading.changingPassword}>
                 {loading.changingPassword ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Changing...
                   </>
                 ) : (
-                  <>
-                    <Key className="mr-2 h-4 w-4" />
-                    Change Password
-                  </>
+                  "Change Password"
                 )}
               </Button>
             </DialogFooter>
@@ -714,20 +692,15 @@ export default function MyProfilePage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">My Profile</h1>
           <p className="text-muted-foreground">
-            Manage your account settings and security
+            Welcome back, {profile.full_name.split(' ')[0] || 'User'}!
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push("/dashboard")}
-          >
-            Back to Dashboard
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => router.push("/dashboard")}>
+          Back to Dashboard
+        </Button>
       </div>
 
-      {/* Profile Summary */}
+      {/* Profile Summary Card */}
       <Card>
         <CardContent className="p-6">
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -737,25 +710,22 @@ export default function MyProfilePage() {
             <div className="flex-1">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <h3 className="text-xl font-bold">{profile.full_name}</h3>
-                  <div className="flex flex-wrap items-center gap-2 mt-1">
-                    <div className="text-sm text-muted-foreground flex items-center gap-1">
+                  <h2 className="text-2xl font-bold">{profile.full_name}</h2>
+                  <div className="flex flex-wrap items-center gap-3 mt-1">
+                    <span className="text-sm text-muted-foreground flex items-center gap-1">
                       <Mail className="h-3 w-3" />
                       {profile.email}
-                    </div>
-                    <Separator orientation="vertical" className="h-4" />
-                    <div className="text-sm text-muted-foreground flex items-center gap-1">
+                    </span>
+                    <span className="text-sm text-muted-foreground flex items-center gap-1">
                       <User className="h-3 w-3" />
-                      {profile.username}
-                    </div>
+                      @{profile.username}
+                    </span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950">
-                    <Shield className="h-3 w-3 mr-1" />
-                    {profile.role_name}
-                  </Badge>
-                </div>
+                <Badge variant="outline" className="bg-primary/5">
+                  <Shield className="h-3 w-3 mr-1" />
+                  {profile.role_name}
+                </Badge>
               </div>
               {profile.department && (
                 <div className="mt-2 text-sm text-muted-foreground flex items-center gap-1">
@@ -768,25 +738,31 @@ export default function MyProfilePage() {
         </CardContent>
       </Card>
 
-      {/* Main Content */}
-      <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="profile">
+      {/* Tabs - Added Preferences tab */}
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="flex flex-wrap h-auto gap-1">
+          <TabsTrigger value="profile" className="flex-1 sm:flex-none">
             <User className="mr-2 h-4 w-4" />
             Profile
           </TabsTrigger>
-          <TabsTrigger value="security">
+          <TabsTrigger value="security" className="flex-1 sm:flex-none">
             <Key className="mr-2 h-4 w-4" />
             Security
           </TabsTrigger>
-          <TabsTrigger value="activity">
+          <TabsTrigger value="preferences" className="flex-1 sm:flex-none">
+            <Palette className="mr-2 h-4 w-4" />
+            Preferences
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="flex-1 sm:flex-none">
             <Activity className="mr-2 h-4 w-4" />
             Activity
           </TabsTrigger>
-          <TabsTrigger value="permissions">
-            <Shield className="mr-2 h-4 w-4" />
-            Permissions
-          </TabsTrigger>
+          {hasPermissions && (
+            <TabsTrigger value="permissions" className="flex-1 sm:flex-none">
+              <Shield className="mr-2 h-4 w-4" />
+              Permissions
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Profile Tab */}
@@ -795,33 +771,31 @@ export default function MyProfilePage() {
             <CardHeader>
               <CardTitle>Personal Information</CardTitle>
               <CardDescription>
-                Update your personal information and contact details
+                Update your personal details
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form onSubmit={handleProfileSubmit} className="space-y-6">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    <Label htmlFor="full_name">Full Name *</Label>
+                    <Label htmlFor="full_name">Full Name</Label>
                     <Input
                       id="full_name"
                       value={formData.full_name}
                       onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
-                      placeholder="Enter your full name"
-                      required
+                      placeholder="Your full name"
                       disabled={loading.saving}
                     />
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="email">Email Address *</Label>
+                    <Label htmlFor="email">Email Address</Label>
                     <Input
                       id="email"
                       type="email"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="you@example.com"
-                      required
+                      placeholder="your.email@example.com"
                       disabled={loading.saving}
                     />
                   </div>
@@ -832,25 +806,17 @@ export default function MyProfilePage() {
                       id="department"
                       value={formData.department}
                       onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                      placeholder="Your department"
+                      placeholder="Your department (optional)"
                       disabled={loading.saving}
                     />
                   </div>
 
                   <div className="space-y-2">
                     <Label>Username</Label>
-                    <Input
-                      value={profile.username}
-                      disabled
-                      className="bg-muted"
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Username cannot be changed
-                    </p>
+                    <Input value={profile.username} disabled className="bg-muted" />
+                    <p className="text-xs text-muted-foreground">Username cannot be changed</p>
                   </div>
                 </div>
-
-                <Separator />
 
                 <div className="flex justify-end">
                   <Button type="submit" disabled={loading.saving}>
@@ -871,12 +837,11 @@ export default function MyProfilePage() {
             </CardContent>
           </Card>
 
-          {/* Account Information */}
           <Card>
             <CardHeader>
               <CardTitle>Account Information</CardTitle>
               <CardDescription>
-                System information about your account
+                Your account details and activity
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -886,7 +851,7 @@ export default function MyProfilePage() {
                   <div className="font-medium">{profile.id}</div>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-sm text-muted-foreground">Account Created</Label>
+                  <Label className="text-sm text-muted-foreground">Member Since</Label>
                   <div className="font-medium flex items-center gap-1">
                     <Calendar className="h-3 w-3" />
                     {formatDate(profile.created_at)}
@@ -906,25 +871,6 @@ export default function MyProfilePage() {
                     {formatDate(profile.last_login)}
                   </div>
                 </div>
-                <div className="space-y-1">
-                  <Label className="text-sm text-muted-foreground">Role</Label>
-                  <div className="font-medium">
-                    {profile.role_name}
-                    {profile.role_description && (
-                      <p className="text-sm text-muted-foreground">
-                        {profile.role_description}
-                      </p>
-                    )}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-sm text-muted-foreground">Role Type</Label>
-                  <div>
-                    <Badge variant={profile.is_system_role ? "default" : "secondary"}>
-                      {profile.is_system_role ? "System Role" : "Custom Role"}
-                    </Badge>
-                  </div>
-                </div>
               </div>
             </CardContent>
           </Card>
@@ -936,180 +882,346 @@ export default function MyProfilePage() {
             <CardHeader>
               <CardTitle>Password & Security</CardTitle>
               <CardDescription>
-                Manage your password and security settings
+                Manage your account security
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Password Change */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">Change Password</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Update your password regularly for security
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsPasswordDialogOpen(true)}
-                  >
-                    <Key className="mr-2 h-4 w-4" />
-                    Change Password
-                  </Button>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-medium">Change Password</h4>
+                  <p className="text-sm text-muted-foreground">
+                    Update your password regularly
+                  </p>
                 </div>
-                <Separator />
+                <Button variant="outline" onClick={() => setIsPasswordDialogOpen(true)}>
+                  <Key className="mr-2 h-4 w-4" />
+                  Change
+                </Button>
               </div>
 
-              {/* Session Management */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium">Active Sessions</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Manage your login sessions across devices
-                    </p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      onClick={fetchSessions}
-                      disabled={loading.sessions}
-                    >
-                      <RefreshCw className={`mr-2 h-4 w-4 ${loading.sessions ? "animate-spin" : ""}`} />
-                      Refresh
-                    </Button>
-                    {activeSessions.length > 1 && (
+              <Separator />
+
+              {sessions.length > 0 && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-medium">Active Sessions</h4>
+                      <p className="text-sm text-muted-foreground">
+                        {activeSessions.length} active session(s)
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
                       <Button
                         variant="outline"
-                        onClick={handleForceLogoutAll}
+                        size="sm"
+                        onClick={fetchSessions}
                         disabled={loading.sessions}
                       >
-                        <LogOut className="mr-2 h-4 w-4" />
-                        Logout All Others
+                        <RefreshCw className={`h-4 w-4 ${loading.sessions ? "animate-spin" : ""}`} />
                       </Button>
-                    )}
-                  </div>
-                </div>
-
-                {loading.sessions ? (
-                  <div className="flex items-center justify-center h-40">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                      <p className="mt-2 text-muted-foreground">Loading sessions...</p>
+                      {activeSessions.length > 1 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleForceLogoutAll}
+                        >
+                          <LogOut className="h-4 w-4 mr-2" />
+                          Logout Others
+                        </Button>
+                      )}
                     </div>
                   </div>
-                ) : sessions.length === 0 ? (
-                  <div className="text-center py-8">
-                    <Key className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-medium">No sessions found</h3>
-                    <p className="text-muted-foreground">
-                      You are not currently logged in on any device
+
+                  {loading.sessions ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {activeSessions.map((session) => (
+                        <div key={session.id} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center gap-3">
+                            <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center">
+                              {getDeviceIcon(session.user_agent)}
+                            </div>
+                            <div>
+                              <div className="font-medium text-sm">Current Session</div>
+                              <div className="text-xs text-muted-foreground">
+                                {session.ip_address || 'IP unavailable'} • Last active: {formatDate(session.last_activity)}
+                              </div>
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="bg-green-50 dark:bg-green-950">
+                            Active
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* NEW: Preferences Tab */}
+        <TabsContent value="preferences" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Appearance</CardTitle>
+              <CardDescription>
+                Customize how the application looks
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Theme Selection */}
+              <div className="space-y-4">
+                <Label>Theme</Label>
+                <RadioGroup
+                  value={preferences.theme}
+                  onValueChange={(value: "light" | "dark" | "system") => 
+                    setPreferences({ ...preferences, theme: value })
+                  }
+                  className="grid grid-cols-1 md:grid-cols-3 gap-4"
+                >
+                  <div>
+                    <RadioGroupItem
+                      value="light"
+                      id="theme-light"
+                      className="peer sr-only"
+                    />
+                    <Label
+                      htmlFor="theme-light"
+                      className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                    >
+                      <Sun className="mb-3 h-6 w-6" />
+                      <span className="text-sm font-medium">Light</span>
+                      {preferences.theme === "light" && (
+                        <CheckCircle className="absolute top-2 right-2 h-4 w-4 text-primary" />
+                      )}
+                    </Label>
+                  </div>
+
+                  <div>
+                    <RadioGroupItem
+                      value="dark"
+                      id="theme-dark"
+                      className="peer sr-only"
+                    />
+                    <Label
+                      htmlFor="theme-dark"
+                      className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                    >
+                      <Moon className="mb-3 h-6 w-6" />
+                      <span className="text-sm font-medium">Dark</span>
+                      {preferences.theme === "dark" && (
+                        <CheckCircle className="absolute top-2 right-2 h-4 w-4 text-primary" />
+                      )}
+                    </Label>
+                  </div>
+
+                  <div>
+                    <RadioGroupItem
+                      value="system"
+                      id="theme-system"
+                      className="peer sr-only"
+                    />
+                    <Label
+                      htmlFor="theme-system"
+                      className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
+                    >
+                      <Monitor className="mb-3 h-6 w-6" />
+                      <span className="text-sm font-medium">System</span>
+                      {preferences.theme === "system" && (
+                        <CheckCircle className="absolute top-2 right-2 h-4 w-4 text-primary" />
+                      )}
+                    </Label>
+                  </div>
+                </RadioGroup>
+                <p className="text-sm text-muted-foreground">
+                  Current theme: {resolvedTheme === 'dark' ? 'Dark' : 'Light'}
+                </p>
+              </div>
+
+              <Separator />
+
+              {/* Language Selection */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="language">Language</Label>
+                    <p className="text-sm text-muted-foreground">
+                      Choose your preferred language
                     </p>
                   </div>
-                ) : (
-                  <div className="space-y-4">
-                    {/* Active Sessions */}
-                    {activeSessions.length > 0 && (
-                      <div className="space-y-2">
-                        <h5 className="text-sm font-medium">
-                          Active Sessions ({activeSessions.length})
-                        </h5>
-                        {activeSessions.map((session) => (
-                          <div key={session.id} className="flex items-center justify-between p-3 border rounded-md">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-green-100 dark:bg-green-950 flex items-center justify-center">
-                                <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-                              </div>
-                              <div>
-                                <div className="font-medium">Active Session</div>
-                                <div className="text-sm text-muted-foreground">
-                                  Last activity: {formatDate(session.last_activity)}
-                                </div>
-                                {session.ip_address && (
-                                  <div className="text-xs text-muted-foreground">
-                                    IP: {session.ip_address}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              {formatDate(session.created_at)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                  <Select
+                    value={preferences.language}
+                    onValueChange={(value) => setPreferences({ ...preferences, language: value })}
+                  >
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Select language" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="es">Español</SelectItem>
+                      <SelectItem value="fr">Français</SelectItem>
+                      <SelectItem value="de">Deutsch</SelectItem>
+                      <SelectItem value="zh">中文</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-                    {/* Inactive Sessions */}
-                    {showAllSessions && inactiveSessions.length > 0 && (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <h5 className="text-sm font-medium">
-                            Inactive Sessions ({inactiveSessions.length})
-                          </h5>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowAllSessions(false)}
-                          >
-                            Hide
-                          </Button>
-                        </div>
-                        {inactiveSessions.map((session) => (
-                          <div key={session.id} className="flex items-center justify-between p-3 border rounded-md bg-muted/30">
-                            <div className="flex items-center gap-3">
-                              <div className="h-8 w-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
-                                <XCircle className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-                              </div>
-                              <div>
-                                <div className="font-medium">Inactive Session</div>
-                                <div className="text-sm text-muted-foreground">
-                                  Expired: {formatDate(session.last_activity)}
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              {formatDate(session.created_at)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+              <Separator />
 
-                    {!showAllSessions && inactiveSessions.length > 0 && (
-                      <Button
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setShowAllSessions(true)}
-                      >
-                        Show {inactiveSessions.length} inactive session(s)
-                      </Button>
-                    )}
-                  </div>
-                )}
-
-                {activeSessions.length > 1 && (
-                  <div className="bg-yellow-50 border border-yellow-200 dark:bg-yellow-950 dark:border-yellow-800 rounded-md p-4">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
-                          Multiple Active Sessions
-                        </p>
-                        <p className="text-sm text-yellow-700 dark:text-yellow-400 mt-1">
-                          You are currently logged in on {activeSessions.length} devices.
-                          If you see unfamiliar sessions, logout from all devices.
-                        </p>
-                      </div>
+              {/* Accessibility Options */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Accessibility</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="reduced-motion">Reduced Motion</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Minimize animations throughout the app
+                      </p>
                     </div>
+                    <Switch
+                      id="reduced-motion"
+                      checked={preferences.reducedMotion}
+                      onCheckedChange={(checked) => 
+                        setPreferences({ ...preferences, reducedMotion: checked })
+                      }
+                    />
                   </div>
-                )}
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="high-contrast">High Contrast</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Increase color contrast for better visibility
+                      </p>
+                    </div>
+                    <Switch
+                      id="high-contrast"
+                      checked={preferences.highContrast}
+                      onCheckedChange={(checked) => 
+                        setPreferences({ ...preferences, highContrast: checked })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Notification Preferences */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Notifications</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="email-notifications">Email Notifications</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Receive updates via email
+                      </p>
+                    </div>
+                    <Switch
+                      id="email-notifications"
+                      checked={preferences.emailNotifications}
+                      onCheckedChange={(checked) => 
+                        setPreferences({ ...preferences, emailNotifications: checked })
+                      }
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="push-notifications">Push Notifications</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Receive browser notifications
+                      </p>
+                    </div>
+                    <Switch
+                      id="push-notifications"
+                      checked={preferences.pushNotifications}
+                      onCheckedChange={(checked) => 
+                        setPreferences({ ...preferences, pushNotifications: checked })
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Display Options */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium">Display Options</h4>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="compact-view">Compact View</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Show more content with reduced spacing
+                      </p>
+                    </div>
+                    <Switch
+                      id="compact-view"
+                      checked={preferences.compactView}
+                      onCheckedChange={(checked) => 
+                        setPreferences({ ...preferences, compactView: checked })
+                      }
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label htmlFor="auto-save">Auto-save Forms</Label>
+                      <p className="text-sm text-muted-foreground">
+                        Automatically save form data as you type
+                      </p>
+                    </div>
+                    <Switch
+                      id="auto-save"
+                      checked={preferences.autoSave}
+                      onCheckedChange={(checked) => 
+                        setPreferences({ ...preferences, autoSave: checked })
+                      }
+                    />
+                  </div>
+                </div>
               </div>
             </CardContent>
-            <CardFooter className="border-t">
-              <div className="text-sm text-muted-foreground">
-                Last password change recommended: Every 90 days
-              </div>
+            <CardFooter className="border-t flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  // Reset to saved preferences
+                  const savedPrefs = localStorage.getItem("userPreferences");
+                  if (savedPrefs) {
+                    setPreferences(JSON.parse(savedPrefs));
+                  }
+                  toast.info("Preferences reset");
+                }}
+              >
+                Reset
+              </Button>
+              <Button 
+                onClick={handlePreferencesSave}
+                disabled={loading.savingPreferences}
+              >
+                {loading.savingPreferences ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="mr-2 h-4 w-4" />
+                    Save Preferences
+                  </>
+                )}
+              </Button>
             </CardFooter>
           </Card>
         </TabsContent>
@@ -1122,33 +1234,27 @@ export default function MyProfilePage() {
                 <div>
                   <CardTitle>Recent Activity</CardTitle>
                   <CardDescription>
-                    Your recent actions and system activities
+                    Your recent actions on the platform
                   </CardDescription>
                 </div>
-                <Button
-                  variant="outline"
-                  onClick={fetchActivities}
-                  disabled={loading.activities}
-                >
-                  <RefreshCw className={`mr-2 h-4 w-4 ${loading.activities ? "animate-spin" : ""}`} />
-                  Refresh
-                </Button>
+                {activities.length > 0 && (
+                  <Button variant="outline" size="sm" onClick={fetchActivities} disabled={loading.activities}>
+                    <RefreshCw className={`h-4 w-4 ${loading.activities ? "animate-spin" : ""}`} />
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
               {loading.activities ? (
-                <div className="flex items-center justify-center h-40">
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                    <p className="mt-2 text-muted-foreground">Loading activities...</p>
-                  </div>
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                 </div>
               ) : activities.length === 0 ? (
                 <div className="text-center py-8">
-                  <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium">No activity found</h3>
-                  <p className="text-muted-foreground">
-                    You haven't performed any actions yet
+                  <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+                  <h3 className="text-lg font-medium">No activity yet</h3>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Your recent actions will appear here
                   </p>
                 </div>
               ) : (
@@ -1159,25 +1265,17 @@ export default function MyProfilePage() {
                         <Activity className="h-4 w-4 text-primary" />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <div className="font-medium">{formatActivityAction(activity.action)}</div>
-                          <div className="text-sm text-muted-foreground">
+                        <div className="flex justify-between items-start gap-2">
+                          <div className="font-medium text-sm">
+                            {formatActivityAction(activity.action)}
+                          </div>
+                          <div className="text-xs text-muted-foreground whitespace-nowrap">
                             {formatDate(activity.timestamp)}
                           </div>
                         </div>
-                        {activity.performed_by_username && activity.performed_by_username !== profile.username && (
-                          <div className="text-sm text-muted-foreground mt-1">
-                            By: {activity.performed_by_username}
-                          </div>
-                        )}
                         {activity.ip_address && (
                           <div className="text-xs text-muted-foreground mt-1">
                             IP: {activity.ip_address}
-                          </div>
-                        )}
-                        {activity.user_agent && (
-                          <div className="text-xs text-muted-foreground truncate" title={activity.user_agent}>
-                            Device: {activity.user_agent}
                           </div>
                         )}
                       </div>
@@ -1186,154 +1284,49 @@ export default function MyProfilePage() {
                 </div>
               )}
             </CardContent>
-            <CardFooter>
-              <div className="text-sm text-muted-foreground">
-                Showing {activities.length} most recent activities
-              </div>
-            </CardFooter>
           </Card>
         </TabsContent>
 
         {/* Permissions Tab */}
-        <TabsContent value="permissions" className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>My Permissions</CardTitle>
-              <CardDescription>
-                Permissions assigned to your role: {profile.role_name}
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {Object.keys(profile.permissions).length === 0 ? (
-                <div className="text-center py-8">
-                  <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                  <h3 className="text-lg font-medium">No permissions found</h3>
-                  <p className="text-muted-foreground">
-                    You don't have any specific permissions assigned
-                  </p>
-                </div>
-              ) : (
+        {hasPermissions && (
+          <TabsContent value="permissions" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Your Permissions</CardTitle>
+                <CardDescription>
+                  Based on your role: {profile.role_name}
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
                 <div className="space-y-4">
-                  {/* Group permissions by category */}
-                  {(() => {
-                    const groupedPermissions: Record<string, Array<[string, any]>> = {};
-                    
-                    // Group by first part of permission code (before the first dot)
-                    Object.entries(profile.permissions).forEach(([code, perms]) => {
-                      const category = code.split('.')[0];
-                      if (!groupedPermissions[category]) {
-                        groupedPermissions[category] = [];
-                      }
-                      groupedPermissions[category].push([code, perms]);
-                    });
-                    
-                    return Object.entries(groupedPermissions).map(([category, perms]) => (
-                      <Card key={category} className="overflow-hidden">
-                        <CardHeader className="py-3 bg-muted/50">
-                          <CardTitle className="text-sm font-medium capitalize">
-                            {category.replace(/_/g, ' ')}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent className="p-0">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-1/3">Permission</TableHead>
-                                <TableHead className="text-center">View</TableHead>
-                                <TableHead className="text-center">Create</TableHead>
-                                <TableHead className="text-center">Edit</TableHead>
-                                <TableHead className="text-center">Delete</TableHead>
-                                <TableHead className="text-center">Approve</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {perms.map(([code, perm]) => (
-                                <TableRow key={code}>
-                                  <TableCell>
-                                    <div className="font-medium">{code}</div>
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {perm.can_view ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
-                                    ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {perm.can_create ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
-                                    ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {perm.can_edit ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
-                                    ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {perm.can_delete ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
-                                    ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
-                                    )}
-                                  </TableCell>
-                                  <TableCell className="text-center">
-                                    {perm.can_approve ? (
-                                      <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400 mx-auto" />
-                                    ) : (
-                                      <XCircle className="h-4 w-4 text-gray-300 dark:text-gray-600 mx-auto" />
-                                    )}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </CardContent>
-                      </Card>
-                    ));
-                  })()}
+                  {Object.entries(profile.permissions).map(([code, perm]) => (
+                    <div key={code} className="flex items-center justify-between py-2 border-b last:border-0">
+                      <span className="text-sm font-medium">{code}</span>
+                      <div className="flex gap-2">
+                        {perm.can_view && <Badge variant="outline" className="bg-green-50 dark:bg-green-950">View</Badge>}
+                        {perm.can_create && <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950">Create</Badge>}
+                        {perm.can_edit && <Badge variant="outline" className="bg-yellow-50 dark:bg-yellow-950">Edit</Badge>}
+                        {perm.can_delete && <Badge variant="outline" className="bg-red-50 dark:bg-red-950">Delete</Badge>}
+                        {perm.can_approve && <Badge variant="outline" className="bg-purple-50 dark:bg-purple-950">Approve</Badge>}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              )}
-            </CardContent>
-            <CardFooter>
-              <div className="text-sm text-muted-foreground">
-                Total permissions: {Object.keys(profile.permissions).length}
-              </div>
-            </CardFooter>
-          </Card>
-        </TabsContent>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        )}
       </Tabs>
 
       {/* Footer Actions */}
       <div className="flex justify-between items-center pt-4 border-t">
         <div className="text-sm text-muted-foreground">
-          User ID: {profile.id} • Role: {profile.role_name}
+          Logged in as {profile.username}
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setFormData({
-                full_name: profile.full_name || "",
-                email: profile.email || "",
-                department: profile.department || "",
-              });
-              setActiveTab("profile");
-              toast.info("Form reset", {
-                description: "All changes have been discarded"
-              });
-            }}
-          >
-            Reset Changes
-          </Button>
-          <Button onClick={() => logout()}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Logout
-          </Button>
-        </div>
+        <Button variant="outline" onClick={() => logout()}>
+          <LogOut className="mr-2 h-4 w-4" />
+          Sign Out
+        </Button>
       </div>
     </div>
   );

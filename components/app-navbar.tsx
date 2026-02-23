@@ -399,7 +399,7 @@ export default function AppNavbar() {
                         My Profile
                       </Link>
                     </SheetClose>
-                    <SheetClose asChild>
+                    {/* <SheetClose asChild>
                       <Link
                         href="/settings"
                         className="flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent"
@@ -407,7 +407,7 @@ export default function AppNavbar() {
                         <Settings className="h-4 w-4" />
                         Settings
                       </Link>
-                    </SheetClose>
+                    </SheetClose> */}
                     <Button
                       variant="destructive"
                       className="w-full mt-4"
