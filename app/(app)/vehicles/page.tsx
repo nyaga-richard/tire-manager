@@ -47,6 +47,7 @@ import {
   Settings,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -138,6 +139,7 @@ const StatCardSkeleton = () => (
 );
 
 export default function VehiclesPage() {
+  const router = useRouter();
   const { user, hasPermission, authFetch, isLoading: authLoading } = useAuth();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
@@ -158,6 +160,21 @@ export default function VehiclesPage() {
   const [retirementLoading, setRetirementLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   
+  // Check if user has permission to view vehicles
+  useEffect(() => {
+    if (!authLoading) {
+      const canView = hasPermission('vehicle.view') || 
+                     hasPermission('vehicle.create') || 
+                     hasPermission('vehicle.edit') || 
+                     hasPermission('vehicle.delete');
+      
+      if (!canView) {
+        toast.error("You don't have permission to view vehicles");
+        router.back();
+      }
+    }
+  }, [authLoading, hasPermission, router]);
+  
   // Mobile collapsible sections
   const [expandedSections, setExpandedSections] = useState({
     filters: true,
@@ -175,7 +192,7 @@ export default function VehiclesPage() {
   const itemsPerPage = 10;
 
   useEffect(() => {
-    if (!authLoading) {
+    if (!authLoading && (hasPermission('vehicle.view') || hasPermission('vehicle.create') || hasPermission('vehicle.edit') || hasPermission('vehicle.delete'))) {
       fetchVehicles();
     }
   }, [currentPage, search, selectedConfig, viewMode, authLoading]);
@@ -229,6 +246,12 @@ export default function VehiclesPage() {
   const handleRetireVehicle = async () => {
     if (!selectedVehicle || !retirementData.reason.trim() || !user) return;
     
+    // Check if user has permission to retire vehicles
+    if (!hasPermission('vehicle.edit')) {
+      toast.error("You don't have permission to retire vehicles");
+      return;
+    }
+    
     try {
       setRetirementLoading(true);
       
@@ -257,6 +280,12 @@ export default function VehiclesPage() {
 
   const handleRestoreVehicle = async () => {
     if (!selectedVehicle || !user) return;
+    
+    // Check if user has permission to restore vehicles
+    if (!hasPermission('vehicle.edit')) {
+      toast.error("You don't have permission to restore vehicles");
+      return;
+    }
     
     try {
       setRestoreLoading(true);
@@ -317,6 +346,11 @@ export default function VehiclesPage() {
   };
 
   const handleOpenRetirementDialog = (vehicle: Vehicle) => {
+    // Check permission before opening dialog
+    if (!hasPermission('vehicle.edit')) {
+      toast.error("You don't have permission to retire vehicles");
+      return;
+    }
     setSelectedVehicle(vehicle);
     setRetirementData({ 
       reason: "", 
@@ -327,6 +361,11 @@ export default function VehiclesPage() {
   };
 
   const handleOpenReactivationDialog = (vehicle: Vehicle) => {
+    // Check permission before opening dialog
+    if (!hasPermission('vehicle.edit')) {
+      toast.error("You don't have permission to restore vehicles");
+      return;
+    }
     setSelectedVehicle(vehicle);
     setReactivationDialogOpen(true);
   };
@@ -741,6 +780,12 @@ export default function VehiclesPage() {
     window.URL.revokeObjectURL(url);
   }; 
     
+  // Check if user has any vehicle permission
+  const canViewVehicles = hasPermission('vehicle.view') || 
+                         hasPermission('vehicle.create') || 
+                         hasPermission('vehicle.edit') || 
+                         hasPermission('vehicle.delete');
+  
   if (authLoading) {
     return (
       <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
@@ -767,6 +812,11 @@ export default function VehiclesPage() {
         </div>
       </div>
     );
+  }
+
+  // If user doesn't have permission, don't render the page content
+  if (!canViewVehicles) {
+    return null; // The useEffect will handle redirect
   }
 
   return (
@@ -970,14 +1020,15 @@ export default function VehiclesPage() {
             <span className="hidden sm:inline">Print</span>
           </Button>
           
-          <PermissionGuard permissionCode="vehicle.create" action="create">
+          {/* Only show Add Vehicle button if user has create permission */}
+          {hasPermission('vehicle.create') && (
             <Button size="sm" asChild className="whitespace-nowrap">
               <Link href="/vehicles/create">
                 <PlusCircle className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
                 <span className="hidden sm:inline">Add Vehicle</span>
               </Link>
             </Button>
-          </PermissionGuard>
+          )}
         </div>
       </div>
 
@@ -1311,20 +1362,23 @@ export default function VehiclesPage() {
                               
                               {viewMode === "active" ? (
                                 <>
-                                  <PermissionGuard permissionCode="vehicle.edit" action="edit" fallback={null}>
+                                  {/* Only show Edit if user has edit permission */}
+                                  {hasPermission('vehicle.edit') && (
                                     <DropdownMenuItem asChild>
                                       <Link href={`/vehicles/${vehicle.id}/edit`}>
                                         <Edit className="mr-2 h-4 w-4" />
                                         Edit Vehicle
                                       </Link>
                                     </DropdownMenuItem>
-                                  </PermissionGuard>
+                                  )}
                                   
-                                  {(hasPermission('vehicle.edit') || hasPermission('vehicle.delete')) && (
+                                  {/* Only show separator if there are items after view and before retire */}
+                                  {(hasPermission('vehicle.edit')) && (
                                     <DropdownMenuSeparator />
                                   )}
                                   
-                                  {(hasPermission('vehicle.edit') || hasPermission('vehicle.delete')) && (
+                                  {/* Only show Retire if user has edit permission */}
+                                  {hasPermission('vehicle.edit') && (
                                     <DropdownMenuItem 
                                       className="text-amber-600"
                                       onClick={() => handleOpenRetirementDialog(vehicle)}
@@ -1336,7 +1390,8 @@ export default function VehiclesPage() {
                                 </>
                               ) : (
                                 <>
-                                  <PermissionGuard permissionCode="vehicle.edit" action="edit" fallback={null}>
+                                  {/* Only show Restore if user has edit permission */}
+                                  {hasPermission('vehicle.edit') && (
                                     <DropdownMenuItem 
                                       className="text-green-600"
                                       onClick={() => handleOpenReactivationDialog(vehicle)}
@@ -1344,9 +1399,10 @@ export default function VehiclesPage() {
                                       <RotateCcw className="mr-2 h-4 w-4" />
                                       Restore to Active
                                     </DropdownMenuItem>
-                                  </PermissionGuard>
+                                  )}
                                   
-                                  <PermissionGuard permissionCode="vehicle.delete" action="delete" fallback={null}>
+                                  {/* Only show Delete if user has delete permission */}
+                                  {hasPermission('vehicle.delete') && (
                                     <>
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem 
@@ -1357,7 +1413,7 @@ export default function VehiclesPage() {
                                         Delete Permanently
                                       </DropdownMenuItem>
                                     </>
-                                  </PermissionGuard>
+                                  )}
                                 </>
                               )}
                             </DropdownMenuContent>
@@ -1404,34 +1460,42 @@ export default function VehiclesPage() {
                             
                             {viewMode === "active" ? (
                               <>
-                                <PermissionGuard permissionCode="vehicle.edit" action="edit">
+                                {/* Only show Edit if user has edit permission */}
+                                {hasPermission('vehicle.edit') && (
                                   <DropdownMenuItem asChild>
                                     <Link href={`/vehicles/${vehicle.id}/edit`}>
                                       <Edit className="mr-2 h-4 w-4" />
                                       Edit
                                     </Link>
                                   </DropdownMenuItem>
-                                </PermissionGuard>
+                                )}
                                 
-                                <DropdownMenuItem 
-                                  className="text-amber-600"
-                                  onClick={() => handleOpenRetirementDialog(vehicle)}
-                                >
-                                  <Archive className="mr-2 h-4 w-4" />
-                                  Retire
-                                </DropdownMenuItem>
+                                {/* Only show Retire if user has edit permission */}
+                                {hasPermission('vehicle.edit') && (
+                                  <DropdownMenuItem 
+                                    className="text-amber-600"
+                                    onClick={() => handleOpenRetirementDialog(vehicle)}
+                                  >
+                                    <Archive className="mr-2 h-4 w-4" />
+                                    Retire
+                                  </DropdownMenuItem>
+                                )}
                               </>
                             ) : (
                               <>
-                                <DropdownMenuItem 
-                                  className="text-green-600"
-                                  onClick={() => handleOpenReactivationDialog(vehicle)}
-                                >
-                                  <RotateCcw className="mr-2 h-4 w-4" />
-                                  Restore
-                                </DropdownMenuItem>
+                                {/* Only show Restore if user has edit permission */}
+                                {hasPermission('vehicle.edit') && (
+                                  <DropdownMenuItem 
+                                    className="text-green-600"
+                                    onClick={() => handleOpenReactivationDialog(vehicle)}
+                                  >
+                                    <RotateCcw className="mr-2 h-4 w-4" />
+                                    Restore
+                                  </DropdownMenuItem>
+                                )}
                                 
-                                <PermissionGuard permissionCode="vehicle.delete" action="delete">
+                                {/* Only show Delete if user has delete permission */}
+                                {hasPermission('vehicle.delete') && (
                                   <DropdownMenuItem 
                                     className="text-red-600"
                                     onClick={() => handlePermanentDelete(vehicle.id)}
@@ -1439,7 +1503,7 @@ export default function VehiclesPage() {
                                     <Trash2 className="mr-2 h-4 w-4" />
                                     Delete
                                   </DropdownMenuItem>
-                                </PermissionGuard>
+                                )}
                               </>
                             )}
                           </DropdownMenuContent>

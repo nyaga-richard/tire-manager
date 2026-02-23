@@ -372,6 +372,9 @@ const createGRN = async (receivedTires: ReceivedTire[], rejectedTires: ReceivedT
 };
 
 
+
+
+
   const getQualityColor = (quality: string) => {
     switch (quality) {
       case "GOOD": return "bg-green-100 text-green-800";
