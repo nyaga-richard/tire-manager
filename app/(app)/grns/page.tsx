@@ -53,6 +53,7 @@ import {
   ChevronDown,
   Menu,
   Calendar,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -62,7 +63,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { format } from "date-fns";
 import { toast } from "sonner";
 import {
   Tooltip,
@@ -78,6 +78,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { format, parseISO, isValid } from "date-fns";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -119,6 +121,8 @@ const MobileGRNCard = ({
   formatDate,
   setSelectedPoId,
   setPoModalOpen,
+  canCreateAccounting,
+  canViewAccounting,
 }: {
   grn: GRN;
   onViewDetails: (id: number) => void;
@@ -129,6 +133,8 @@ const MobileGRNCard = ({
   formatDate: (date: string | null) => string;
   setSelectedPoId: (id: number) => void;
   setPoModalOpen: (open: boolean) => void;
+  canCreateAccounting: boolean;
+  canViewAccounting: boolean;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const invoiced = isGRNInvoiced(grn);
@@ -250,30 +256,26 @@ const MobileGRNCard = ({
                 View
               </Button>
 
-              {!invoiced && grn.status === "COMPLETED" ? (
-                <PermissionGuard permissionCode="accounting.create" action="create" fallback={null}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
-                    onClick={() => onInvoiceSupplier(grn)}
-                  >
-                    <Receipt className="h-4 w-4 mr-2 text-blue-600" />
-                    Invoice
-                  </Button>
-                </PermissionGuard>
-              ) : invoiced ? (
-                <PermissionGuard permissionCode="accounting.view" action="view" fallback={null}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex-1 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
-                    onClick={() => onInvoiceSupplier(grn)}
-                  >
-                    <Calculator className="h-4 w-4 mr-2 text-green-600" />
-                    View Invoice
-                  </Button>
-                </PermissionGuard>
+              {!invoiced && grn.status === "COMPLETED" && canCreateAccounting ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
+                  onClick={() => onInvoiceSupplier(grn)}
+                >
+                  <Receipt className="h-4 w-4 mr-2 text-blue-600" />
+                  Invoice
+                </Button>
+              ) : invoiced && canViewAccounting ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
+                  onClick={() => onInvoiceSupplier(grn)}
+                >
+                  <Calculator className="h-4 w-4 mr-2 text-green-600" />
+                  View Invoice
+                </Button>
               ) : null}
             </div>
           </div>
@@ -310,9 +312,29 @@ const getStatusIcon = (status: string) => {
   }
 };
 
+// Skeleton Components
+const StatCardSkeleton = () => (
+  <Card>
+    <CardHeader className="pb-2">
+      <Skeleton className="h-4 w-24" />
+    </CardHeader>
+    <CardContent>
+      <Skeleton className="h-8 w-16" />
+    </CardContent>
+  </Card>
+);
+
+const TableRowSkeleton = () => (
+  <div className="border-b p-4">
+    <Skeleton className="h-12 w-full" />
+  </div>
+);
+
 export default function GRNsPage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [grns, setGrns] = useState<GRN[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -342,18 +364,19 @@ export default function GRNsPage() {
   const [isFilterSheetOpen, setIsFilterSheetOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // Check authentication
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [authLoading, isAuthenticated, router]);
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
 
-  // Check permission for GRN view
+  // Check authentication and permission
   useEffect(() => {
-    if (!authLoading && isAuthenticated && !hasPermission("grn.view")) {
-      router.push("/dashboard");
-      toast.error("You don't have permission to view GRNs");
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("grn.view")) {
+        toast.error("You don't have permission to view GRNs");
+        router.push("/dashboard");
+      }
     }
   }, [authLoading, isAuthenticated, hasPermission, router]);
 
@@ -466,29 +489,41 @@ export default function GRNsPage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "KES",
+      currency: currency,
+      currencyDisplay: 'narrowSymbol',
       minimumFractionDigits: 0,
       maximumFractionDigits: 2,
-    }).format(amount);
+    }).format(amount).replace(currency, currencySymbol);
   };
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return "Not set";
     try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      });
+      const date = parseISO(dateString);
+      if (!isValid(date)) return "Invalid Date";
+      
+      const formatStr = systemSettings?.date_format || "MMM dd, yyyy";
+      
+      if (formatStr === "dd/MM/yyyy") {
+        return format(date, "dd/MM/yyyy");
+      } else if (formatStr === "MM/dd/yyyy") {
+        return format(date, "MM/dd/yyyy");
+      } else if (formatStr === "yyyy-MM-dd") {
+        return format(date, "yyyy-MM-dd");
+      } else if (formatStr === "dd-MM-yyyy") {
+        return format(date, "dd-MM-yyyy");
+      } else if (formatStr === "dd MMM yyyy") {
+        return format(date, "dd MMM yyyy");
+      } else {
+        return format(date, "MMM dd, yyyy");
+      }
     } catch {
       return "Invalid date";
     }
   };
 
-  // Check if GRN is invoiced - IMPROVED WITH DEBUGGING
+  // Check if GRN is invoiced
   const isGRNInvoiced = (grn: GRN) => {
-    // Check multiple conditions
     const hasInvoiceNumber = grn.supplier_invoice_number !== null && 
                              grn.supplier_invoice_number !== undefined && 
                              grn.supplier_invoice_number !== "";
@@ -498,15 +533,6 @@ export default function GRNsPage() {
                                      grn.accounting_transaction_id !== "";
     
     const invoiced = hasInvoiceNumber || hasAccountingTransaction;
-    
-    // Debug log for this specific GRN
-    console.log(`GRN ${grn.grn_number} (ID: ${grn.id}) - Invoice check:`, {
-      supplier_invoice_number: grn.supplier_invoice_number,
-      accounting_transaction_id: grn.accounting_transaction_id,
-      hasInvoiceNumber,
-      hasAccountingTransaction,
-      invoiced
-    });
     
     return invoiced;
   };
@@ -540,7 +566,7 @@ export default function GRNsPage() {
     }
   };
 
-  const exportToCSV = () => {
+  const exportToCSV = async () => {
     if (!hasPermission("grn.export")) {
       toast.error("You don't have permission to export GRNs");
       return;
@@ -587,11 +613,11 @@ export default function GRNsPage() {
         ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
       ].join("\n");
       
-      const blob = new Blob([csvContent], { type: "text/csv" });
+      const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `grns-export-${new Date().toISOString().split('T')[0]}.csv`;
+      link.download = `grns-export-${format(new Date(), "yyyy-MM-dd")}.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -604,14 +630,23 @@ export default function GRNsPage() {
     }
   };
 
+  // Permission checks
+  const canView = hasPermission("grn.view");
+  const canExport = hasPermission("grn.export");
+  const canCreateAccounting = hasPermission("accounting.create");
+  const canViewAccounting = hasPermission("accounting.view");
+
   // Show auth loading state
-  if (authLoading) {
+  if (authLoading || settingsLoading) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <Skeleton className="h-8 w-48 mb-2" />
-            <Skeleton className="h-4 w-64" />
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-10 w-10" />
+            <div>
+              <Skeleton className="h-8 w-48 mb-2" />
+              <Skeleton className="h-4 w-64" />
+            </div>
           </div>
           <div className="flex gap-2">
             <Skeleton className="h-10 w-24" />
@@ -624,10 +659,10 @@ export default function GRNsPage() {
     );
   }
 
-  // Show permission denied
-  if (!hasPermission("grn.view")) {
+  // Show permission denied - fallback if redirect doesn't happen
+  if (!canView) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/inventory">
@@ -657,7 +692,7 @@ export default function GRNsPage() {
   // Show error state
   if (error) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/inventory">
@@ -688,216 +723,104 @@ export default function GRNsPage() {
     );
   }
 
+  // If user has permission, render the page
   return (
-    <PermissionGuard permissionCode="grn.view" action="view">
-      <div className="space-y-6">
-        {/* GRN Details Dialog Component */}
-        {selectedGrnId && (
-          <GRNDetails
-            grnId={selectedGrnId}
-            open={showDetails}
-            onOpenChange={setShowDetails}
-          />
-        )}
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      {/* GRN Details Dialog Component */}
+      {selectedGrnId && (
+        <GRNDetails
+          grnId={selectedGrnId}
+          open={showDetails}
+          onOpenChange={setShowDetails}
+        />
+      )}
 
-        {/* Supplier Invoice Accounting Modal */}
-        {selectedGrnForInvoice && (
-          <SupplierInvoiceModal
-            isOpen={showInvoiceModal}
-            onClose={() => {
-              setShowInvoiceModal(false);
-              setSelectedGrnForInvoice(null);
-            }}
-            grn={selectedGrnForInvoice}
-            onInvoiceCreated={handleInvoiceCreated}
-          />
-        )}
+      {/* Supplier Invoice Accounting Modal */}
+      {selectedGrnForInvoice && (
+        <SupplierInvoiceModal
+          isOpen={showInvoiceModal}
+          onClose={() => {
+            setShowInvoiceModal(false);
+            setSelectedGrnForInvoice(null);
+          }}
+          grn={selectedGrnForInvoice}
+          onInvoiceCreated={handleInvoiceCreated}
+        />
+      )}
 
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/inventory">
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Goods Received Notes</h1>
-              <p className="text-sm sm:text-base text-muted-foreground">
-                Track all goods received from suppliers
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/inventory">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Goods Received Notes</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Track all goods received from suppliers
+            </p>
+            {systemSettings?.company_name && (
+              <p className="text-xs text-muted-foreground mt-1 truncate">
+                {systemSettings.company_name} • {currencySymbol} ({currency})
               </p>
-            </div>
-          </div>
-          
-          {/* Desktop Actions */}
-          <div className="hidden sm:flex items-center gap-2">
-            <Button variant="outline" onClick={fetchGRNs} disabled={loading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-              Refresh
-            </Button>
-            <PermissionGuard permissionCode="grn.view" fallback={null}>
-              <Button variant="outline" onClick={exportToCSV} disabled={grns.length === 0}>
-                <Download className="mr-2 h-4 w-4" />
-                Export
-              </Button>
-            </PermissionGuard>
-          </div>
-
-          {/* Mobile Actions */}
-          <div className="flex sm:hidden items-center gap-2">
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="flex-1"
-              onClick={() => setIsFilterSheetOpen(true)}
-            >
-              <Filter className="mr-2 h-4 w-4" />
-              Filters
-            </Button>
-            
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="flex-1"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <Menu className="mr-2 h-4 w-4" />
-              Menu
-            </Button>
+            )}
           </div>
         </div>
+        
+        {/* Desktop Actions */}
+        <div className="hidden sm:flex items-center gap-2">
+          <Button variant="outline" onClick={fetchGRNs} disabled={loading}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+          {canExport && (
+            <Button variant="outline" onClick={exportToCSV} disabled={grns.length === 0}>
+              <Download className="mr-2 h-4 w-4" />
+              Export
+            </Button>
+          )}
+        </div>
 
-        {/* Desktop Filters */}
-        <Card className="hidden sm:block">
-          <CardHeader>
-            <CardTitle>Filters</CardTitle>
-            <CardDescription>
-              Filter GRNs by various criteria
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSearch} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Search Field */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Search</label>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      type="search"
-                      placeholder="GRN, PO, supplier..."
-                      className="pl-8"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                    />
-                  </div>
-                </div>
+        {/* Mobile Actions */}
+        <div className="flex sm:hidden items-center gap-2">
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1"
+            onClick={() => setIsFilterSheetOpen(true)}
+          >
+            <Filter className="mr-2 h-4 w-4" />
+            Filters
+          </Button>
+          
+          <Button 
+            variant="outline" 
+            size="sm" 
+            className="flex-1"
+            onClick={() => setIsMobileMenuOpen(true)}
+          >
+            <Menu className="mr-2 h-4 w-4" />
+            Menu
+          </Button>
+        </div>
+      </div>
 
-                {/* Status Filter */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Status</label>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="All Status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="COMPLETED">Completed</SelectItem>
-                      <SelectItem value="PENDING">Pending</SelectItem>
-                      <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Start Date */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Start Date</label>
-                  <DatePicker
-                    date={startDate}
-                    onSelect={setStartDate}
-                  />
-                </div>
-
-                {/* End Date */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">End Date</label>
-                  <DatePicker
-                    date={endDate}
-                    onSelect={setEndDate}
-                  />
-                </div>
-              </div>
-
-              {/* Second row for Items per page */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Items per page</label>
-                  <Select
-                    value={limit.toString()}
-                    onValueChange={(value) => {
-                      setLimit(parseInt(value));
-                      setPage(1);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="10">10</SelectItem>
-                      <SelectItem value="20">20</SelectItem>
-                      <SelectItem value="50">50</SelectItem>
-                      <SelectItem value="100">100</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-col sm:flex-row justify-between gap-3">
-                <div className="flex gap-2">
-                  <Button type="submit" disabled={loading}>
-                    <Filter className="mr-2 h-4 w-4" />
-                    Apply Filters
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={clearFilters}
-                    disabled={loading}
-                  >
-                    Clear Filters
-                  </Button>
-                </div>
-                
-                {/* Results Info */}
-                <div className="text-sm text-muted-foreground flex items-center">
-                  {grns.length > 0 && (
-                    <span>
-                      Showing {Math.min(limit, grns.length)} of {total} GRNs
-                    </span>
-                  )}
-                </div>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-
-        {/* Mobile Filter Sheet */}
-        <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
-          <SheetContent side="bottom" className="h-auto max-h-[90vh] rounded-t-xl overflow-y-auto">
-            <SheetHeader>
-              <SheetTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5" />
-                Filter GRNs
-              </SheetTitle>
-              <SheetDescription>
-                Apply filters to narrow down results
-              </SheetDescription>
-            </SheetHeader>
-            <form onSubmit={handleSearch} className="space-y-4 py-4">
+      {/* Desktop Filters */}
+      <Card className="hidden sm:block">
+        <CardHeader>
+          <CardTitle>Filters</CardTitle>
+          <CardDescription>
+            Filter GRNs by various criteria
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSearch} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Search Field */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Search</Label>
+                <label className="text-sm font-medium">Search</label>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                   <Input
@@ -912,7 +835,7 @@ export default function GRNsPage() {
 
               {/* Status Filter */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Status</Label>
+                <label className="text-sm font-medium">Status</label>
                 <Select value={status} onValueChange={setStatus}>
                   <SelectTrigger>
                     <SelectValue placeholder="All Status" />
@@ -928,7 +851,7 @@ export default function GRNsPage() {
 
               {/* Start Date */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Start Date</Label>
+                <label className="text-sm font-medium">Start Date</label>
                 <DatePicker
                   date={startDate}
                   onSelect={setStartDate}
@@ -937,16 +860,18 @@ export default function GRNsPage() {
 
               {/* End Date */}
               <div className="space-y-2">
-                <Label className="text-sm font-medium">End Date</Label>
+                <label className="text-sm font-medium">End Date</label>
                 <DatePicker
                   date={endDate}
                   onSelect={setEndDate}
                 />
               </div>
+            </div>
 
-              {/* Items per page */}
+            {/* Second row for Items per page */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="space-y-2">
-                <Label className="text-sm font-medium">Items per page</Label>
+                <label className="text-sm font-medium">Items per page</label>
                 <Select
                   value={limit.toString()}
                   onValueChange={(value) => {
@@ -965,364 +890,494 @@ export default function GRNsPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
 
-              <div className="flex gap-2 pt-4">
-                <Button type="submit" className="flex-1">
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row justify-between gap-3">
+              <div className="flex gap-2">
+                <Button type="submit" disabled={loading}>
+                  <Filter className="mr-2 h-4 w-4" />
                   Apply Filters
                 </Button>
-                <Button 
-                  type="button" 
-                  variant="outline" 
-                  className="flex-1"
+                <Button
+                  type="button"
+                  variant="outline"
                   onClick={clearFilters}
+                  disabled={loading}
                 >
-                  Clear
+                  Clear Filters
                 </Button>
               </div>
-            </form>
-          </SheetContent>
-        </Sheet>
+              
+              {/* Results Info */}
+              <div className="text-sm text-muted-foreground flex items-center">
+                {grns.length > 0 && (
+                  <span>
+                    Showing {Math.min(limit, grns.length)} of {total} GRNs
+                  </span>
+                )}
+              </div>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
 
-        {/* Mobile Menu Sheet */}
-        <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
-          <SheetContent side="bottom" className="h-auto rounded-t-xl">
-            <SheetHeader>
-              <SheetTitle>Actions</SheetTitle>
-              <SheetDescription>
-                Choose an action to perform
-              </SheetDescription>
-            </SheetHeader>
-            <div className="grid gap-2 py-4">
+      {/* Mobile Filter Sheet */}
+      <Sheet open={isFilterSheetOpen} onOpenChange={setIsFilterSheetOpen}>
+        <SheetContent side="bottom" className="h-auto max-h-[90vh] rounded-t-xl overflow-y-auto">
+          <SheetHeader>
+            <SheetTitle className="flex items-center gap-2">
+              <Filter className="h-5 w-5" />
+              Filter GRNs
+            </SheetTitle>
+            <SheetDescription>
+              Apply filters to narrow down results
+            </SheetDescription>
+          </SheetHeader>
+          <form onSubmit={handleSearch} className="space-y-4 py-4">
+            {/* Search Field */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Search</Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="search"
+                  placeholder="GRN, PO, supplier..."
+                  className="pl-8"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Status Filter */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Status</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="COMPLETED">Completed</SelectItem>
+                  <SelectItem value="PENDING">Pending</SelectItem>
+                  <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Start Date */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Start Date</Label>
+              <DatePicker
+                date={startDate}
+                onSelect={setStartDate}
+              />
+            </div>
+
+            {/* End Date */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">End Date</Label>
+              <DatePicker
+                date={endDate}
+                onSelect={setEndDate}
+              />
+            </div>
+
+            {/* Items per page */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Items per page</Label>
+              <Select
+                value={limit.toString()}
+                onValueChange={(value) => {
+                  setLimit(parseInt(value));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="10">10</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex gap-2 pt-4">
+              <Button type="submit" className="flex-1">
+                Apply Filters
+              </Button>
+              <Button 
+                type="button" 
+                variant="outline" 
+                className="flex-1"
+                onClick={clearFilters}
+              >
+                Clear
+              </Button>
+            </div>
+          </form>
+        </SheetContent>
+      </Sheet>
+
+      {/* Mobile Menu Sheet */}
+      <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
+        <SheetContent side="bottom" className="h-auto rounded-t-xl">
+          <SheetHeader>
+            <SheetTitle>Actions</SheetTitle>
+            <SheetDescription>
+              Choose an action to perform
+            </SheetDescription>
+          </SheetHeader>
+          <div className="grid gap-2 py-4">
+            <Button 
+              variant="outline" 
+              className="w-full justify-start"
+              onClick={() => {
+                fetchGRNs();
+                setIsMobileMenuOpen(false);
+              }}
+              disabled={loading}
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Refresh Data
+            </Button>
+            
+            {canExport && (
               <Button 
                 variant="outline" 
                 className="w-full justify-start"
                 onClick={() => {
-                  fetchGRNs();
+                  exportToCSV();
                   setIsMobileMenuOpen(false);
                 }}
-                disabled={loading}
+                disabled={grns.length === 0}
               >
-                <RefreshCw className={`mr-2 h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-                Refresh Data
+                <Download className="mr-2 h-4 w-4" />
+                Export to CSV
               </Button>
-              
-              <PermissionGuard permissionCode="grn.view" fallback={null}>
-                <Button 
-                  variant="outline" 
-                  className="w-full justify-start"
-                  onClick={() => {
-                    exportToCSV();
-                    setIsMobileMenuOpen(false);
-                  }}
-                  disabled={grns.length === 0}
-                >
-                  <Download className="mr-2 h-4 w-4" />
-                  Export to CSV
-                </Button>
-              </PermissionGuard>
-            </div>
-          </SheetContent>
-        </Sheet>
+            )}
+          </div>
+        </SheetContent>
+      </Sheet>
 
-        {/* GRNs Table - Desktop */}
-        <Card className="hidden sm:block">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle>Goods Received Notes</CardTitle>
-                <CardDescription>
-                  {total} GRNs found • Page {page} of {totalPages}
-                </CardDescription>
+      {/* GRNs Table - Desktop */}
+      <Card className="hidden sm:block">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Goods Received Notes</CardTitle>
+              <CardDescription>
+                {total} GRNs found • Page {page} of {totalPages}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="text-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+                <p className="mt-2 text-muted-foreground">Loading GRNs...</p>
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="flex items-center justify-center h-64">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                  <p className="mt-2 text-muted-foreground">Loading GRNs...</p>
-                </div>
-              </div>
-            ) : grns.length === 0 ? (
-              <div className="text-center py-8">
-                <Truck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <h3 className="text-lg font-medium">No GRNs found</h3>
-                <p className="text-muted-foreground">
-                  {search || status !== "all" || startDate || endDate
-                    ? "Try adjusting your filters"
-                    : "No GRNs have been created yet"}
-                </p>
-              </div>
-            ) : (
-              <div className="rounded-md border overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="whitespace-nowrap">GRN Number</TableHead>
-                      <TableHead className="whitespace-nowrap">PO Number</TableHead>
-                      <TableHead className="whitespace-nowrap">Receipt Date</TableHead>
-                      <TableHead className="whitespace-nowrap">Supplier</TableHead>
-                      <TableHead className="whitespace-nowrap">Items</TableHead>
-                      <TableHead className="whitespace-nowrap">Total Value</TableHead>
-                      <TableHead className="whitespace-nowrap">Received By</TableHead>
-                      <TableHead className="whitespace-nowrap text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {grns.map((grn) => {
-                      const invoiced = isGRNInvoiced(grn);
-                      
-                      return (
-                        <TableRow key={grn.id}>
-                          <TableCell className="font-medium whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                              <div className="flex flex-col items-start">
-                                <span>{grn.grn_number}</span>
-                                {getInvoiceStatusBadge(grn)}
-                              </div>
+          ) : grns.length === 0 ? (
+            <div className="text-center py-8">
+              <Truck className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-medium">No GRNs found</h3>
+              <p className="text-muted-foreground">
+                {search || status !== "all" || startDate || endDate
+                  ? "Try adjusting your filters"
+                  : "No GRNs have been created yet"}
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-md border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">GRN Number</TableHead>
+                    <TableHead className="whitespace-nowrap">PO Number</TableHead>
+                    <TableHead className="whitespace-nowrap">Receipt Date</TableHead>
+                    <TableHead className="whitespace-nowrap">Supplier</TableHead>
+                    <TableHead className="whitespace-nowrap">Items</TableHead>
+                    <TableHead className="whitespace-nowrap">Total Value</TableHead>
+                    <TableHead className="whitespace-nowrap">Received By</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {grns.map((grn) => {
+                    const invoiced = isGRNInvoiced(grn);
+                    
+                    return (
+                      <TableRow key={grn.id}>
+                        <TableCell className="font-medium whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <div className="flex flex-col items-start">
+                              <span>{grn.grn_number}</span>
+                              {getInvoiceStatusBadge(grn)}
                             </div>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <button
-                              onClick={() => {
-                                setSelectedPoId(grn.po_id);
-                                setPoModalOpen(true);
-                              }}
-                              className="text-blue-600 hover:underline"
-                            >
-                              {grn.po_number}
-                            </button>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">{formatDate(grn.receipt_date)}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                              <div className="min-w-0">
-                                <div className="font-medium">{grn.supplier_name}</div>
-                                {grn.supplier_code && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {grn.supplier_code}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                              <div>
-                                <div>{grn.item_count} items</div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <button
+                            onClick={() => {
+                              setSelectedPoId(grn.po_id);
+                              setPoModalOpen(true);
+                            }}
+                            className="text-blue-600 hover:underline"
+                          >
+                            {grn.po_number}
+                          </button>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">{formatDate(grn.receipt_date)}</TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <Building className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <div className="min-w-0">
+                              <div className="font-medium">{grn.supplier_name}</div>
+                              {grn.supplier_code && (
                                 <div className="text-xs text-muted-foreground">
-                                  {grn.total_quantity} units
+                                  {grn.supplier_code}
                                 </div>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <div>
+                              <div>{grn.item_count} items</div>
+                              <div className="text-xs text-muted-foreground">
+                                {grn.total_quantity} units
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell className="font-semibold whitespace-nowrap">
-                            {formatCurrency(grn.total_value)}
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <div className="flex items-center gap-2">
-                              <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                              <span>{grn.received_by_name || "N/A"}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right whitespace-nowrap">
-                            <div className="flex justify-end gap-1">
-                              {/* View Details Button */}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-semibold whitespace-nowrap">
+                          {formatCurrency(grn.total_value)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <User className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            <span>{grn.received_by_name || "N/A"}</span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right whitespace-nowrap">
+                          <div className="flex justify-end gap-1">
+                            {/* View Details Button */}
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    onClick={() => handleViewDetails(grn.id)}
+                                    className="h-8 w-8"
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  <p>View GRN Details</p>
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+
+                            {/* Invoice Buttons */}
+                            {!invoiced && grn.status === "COMPLETED" && canCreateAccounting ? (
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button
                                       variant="outline"
                                       size="icon"
-                                      onClick={() => handleViewDetails(grn.id)}
-                                      className="h-8 w-8"
+                                      onClick={() => handleInvoiceSupplier(grn)}
+                                      className="h-8 w-8 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
                                     >
-                                      <Eye className="h-4 w-4" />
+                                      <Receipt className="h-4 w-4 text-blue-600" />
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    <p>View GRN Details</p>
+                                    <p>Record Supplier Invoice</p>
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-
-                              {/* Invoice Buttons */}
-                              {!invoiced && grn.status === "COMPLETED" ? (
-                                <PermissionGuard permissionCode="accounting.create" action="create" fallback={null}>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          onClick={() => handleInvoiceSupplier(grn)}
-                                          className="h-8 w-8 bg-blue-50 hover:bg-blue-100 border-blue-200 dark:bg-blue-950 dark:hover:bg-blue-900 dark:border-blue-800"
-                                        >
-                                          <Receipt className="h-4 w-4 text-blue-600" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>Record Supplier Invoice</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </PermissionGuard>
-                              ) : invoiced ? (
-                                <PermissionGuard permissionCode="accounting.view" action="view" fallback={null}>
-                                  <TooltipProvider>
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Button
-                                          variant="outline"
-                                          size="icon"
-                                          onClick={() => handleInvoiceSupplier(grn)}
-                                          className="h-8 w-8 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
-                                        >
-                                          <Calculator className="h-4 w-4 text-green-600" />
-                                        </Button>
-                                      </TooltipTrigger>
-                                      <TooltipContent>
-                                        <p>{getInvoiceButtonTooltip(grn)}</p>
-                                      </TooltipContent>
-                                    </Tooltip>
-                                  </TooltipProvider>
-                                </PermissionGuard>
-                              ) : null}
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                            ) : invoiced && canViewAccounting ? (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      onClick={() => handleInvoiceSupplier(grn)}
+                                      className="h-8 w-8 bg-green-50 hover:bg-green-100 border-green-200 dark:bg-green-950 dark:hover:bg-green-900 dark:border-green-800"
+                                    >
+                                      <Calculator className="h-4 w-4 text-green-600" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{getInvoiceButtonTooltip(grn)}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            ) : null}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+        {grns.length > 0 && (
+          <CardFooter className="border-t px-6 py-4">
+            <div className="flex flex-col sm:flex-row items-center justify-between w-full gap-4">
+              <div className="text-sm text-muted-foreground">
+                Showing {Math.min(limit, grns.length)} of {total} GRNs
               </div>
-            )}
-          </CardContent>
-          {grns.length > 0 && (
-            <CardFooter className="border-t px-6 py-4">
-              <div className="flex flex-col sm:flex-row items-center justify-between w-full gap-4">
-                <div className="text-sm text-muted-foreground">
-                  Showing {Math.min(limit, grns.length)} of {total} GRNs
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(page - 1)}
+                  disabled={page <= 1 || loading}
+                  className="h-9"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+                <span className="text-sm px-3">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage(page + 1)}
+                  disabled={page >= totalPages || loading}
+                  className="h-9"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            </div>
+          </CardFooter>
+        )}
+      </Card>
+
+      {/* Mobile GRN Cards */}
+      <div className="sm:hidden space-y-4">
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-center">
+              <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
+              <p className="mt-2 text-muted-foreground">Loading GRNs...</p>
+            </div>
+          </div>
+        ) : grns.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center h-64 text-center px-4">
+              <Truck className="h-12 w-12 text-muted-foreground mb-4" />
+              <h3 className="text-lg font-medium">No GRNs found</h3>
+              <p className="text-muted-foreground mt-1">
+                {search || status !== "all" || startDate || endDate
+                  ? "Try adjusting your filters"
+                  : "No GRNs have been created yet"}
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {grns.map((grn) => (
+              <MobileGRNCard
+                key={grn.id}
+                grn={grn}
+                onViewDetails={handleViewDetails}
+                onInvoiceSupplier={handleInvoiceSupplier}
+                isGRNInvoiced={isGRNInvoiced}
+                getInvoiceStatusBadge={getInvoiceStatusBadge}
+                formatCurrency={formatCurrency}
+                formatDate={formatDate}
+                setSelectedPoId={setSelectedPoId}
+                setPoModalOpen={setPoModalOpen}
+                canCreateAccounting={canCreateAccounting}
+                canViewAccounting={canViewAccounting}
+              />
+            ))}
+
+            {/* Mobile Pagination */}
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-sm text-muted-foreground text-center mb-4">
+                  Showing {Math.min(limit, grns.length)} of {total} GRNs • Page {page} of {totalPages}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex gap-2">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setPage(page - 1)}
                     disabled={page <= 1 || loading}
-                    className="h-9"
+                    className="flex-1"
                   >
                     <ChevronLeft className="h-4 w-4 mr-1" />
                     Previous
                   </Button>
-                  <span className="text-sm px-3">
-                    Page {page} of {totalPages}
-                  </span>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => setPage(page + 1)}
                     disabled={page >= totalPages || loading}
-                    className="h-9"
+                    className="flex-1"
                   >
                     Next
                     <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
-              </div>
-            </CardFooter>
-          )}
-        </Card>
-
-        {/* Mobile GRN Cards */}
-        <div className="sm:hidden space-y-4">
-          {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
-                <p className="mt-2 text-muted-foreground">Loading GRNs...</p>
-              </div>
-            </div>
-          ) : grns.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center justify-center h-64 text-center px-4">
-                <Truck className="h-12 w-12 text-muted-foreground mb-4" />
-                <h3 className="text-lg font-medium">No GRNs found</h3>
-                <p className="text-muted-foreground mt-1">
-                  {search || status !== "all" || startDate || endDate
-                    ? "Try adjusting your filters"
-                    : "No GRNs have been created yet"}
-                </p>
               </CardContent>
             </Card>
-          ) : (
-            <>
-              {grns.map((grn) => (
-                <MobileGRNCard
-                  key={grn.id}
-                  grn={grn}
-                  onViewDetails={handleViewDetails}
-                  onInvoiceSupplier={handleInvoiceSupplier}
-                  isGRNInvoiced={isGRNInvoiced}
-                  getInvoiceStatusBadge={getInvoiceStatusBadge}
-                  formatCurrency={formatCurrency}
-                  formatDate={formatDate}
-                  setSelectedPoId={setSelectedPoId}
-                  setPoModalOpen={setPoModalOpen}
-                />
-              ))}
+          </>
+        )}
+      </div>
 
-              {/* Mobile Pagination */}
-              <Card>
-                <CardContent className="p-4">
-                  <div className="text-sm text-muted-foreground text-center mb-4">
-                    Showing {Math.min(limit, grns.length)} of {total} GRNs • Page {page} of {totalPages}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(page - 1)}
-                      disabled={page <= 1 || loading}
-                      className="flex-1"
-                    >
-                      <ChevronLeft className="h-4 w-4 mr-1" />
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(page + 1)}
-                      disabled={page >= totalPages || loading}
-                      className="flex-1"
-                    >
-                      Next
-                      <ChevronRight className="h-4 w-4 ml-1" />
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
+      {/* PO Details Modal */}
+      {selectedPoId && (
+        <PurchaseOrderDetails
+          orderId={selectedPoId}
+          isOpen={poModalOpen}
+          onClose={() => {
+            setPoModalOpen(false);
+            setSelectedPoId(null);
+          }}
+        />
+      )}
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
             </>
           )}
         </div>
-
-        {/* PO Details Modal */}
-        {selectedPoId && (
-          <PurchaseOrderDetails
-            orderId={selectedPoId}
-            isOpen={poModalOpen}
-            onClose={() => {
-              setPoModalOpen(false);
-              setSelectedPoId(null);
-            }}
-          />
-        )}
       </div>
-    </PermissionGuard>
+    </div>
   );
 }
 

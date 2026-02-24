@@ -34,11 +34,18 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useSettings } from "@/hooks/useSettings";
+import { format, parseISO, isValid } from "date-fns";
 
-// API Base URL constant
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 interface Tire {
+  current_location: string;
+  vehicle_id: null;
   id: number;
   serial_number: string;
   size?: string;
@@ -135,6 +142,9 @@ export default function TireServiceModal({
   currentTires,
   onSuccess
 }: TireServiceModalProps) {
+  const { user, isAuthenticated, authFetch, hasPermission } = useAuth();
+  const { settings: systemSettings, loading: settingsLoading } = useSettings();
+  
   const [loading, setLoading] = useState(false);
   const [serviceType, setServiceType] = useState<ServiceType>("bulk");
   const [availableTires, setAvailableTires] = useState<Tire[]>([]);
@@ -142,6 +152,7 @@ export default function TireServiceModal({
   const [currentOdometer, setCurrentOdometer] = useState<number>(0);
   const [reason, setReason] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [apiError, setApiError] = useState<string | null>(null);
   
   // Operation type tab
   const [operationType, setOperationType] = useState<OperationType>("install");
@@ -177,15 +188,28 @@ export default function TireServiceModal({
     summary: true,
   });
 
+  // Permission checks
+  const canInstall = hasPermission("tire.assign");
+  const canRemove = hasPermission("tire.assign");
+  const canSwap = hasPermission("tire.assign");
+
+  // Get currency settings
+  const currency = systemSettings?.currency || 'KES';
+  const currencySymbol = systemSettings?.currency_symbol || 'KSH';
+
   // Reset form when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       resetForm();
-      fetchAvailableTires();
-      fetchVehicleData();
-      fetchTireSizes();
+      if (canInstall || canRemove || canSwap) {
+        fetchAvailableTires();
+        fetchVehicleData();
+        fetchTireSizes();
+      } else {
+        setApiError("You don't have permission to perform tire services");
+      }
     }
-  }, [isOpen, vehicleId]);
+  }, [isOpen, vehicleId, canInstall, canRemove, canSwap]);
 
   useEffect(() => {
     // When swap from position changes, update the tire info
@@ -230,27 +254,29 @@ export default function TireServiceModal({
     setSearchQuery("");
     setSelectedSize("all");
     setSearchInputs({});
+    setApiError(null);
   };
 
   // Fetch vehicle data including positions
   const fetchVehicleData = async () => {
     try {
       setLoadingVehicle(true);
-      const response = await fetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`);
+      setApiError(null);
+      const response = await authFetch(`${API_BASE_URL}/api/vehicles/${vehicleId}`);
       if (response.ok) {
         const data: VehicleData = await response.json();
-        // The API returns positions with codes like "FL", "FR", "RL1", "RL2", "RR1", "RR2"
         setAvailablePositions(data.positions || []);
         setCurrentOdometer(data.current_odometer || 0);
         console.log("Fetched positions from backend:", data.positions);
-
       } else {
         console.error("Failed to fetch vehicle data");
+        setApiError("Failed to load vehicle data");
         // Set default positions based on common configurations
         setAvailablePositions(getDefaultPositions());
       }
     } catch (error) {
       console.error("Error fetching vehicle data:", error);
+      setApiError("Error loading vehicle data");
       setAvailablePositions(getDefaultPositions());
     } finally {
       setLoadingVehicle(false);
@@ -270,36 +296,115 @@ export default function TireServiceModal({
     ];
   };
 
-  const fetchAvailableTires = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/tires/`);
-      if (response.ok) {
-        const data = await response.json();
-        console.log("Fetched tires data:", data);
-        // Check for null values
-        const tiresWithNullBrand = data.filter((tire: Tire) => !tire.brand);
-        const tiresWithNullSize = data.filter((tire: Tire) => !tire.size);
-        if (tiresWithNullBrand.length > 0 || tiresWithNullSize.length > 0) {
-          console.warn("Some tires have null values:", { tiresWithNullBrand, tiresWithNullSize });
-        }
-        // Ensure all string fields have values
-        const sanitizedData = data.map((tire: any) => ({
-          ...tire,
-          brand: tire.brand || 'Unknown',
-          size: tire.size || 'N/A',
-          serial_number: tire.serial_number || 'N/A'
-        }));
-        setAvailableTires(sanitizedData);
+const fetchAvailableTires = async () => {
+  try {
+    setLoading(true);
+    setApiError(null);
+    
+    const response = await authFetch(`${API_BASE_URL}/api/tires/`);
+    if (response.ok) {
+      const data = await response.json();
+      console.log("Fetched tires data:", data);
+      
+      // COMPLETELY FILTER OUT:
+      // 1. Tires installed on vehicles (any status indicating they're in use)
+      // 2. Tires in USED_STORE
+      const availableTiresOnly = data.filter((tire: Tire) => {
+        // Statuses that indicate tire is NOT available for installation
+        const unavailableStatuses = [
+          'IN_USE', 
+          'ON_VEHICLE', 
+          'INSTALLED', 
+          'FITTED', 
+          'MOUNTED',
+          'USED_STORE',
+          'USED',
+          'DISPOSED',
+          'SCRAP',
+          'DAMAGED',
+          'AWAITING_RETREAD',
+          'AT_RETREADER'
+        ];
+        
+        const status = tire.status?.toUpperCase() || '';
+        const isUnavailable = unavailableStatuses.includes(status);
+        
+        // Check if tire has a current vehicle assignment
+        const hasVehicleAssignment = tire.vehicle_id !== null && 
+                                    tire.vehicle_id !== undefined && 
+                                    tire.vehicle_id > 0;
+        
+        // Check if tire is currently assigned to a position
+        const hasPositionAssignment = tire.current_position !== null && 
+                                     tire.current_position !== undefined && 
+                                     tire.current_position !== '';
+        
+        // Check location
+        const isInUsedStore = tire.current_location === 'USED_STORE';
+        const isOnVehicle = tire.current_location === 'ON_VEHICLE';
+        
+        // Return true ONLY for tires that are truly available
+        return !isUnavailable && 
+               !hasVehicleAssignment && 
+               !hasPositionAssignment && 
+               !isInUsedStore && 
+               !isOnVehicle;
+      });
+      
+      console.log("Available tires for installation (filtered):", 
+        availableTiresOnly.map((t: { id: any; serial_number: any; status: any; current_location: any; }) => ({
+          id: t.id,
+          serial: t.serial_number,
+          status: t.status,
+          location: t.current_location
+        }))
+      );
+      
+      // Ensure all string fields have values
+      const sanitizedData = availableTiresOnly.map((tire: any) => ({
+        ...tire,
+        brand: tire.brand || 'Unknown',
+        size: tire.size || 'N/A',
+        serial_number: tire.serial_number || 'N/A'
+      }));
+      
+      setAvailableTires(sanitizedData);
+      
+      // Update tire sizes based on filtered tires
+      const sizeMap = new Map<string, number>();
+      sanitizedData.forEach((tire: { size: string; }) => {
+        const size = tire.size || 'N/A';
+        sizeMap.set(size, (sizeMap.get(size) || 0) + 1);
+      });
+      
+      const sizes = Array.from(sizeMap.entries()).map(([size, count]) => ({
+        size,
+        count
+      }));
+      
+      setTireSizes(sizes);
+      
+      // If no tires available, show a helpful message
+      if (sanitizedData.length === 0) {
+        toast.info("No tires available for installation. All tires are either installed on vehicles or in used store.");
       }
-    } catch (error) {
-      console.error("Error fetching available tires:", error);
+      
+    } else {
+      const errorData = await response.text();
+      console.error("Failed to fetch tires:", errorData);
+      setApiError("Failed to fetch available tires");
     }
-  };
-
+  } catch (error) {
+    console.error("Error fetching available tires:", error);
+    setApiError("Error loading available tires");
+  } finally {
+    setLoading(false);
+  }
+};
   const fetchTireSizes = async () => {
     try {
       setLoadingSizes(true);
-      const response = await fetch(`${API_BASE_URL}/api/inventory/by-size`);
+      const response = await authFetch(`${API_BASE_URL}/api/inventory/by-size`);
       if (response.ok) {
         const data = await response.json();
         setTireSizes(data);
@@ -463,270 +568,286 @@ export default function TireServiceModal({
     }
   };
 
-const handleSubmit = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!user) {
+      toast.error("You must be logged in to perform tire service");
+      return;
+    }
 
-  try {
-    if (operationType === "install") {
-      const validItems = installationItems.filter(item => 
-        item.tireId && item.positionCode
-      );
-      
-      if (validItems.length === 0) {
-        throw new Error("No valid installation items");
-      }
+    if (!canInstall && !canRemove && !canSwap) {
+      toast.error("You don't have permission to perform tire services");
+      return;
+    }
 
-      // Validate that all selected position codes exist in availablePositions
-      const invalidPositions = validItems.filter(item => {
-        const positionExists = availablePositions.some(p => p.position_code === item.positionCode);
-        return !positionExists;
-      });
-      
-      if (invalidPositions.length > 0) {
-        const invalidCodes = invalidPositions.map(item => item.positionCode).join(", ");
-        const validCodes = availablePositions.map(p => p.position_code).join(", ");
-        throw new Error(`Invalid position(s): ${invalidCodes}. Valid positions are: ${validCodes}`);
-      }
+    setLoading(true);
+    setApiError(null);
 
-      // Check for duplicate tire installations
-      const tireIds = validItems.map(item => item.tireId);
-      const uniqueTireIds = [...new Set(tireIds)];
-      
-      if (tireIds.length !== uniqueTireIds.length) {
-        throw new Error("Cannot install the same tire in multiple positions. Each tire can only be installed in one position at a time.");
-      }
+    try {
+      if (operationType === "install") {
+        if (!canInstall) {
+          throw new Error("You don't have permission to install tires");
+        }
 
-      // Check for duplicate position selections
-      const positionCodes = validItems.map(item => item.positionCode);
-      const uniquePositionCodes = [...new Set(positionCodes)];
-      
-      if (positionCodes.length !== uniquePositionCodes.length) {
-        throw new Error("Cannot install multiple tires in the same position. Each position can only have one tire.");
-      }
+        const validItems = installationItems.filter(item => 
+          item.tireId && item.positionCode
+        );
+        
+        if (validItems.length === 0) {
+          throw new Error("No valid installation items");
+        }
 
-      const installationPromises = validItems.map(async (item) => {
-        try {
-          const installPayload = {
-            tire_id: parseInt(item.tireId),
-            vehicle_id: vehicleId,
-            position_code: item.positionCode, // 👈 Send position_code, not position_id
-            install_date: new Date().toISOString().split('T')[0],
-            install_odometer: currentOdometer,
+        // Validate that all selected position codes exist in availablePositions
+        const invalidPositions = validItems.filter(item => {
+          const positionExists = availablePositions.some(p => p.position_code === item.positionCode);
+          return !positionExists;
+        });
+        
+        if (invalidPositions.length > 0) {
+          const invalidCodes = invalidPositions.map(item => item.positionCode).join(", ");
+          const validCodes = availablePositions.map(p => p.position_code).join(", ");
+          throw new Error(`Invalid position(s): ${invalidCodes}. Valid positions are: ${validCodes}`);
+        }
+
+        // Check for duplicate tire installations
+        const tireIds = validItems.map(item => item.tireId);
+        const uniqueTireIds = [...new Set(tireIds)];
+        
+        if (tireIds.length !== uniqueTireIds.length) {
+          throw new Error("Cannot install the same tire in multiple positions. Each tire can only be installed in one position at a time.");
+        }
+
+        // Check for duplicate position selections
+        const positionCodes = validItems.map(item => item.positionCode);
+        const uniquePositionCodes = [...new Set(positionCodes)];
+        
+        if (positionCodes.length !== uniquePositionCodes.length) {
+          throw new Error("Cannot install multiple tires in the same position. Each position can only have one tire.");
+        }
+
+        const installationPromises = validItems.map(async (item) => {
+          try {
+            const installPayload = {
+              tire_id: parseInt(item.tireId),
+              vehicle_id: vehicleId,
+              position_code: item.positionCode, // 👈 Send position_code, not position_id
+              install_date: format(new Date(), "yyyy-MM-dd"),
+              install_odometer: currentOdometer,
+              reason: reason || "Regular service",
+              user_id: user.id,
+              user_name: user.full_name || user.username || "System"
+            };
+
+            console.log("Sending install payload:", installPayload);
+
+            const response = await authFetch(`${API_BASE_URL}/api/tires/install`, {
+              method: "POST",
+              body: JSON.stringify(installPayload),
+            });
+
+            if (!response.ok) {
+              const errorData = await response.json();
+              console.error("Install error response:", errorData);
+              
+              if (errorData.error && errorData.error.includes('Invalid wheel position')) {
+                throw new Error(`Invalid position ${item.positionCode} for this vehicle. Please select a valid position.`);
+              } else if (errorData.error && errorData.error.includes('not available')) {
+                throw new Error(`Tire ${item.serialNumber} is not available for installation. It may already be installed elsewhere.`);
+              } else {
+                throw new Error(`Failed to install tire ${item.serialNumber}: ${errorData.error || errorData.message}`);
+              }
+            }
+
+            return response.json();
+          } catch (error) {
+            console.error(`Error installing tire ${item.serialNumber}:`, error);
+            throw error;
+          }
+        });
+
+        await Promise.all(installationPromises);
+        toast.success("Tires installed successfully");
+
+      } else if (operationType === "remove") {
+        if (!canRemove) {
+          throw new Error("You don't have permission to remove tires");
+        }
+
+        const positionsToRemove = Object.keys(selectedRemovals).filter(
+          position => selectedRemovals[position]
+        );
+
+        if (positionsToRemove.length === 0) {
+          throw new Error("No tires selected for removal");
+        }
+
+        const removalPromises = positionsToRemove.map(async (positionCode) => {
+          const tire = currentTires.find(t => t.position_code === positionCode);
+          if (!tire) throw new Error(`No tire found at position ${positionCode}`);
+          
+          const removePayload = {
+            assignment_id: tire.id,
+            removal_date: format(new Date(), "yyyy-MM-dd"),
+            removal_odometer: currentOdometer,
+            user_id: user.id,
+            user_name: user.full_name || user.username || "System",
             reason: reason || "Regular service",
-            user_id: 1
+            next_status: "USED_STORE"
           };
 
-          console.log("Sending install payload:", installPayload);
+          console.log("Sending remove payload:", removePayload);
 
-          const response = await fetch(`${API_BASE_URL}/api/tires/install`, {
+          const response = await authFetch(`${API_BASE_URL}/api/tires/remove`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(installPayload),
+            body: JSON.stringify(removePayload),
           });
 
           if (!response.ok) {
             const errorData = await response.json();
-            console.error("Install error response:", errorData);
-            
-            if (errorData.error && errorData.error.includes('Invalid wheel position')) {
-              throw new Error(`Invalid position ${item.positionCode} for this vehicle. Please select a valid position.`);
-            } else if (errorData.error && errorData.error.includes('not available')) {
-              throw new Error(`Tire ${item.serialNumber} is not available for installation. It may already be installed elsewhere.`);
-            } else {
-              throw new Error(`Failed to install tire ${item.serialNumber}: ${errorData.error || errorData.message}`);
-            }
+            console.error("Remove error response:", errorData);
+            throw new Error(`Failed to remove tire from ${positionCode}: ${errorData.error || errorData.message}`);
           }
 
           return response.json();
-        } catch (error) {
-          console.error(`Error installing tire ${item.serialNumber}:`, error);
-          throw error;
-        }
-      });
-
-      await Promise.all(installationPromises);
-
-    } else if (operationType === "remove") {
-      const positionsToRemove = Object.keys(selectedRemovals).filter(
-        position => selectedRemovals[position]
-      );
-
-      if (positionsToRemove.length === 0) {
-        throw new Error("No tires selected for removal");
-      }
-
-      const removalPromises = positionsToRemove.map(async (positionCode) => {
-        const tire = currentTires.find(t => t.position_code === positionCode);
-        if (!tire) throw new Error(`No tire found at position ${positionCode}`);
-        
-        const removePayload = {
-          assignment_id: tire.id,
-          removal_date: new Date().toISOString().split('T')[0],
-          removal_odometer: currentOdometer,
-          user_id: 1,
-          reason: reason || "Regular service",
-          next_status: "USED_STORE"
-        };
-
-        console.log("Sending remove payload:", removePayload);
-
-        const response = await fetch(`${API_BASE_URL}/api/tires/remove`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(removePayload),
         });
 
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("Remove error response:", errorData);
-          throw new Error(`Failed to remove tire from ${positionCode}: ${errorData.error || errorData.message}`);
+        await Promise.all(removalPromises);
+        toast.success("Tires removed successfully");
+
+      } else if (operationType === "swap") {
+        if (!canSwap) {
+          throw new Error("You don't have permission to swap tires");
         }
 
-        return response.json();
-      });
+        if (!swapData.fromPosition) {
+          throw new Error("Please select a tire to swap from");
+        }
+        if (!swapData.toPosition) {
+          throw new Error("Please select a position to swap to");
+        }
+        if (swapData.fromPosition === swapData.toPosition) {
+          throw new Error("Cannot swap to the same position");
+        }
 
-      await Promise.all(removalPromises);
+        // Validate positions exist in availablePositions
+        const validPositionCodes = availablePositions.map(p => p.position_code);
+        if (!validPositionCodes.includes(swapData.fromPosition)) {
+          throw new Error(`Invalid 'from' position: ${swapData.fromPosition}. Valid positions are: ${validPositionCodes.join(", ")}`);
+        }
+        if (!validPositionCodes.includes(swapData.toPosition)) {
+          throw new Error(`Invalid 'to' position: ${swapData.toPosition}. Valid positions are: ${validPositionCodes.join(", ")}`);
+        }
 
-    } else if (operationType === "swap") {
-      if (!swapData.fromPosition) {
-        throw new Error("Please select a tire to swap from");
-      }
-      if (!swapData.toPosition) {
-        throw new Error("Please select a position to swap to");
-      }
-      if (swapData.fromPosition === swapData.toPosition) {
-        throw new Error("Cannot swap to the same position");
-      }
-
-      // Validate positions exist in availablePositions
-      const validPositionCodes = availablePositions.map(p => p.position_code);
-      if (!validPositionCodes.includes(swapData.fromPosition)) {
-        throw new Error(`Invalid 'from' position: ${swapData.fromPosition}. Valid positions are: ${validPositionCodes.join(", ")}`);
-      }
-      if (!validPositionCodes.includes(swapData.toPosition)) {
-        throw new Error(`Invalid 'to' position: ${swapData.toPosition}. Valid positions are: ${validPositionCodes.join(", ")}`);
-      }
-
-      const fromTire = currentTires.find(t => t.position_code === swapData.fromPosition);
-      if (!fromTire) throw new Error("No tire found at selected 'from' position");
-      
-      const toTire = currentTires.find(t => t.position_code === swapData.toPosition);
-      
-      const swapOperations = [];
-      
-      // Remove from position tire
-      swapOperations.push(
-        fetch(`${API_BASE_URL}/api/tires/remove`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            assignment_id: fromTire.id,
-            removal_date: new Date().toISOString().split('T')[0],
-            removal_odometer: currentOdometer,
-            user_id: 1,
-            reason: reason || "Position swap",
-            next_status: "IN_STORE"
-          }),
-        })
-      );
-      
-      if (toTire) {
+        const fromTire = currentTires.find(t => t.position_code === swapData.fromPosition);
+        if (!fromTire) throw new Error("No tire found at selected 'from' position");
+        
+        const toTire = currentTires.find(t => t.position_code === swapData.toPosition);
+        
+        const swapOperations = [];
+        
+        // Remove from position tire
         swapOperations.push(
-          fetch(`${API_BASE_URL}/api/tires/remove`, {
+          authFetch(`${API_BASE_URL}/api/tires/remove`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
             body: JSON.stringify({
-              assignment_id: toTire.id,
-              removal_date: new Date().toISOString().split('T')[0],
+              assignment_id: fromTire.id,
+              removal_date: format(new Date(), "yyyy-MM-dd"),
               removal_odometer: currentOdometer,
-              user_id: 1,
+              user_id: user.id,
+              user_name: user.full_name || user.username || "System",
               reason: reason || "Position swap",
               next_status: "IN_STORE"
             }),
           })
         );
-      }
-      
-      const removeResults = await Promise.all(swapOperations);
-      
-      for (const result of removeResults) {
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw new Error(`Swap failed during removal: ${errorData.error || errorData.message}`);
+        
+        if (toTire) {
+          swapOperations.push(
+            authFetch(`${API_BASE_URL}/api/tires/remove`, {
+              method: "POST",
+              body: JSON.stringify({
+                assignment_id: toTire.id,
+                removal_date: format(new Date(), "yyyy-MM-dd"),
+                removal_odometer: currentOdometer,
+                user_id: user.id,
+                user_name: user.full_name || user.username || "System",
+                reason: reason || "Position swap",
+                next_status: "IN_STORE"
+              }),
+            })
+          );
         }
-      }
-      
-      const installOperations = [];
-      
-      // Install 'from' tire to 'to' position - use position_code
-      installOperations.push(
-        fetch(`${API_BASE_URL}/api/tires/install`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            tire_id: fromTire.tire_id,
-            vehicle_id: vehicleId,
-            position_code: swapData.toPosition, // 👈 Use position_code
-            install_date: new Date().toISOString().split('T')[0],
-            install_odometer: currentOdometer,
-            reason: reason || "Position swap",
-            user_id: 1
-          }),
-        })
-      );
-      
-      if (toTire) {
+        
+        const removeResults = await Promise.all(swapOperations);
+        
+        for (const result of removeResults) {
+          if (!result.ok) {
+            const errorData = await result.json();
+            throw new Error(`Swap failed during removal: ${errorData.error || errorData.message}`);
+          }
+        }
+        
+        const installOperations = [];
+        
+        // Install 'from' tire to 'to' position - use position_code
         installOperations.push(
-          fetch(`${API_BASE_URL}/api/tires/install`, {
+          authFetch(`${API_BASE_URL}/api/tires/install`, {
             method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
             body: JSON.stringify({
-              tire_id: toTire.tire_id,
+              tire_id: fromTire.tire_id,
               vehicle_id: vehicleId,
-              position_code: swapData.fromPosition, // 👈 Use position_code
-              install_date: new Date().toISOString().split('T')[0],
+              position_code: swapData.toPosition,
+              install_date: format(new Date(), "yyyy-MM-dd"),
               install_odometer: currentOdometer,
               reason: reason || "Position swap",
-              user_id: 1
+              user_id: user.id,
+              user_name: user.full_name || user.username || "System"
             }),
           })
         );
-      }
-      
-      const installResults = await Promise.all(installOperations);
-      
-      for (const result of installResults) {
-        if (!result.ok) {
-          const errorData = await result.json();
-          throw new Error(`Swap failed during installation: ${errorData.error || errorData.message}`);
+        
+        if (toTire) {
+          installOperations.push(
+            authFetch(`${API_BASE_URL}/api/tires/install`, {
+              method: "POST",
+              body: JSON.stringify({
+                tire_id: toTire.tire_id,
+                vehicle_id: vehicleId,
+                position_code: swapData.fromPosition,
+                install_date: format(new Date(), "yyyy-MM-dd"),
+                install_odometer: currentOdometer,
+                reason: reason || "Position swap",
+                user_id: user.id,
+                user_name: user.full_name || user.username || "System"
+              }),
+            })
+          );
         }
+        
+        const installResults = await Promise.all(installOperations);
+        
+        for (const result of installResults) {
+          if (!result.ok) {
+            const errorData = await result.json();
+            throw new Error(`Swap failed during installation: ${errorData.error || errorData.message}`);
+          }
+        }
+        toast.success("Tire positions swapped successfully");
       }
+
+      if (onSuccess) onSuccess();
+      onClose();
+      resetForm();
+
+    } catch (error) {
+      console.error("Error performing tire service:", error);
+      setApiError(error instanceof Error ? error.message : "Failed to perform service operation. Please try again.");
+      toast.error(error instanceof Error ? error.message : "Failed to perform service operation");
+    } finally {
+      setLoading(false);
     }
-
-    if (onSuccess) onSuccess();
-    onClose();
-    resetForm();
-
-  } catch (error) {
-    console.error("Error performing tire service:", error);
-    alert(error instanceof Error ? error.message : "Failed to perform service operation. Please try again.");
-  } finally {
-    setLoading(false);
-  }
-};
+  };
 
   if (!isOpen) return null;
 
@@ -767,6 +888,13 @@ const handleSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
+          {apiError && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{apiError}</AlertDescription>
+            </Alert>
+          )}
+
           {/* Operation Type Tabs - Scrollable on mobile */}
           <div className="mb-4 sm:mb-6 overflow-x-auto pb-1 -mx-1 px-1">
             <Tabs 
@@ -775,15 +903,27 @@ const handleSubmit = async (e: React.FormEvent) => {
               className="w-full"
             >
               <TabsList className="inline-flex w-auto sm:w-full">
-                <TabsTrigger value="install" className="text-xs sm:text-sm px-3 sm:px-4">
+                <TabsTrigger 
+                  value="install" 
+                  className="text-xs sm:text-sm px-3 sm:px-4"
+                  disabled={!canInstall}
+                >
                   <Package className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                   Install
                 </TabsTrigger>
-                <TabsTrigger value="remove" className="text-xs sm:text-sm px-3 sm:px-4">
+                <TabsTrigger 
+                  value="remove" 
+                  className="text-xs sm:text-sm px-3 sm:px-4"
+                  disabled={!canRemove}
+                >
                   <Minus className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                   Remove
                 </TabsTrigger>
-                <TabsTrigger value="swap" className="text-xs sm:text-sm px-3 sm:px-4">
+                <TabsTrigger 
+                  value="swap" 
+                  className="text-xs sm:text-sm px-3 sm:px-4"
+                  disabled={!canSwap}
+                >
                   <Replace className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
                   Swap
                 </TabsTrigger>
@@ -806,7 +946,7 @@ const handleSubmit = async (e: React.FormEvent) => {
           </div>
 
           {/* Dynamic Form Based on Operation Type */}
-          {operationType === "install" && (
+          {operationType === "install" && canInstall && (
             <div className="space-y-4 sm:space-y-6">
               <div className="space-y-3 sm:space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1032,7 +1172,7 @@ const handleSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {operationType === "remove" && (
+          {operationType === "remove" && canRemove && (
             <div className="space-y-4 sm:space-y-6">
               <div className="space-y-3 sm:space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1122,7 +1262,7 @@ const handleSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
-          {operationType === "swap" && (
+          {operationType === "swap" && canSwap && (
             <div className="space-y-4 sm:space-y-6">
               <div className="space-y-3 sm:space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -1329,6 +1469,16 @@ const handleSubmit = async (e: React.FormEvent) => {
             </div>
           )}
 
+          {/* No Permission Message */}
+          {(!canInstall && !canRemove && !canSwap) && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                You don't have permission to perform any tire services. Please contact your administrator.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Tire List Preview - Collapsible on mobile */}
           {currentTires.length > 0 && (
             <Collapsible
@@ -1482,9 +1632,10 @@ const handleSubmit = async (e: React.FormEvent) => {
             <Button 
               type="submit" 
               disabled={loading || 
-                (operationType === "install" && installationItems.filter(item => item.tireId && item.positionCode).length === 0) ||
-                (operationType === "remove" && Object.values(selectedRemovals).filter(Boolean).length === 0) ||
-                (operationType === "swap" && (!swapData.fromPosition || !swapData.toPosition))
+                !canInstall && !canRemove && !canSwap ||
+                (operationType === "install" && (!canInstall || installationItems.filter(item => item.tireId && item.positionCode).length === 0)) ||
+                (operationType === "remove" && (!canRemove || Object.values(selectedRemovals).filter(Boolean).length === 0)) ||
+                (operationType === "swap" && (!canSwap || !swapData.fromPosition || !swapData.toPosition))
               }
               className="w-full sm:w-auto h-9 text-xs"
             >
@@ -1502,6 +1653,11 @@ const handleSubmit = async (e: React.FormEvent) => {
                 </>
               )}
             </Button>
+          </div>
+
+          {/* User Info */}
+          <div className="text-xs text-muted-foreground text-center mt-4">
+            Performing service as: {user?.full_name || user?.username || "Unknown"}
           </div>
         </form>
       </div>

@@ -47,6 +47,7 @@ import {
   Info,
   Save,
   X,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -59,6 +60,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { useTaxRates } from "@/hooks/useTaxRates";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { format, parseISO } from "date-fns";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -125,7 +127,7 @@ const MobileItemCard = ({
   currencySymbol: string;
   selectedTaxRate?: TaxRate;
   VAT_RATE: number;
-  formData: any; // Pass formData to check items length
+  formData: any;
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -297,6 +299,14 @@ const MobileItemCard = ({
   );
 };
 
+// Skeleton Components
+const FormFieldSkeleton = () => (
+  <div className="space-y-2">
+    <Skeleton className="h-4 w-24" />
+    <Skeleton className="h-10 w-full" />
+  </div>
+);
+
 export default function NewPurchasePage() {
   const router = useRouter();
   const { user, isAuthenticated, isLoading: authLoading, hasPermission, authFetch } = useAuth();
@@ -357,18 +367,15 @@ export default function NewPurchasePage() {
     }
   }, [formData.supplier_id]);
 
-  // Check authentication
+  // Check authentication and permission
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push("/login");
-    }
-  }, [authLoading, isAuthenticated, router]);
-
-  // Check permission for creating purchase orders
-  useEffect(() => {
-    if (!authLoading && isAuthenticated && !hasPermission("po.create")) {
-      router.push("/purchases");
-      toast.error("You don't have permission to create purchase orders");
+    if (!authLoading) {
+      if (!isAuthenticated) {
+        router.push("/login");
+      } else if (!hasPermission("po.create")) {
+        toast.error("You don't have permission to create purchase orders");
+        router.push("/purchases");
+      }
     }
   }, [authLoading, isAuthenticated, hasPermission, router]);
 
@@ -547,6 +554,13 @@ export default function NewPurchasePage() {
       return;
     }
 
+    // Double-check permission before submission
+    if (!hasPermission("po.create")) {
+      toast.error("You don't have permission to create purchase orders");
+      router.push("/purchases");
+      return;
+    }
+
     // Validation
     if (!formData.supplier_id) {
       toast.error("Please select a supplier");
@@ -579,9 +593,9 @@ export default function NewPurchasePage() {
       
       const orderData = {
         supplier_id: parseInt(formData.supplier_id),
-        po_date: formData.po_date.toISOString().split("T")[0],
+        po_date: format(formData.po_date, "yyyy-MM-dd"),
         expected_delivery_date: formData.expected_delivery_date 
-          ? formData.expected_delivery_date.toISOString().split("T")[0]
+          ? format(formData.expected_delivery_date, "yyyy-MM-dd")
           : null,
         status: saveAsDraft ? "DRAFT" : formData.status,
         notes: formData.notes || null,
@@ -593,6 +607,7 @@ export default function NewPurchasePage() {
         tax_rate: selectedTaxRate?.rate || VAT_RATE,
         tax_name: selectedTaxRate?.name || 'VAT',
         created_by: user.id,
+        created_by_name: user.full_name || user.username || "System",
         total_amount: totals.subtotalExcludingVAT,
         items: formData.items.map(item => ({
           tire_size: item.size,
@@ -643,7 +658,7 @@ export default function NewPurchasePage() {
   // Show auth loading state
   if (authLoading || settingsLoading) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <div>
@@ -662,10 +677,10 @@ export default function NewPurchasePage() {
     );
   }
 
-  // Show permission denied
+  // Show permission denied - fallback if redirect doesn't happen
   if (!hasPermission("po.create")) {
     return (
-      <div className="space-y-6">
+      <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
           <Button variant="outline" size="icon" asChild>
             <Link href="/purchases">
@@ -692,62 +707,311 @@ export default function NewPurchasePage() {
     );
   }
 
+  // If user has permission, render the form
   return (
-    <PermissionGuard permissionCode="po.create" action="create">
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon" asChild>
-              <Link href="/purchases">
-                <ArrowLeft className="h-4 w-4" />
-              </Link>
-            </Button>
-            <div>
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create Purchase Order</h1>
-              <p className="text-sm sm:text-base text-muted-foreground">
-                Create a new tire purchase order for your supplier
+    <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" asChild>
+            <Link href="/purchases">
+              <ArrowLeft className="h-4 w-4" />
+            </Link>
+          </Button>
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Create Purchase Order</h1>
+            <p className="text-sm sm:text-base text-muted-foreground">
+              Create a new tire purchase order for your supplier
+            </p>
+            {systemSettings?.company_name && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Company: {systemSettings.company_name} • Currency: {currencySymbol} ({currency})
               </p>
-              {systemSettings?.company_name && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  Company: {systemSettings.company_name} • Currency: {currencySymbol} ({currency})
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* Mobile Order Details Button */}
-          <div className="sm:hidden">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => setIsOrderDetailsSheetOpen(true)}
-            >
-              <FileText className="mr-2 h-4 w-4" />
-              Order Details
-              <ChevronRight className="ml-auto h-4 w-4" />
-            </Button>
+            )}
           </div>
         </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
+        {/* Mobile Order Details Button */}
+        <div className="sm:hidden">
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => setIsOrderDetailsSheetOpen(true)}
+          >
+            <FileText className="mr-2 h-4 w-4" />
+            Order Details
+            <ChevronRight className="ml-auto h-4 w-4" />
+          </Button>
+        </div>
+      </div>
 
-        <form onSubmit={(e) => handleSubmit(e, false)}>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Order Details - Desktop */}
-            <Card className="hidden lg:block lg:col-span-1">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Order Details</CardTitle>
-                <CardDescription>Supplier and order information</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <form onSubmit={(e) => handleSubmit(e, false)}>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Order Details - Desktop */}
+          <Card className="hidden lg:block lg:col-span-1">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Order Details</CardTitle>
+              <CardDescription>Supplier and order information</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="supplier_id">
+                  Supplier <span className="text-red-500">*</span>
+                </Label>
+                <Select
+                  value={formData.supplier_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, supplier_id: value })
+                  }
+                  required
+                  disabled={suppliersLoading || loading}
+                >
+                  <SelectTrigger>
+                    {suppliersLoading ? (
+                      <SelectValue placeholder="Loading suppliers..." />
+                    ) : (
+                      <SelectValue placeholder="Select supplier" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent>
+                    {suppliersLoading ? (
+                      <SelectItem value="loading" disabled>
+                        Loading suppliers...
+                      </SelectItem>
+                    ) : suppliers.length === 0 ? (
+                      <SelectItem value="none" disabled>
+                        No suppliers available
+                      </SelectItem>
+                    ) : (
+                      suppliers.map((supplier) => (
+                        <SelectItem key={supplier.id} value={supplier.id.toString()}>
+                          <div className="flex flex-col">
+                            <span>{supplier.name}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {supplier.type}
+                            </span>
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {selectedSupplier && (
+                <div className="rounded-lg bg-muted p-3 text-xs space-y-1">
+                  {selectedSupplier.contact_person && (
+                    <p><span className="font-medium">Contact:</span> {selectedSupplier.contact_person}</p>
+                  )}
+                  {selectedSupplier.phone && (
+                    <p><span className="font-medium">Phone:</span> {selectedSupplier.phone}</p>
+                  )}
+                  {selectedSupplier.email && (
+                    <p><span className="font-medium">Email:</span> {selectedSupplier.email}</p>
+                  )}
+                  {selectedSupplier.balance !== undefined && (
+                    <p><span className="font-medium">Balance:</span> {currencySymbol} {selectedSupplier.balance.toLocaleString()}</p>
+                  )}
+                  {selectedSupplier.payment_term_name && (
+                    <p><span className="font-medium">Payment Terms:</span> {selectedSupplier.payment_term_name}</p>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="po_date">
+                  Order Date <span className="text-red-500">*</span>
+                </Label>
+                <DatePicker
+                  date={formData.po_date}
+                  onSelect={(date) => date && setFormData({ ...formData, po_date: date })}
+                  className="w-full"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="expected_delivery_date">Expected Delivery Date</Label>
+                <DatePicker
+                  date={formData.expected_delivery_date}
+                  onSelect={(date) => setFormData({ ...formData, expected_delivery_date: date })}
+                  className="w-full"
+                />
+                {formData.expected_delivery_date && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs mt-1"
+                    onClick={() => setFormData({ ...formData, expected_delivery_date: undefined })}
+                    disabled={loading}
+                  >
+                    Clear date
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="tax_rate_id">Tax Rate</Label>
+                <Select
+                  value={formData.tax_rate_id}
+                  onValueChange={(value) => setFormData({ ...formData, tax_rate_id: value })}
+                  disabled={taxRatesLoading || loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select tax rate" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {taxRatesLoading ? (
+                      <SelectItem value="loading" disabled>
+                        Loading tax rates...
+                      </SelectItem>
+                    ) : taxRates.length === 0 ? (
+                      <SelectItem value="none" disabled>
+                        No tax rates available
+                      </SelectItem>
+                    ) : (
+                      taxRates.filter(rate => rate.is_active).map((rate) => (
+                        <SelectItem key={rate.id} value={rate.id.toString()}>
+                          <div className="flex items-center justify-between w-full">
+                            <span>{rate.name}</span>
+                            <span className="text-xs text-muted-foreground ml-2">
+                              {rate.rate}%
+                            </span>
+                            {rate.is_default && (
+                              <Badge className="ml-2 text-xs">
+                                Default
+                              </Badge>
+                            )}
+                          </div>
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Current VAT rate: {VAT_RATE}%
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="status">Order Status</Label>
+                <Select
+                  value={formData.status}
+                  onValueChange={(value) => setFormData({ ...formData, status: value })}
+                  disabled={loading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="DRAFT">Draft</SelectItem>
+                    <SelectItem value="PENDING">Pending</SelectItem>
+                    <SelectItem value="APPROVED">Approved</SelectItem>
+                    <SelectItem value="ORDERED">Ordered</SelectItem>
+                    <SelectItem value="CANCELLED">Cancelled</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="terms">Payment Terms</Label>
+                <Input
+                  id="terms"
+                  value={formData.terms}
+                  onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
+                  placeholder="e.g., Net 30 days"
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="shipping_address">Shipping Address</Label>
+                <Textarea
+                  id="shipping_address"
+                  value={formData.shipping_address}
+                  onChange={(e) => setFormData({ ...formData, shipping_address: e.target.value })}
+                  placeholder="Enter shipping address..."
+                  rows={2}
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="billing_address">Billing Address</Label>
+                <Textarea
+                  id="billing_address"
+                  value={formData.billing_address}
+                  onChange={(e) => setFormData({ ...formData, billing_address: e.target.value })}
+                  placeholder="Enter billing address..."
+                  rows={2}
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="notes">Notes</Label>
+                <Textarea
+                  id="notes"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  placeholder="Any special instructions or notes..."
+                  rows={3}
+                  disabled={loading}
+                />
+              </div>
+
+              <div className="space-y-2 pt-4 border-t">
+                <Label>Additional Charges</Label>
                 <div className="space-y-2">
-                  <Label htmlFor="supplier_id">
+                  <div className="space-y-1">
+                    <Label htmlFor="shipping_amount" className="text-sm">
+                      Shipping Amount ({currencySymbol})
+                    </Label>
+                    <Input
+                      id="shipping_amount"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={formData.shipping_amount || ""}
+                      onChange={(e) => setFormData({ ...formData, shipping_amount: parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      disabled={loading}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Shipping is added to the grand total
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground border-t pt-4">
+                Created by: {user?.full_name || user?.username || "Unknown"}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Mobile Order Details Sheet */}
+          <Sheet open={isOrderDetailsSheetOpen} onOpenChange={setIsOrderDetailsSheetOpen}>
+            <SheetContent side="bottom" className="h-[90vh] rounded-t-xl overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Order Details
+                </SheetTitle>
+                <SheetDescription>
+                  Supplier and order information
+                </SheetDescription>
+              </SheetHeader>
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="mobile_supplier_id">
                     Supplier <span className="text-red-500">*</span>
                   </Label>
                   <Select
@@ -811,7 +1075,7 @@ export default function NewPurchasePage() {
                 )}
 
                 <div className="space-y-2">
-                  <Label htmlFor="po_date">
+                  <Label htmlFor="mobile_po_date">
                     Order Date <span className="text-red-500">*</span>
                   </Label>
                   <DatePicker
@@ -822,28 +1086,16 @@ export default function NewPurchasePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="expected_delivery_date">Expected Delivery Date</Label>
+                  <Label htmlFor="mobile_expected_date">Expected Delivery Date</Label>
                   <DatePicker
                     date={formData.expected_delivery_date}
                     onSelect={(date) => setFormData({ ...formData, expected_delivery_date: date })}
                     className="w-full"
                   />
-                  {formData.expected_delivery_date && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-6 px-2 text-xs mt-1"
-                      onClick={() => setFormData({ ...formData, expected_delivery_date: undefined })}
-                      disabled={loading}
-                    >
-                      Clear date
-                    </Button>
-                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="tax_rate_id">Tax Rate</Label>
+                  <Label htmlFor="mobile_tax_rate">Tax Rate</Label>
                   <Select
                     value={formData.tax_rate_id}
                     onValueChange={(value) => setFormData({ ...formData, tax_rate_id: value })}
@@ -853,47 +1105,24 @@ export default function NewPurchasePage() {
                       <SelectValue placeholder="Select tax rate" />
                     </SelectTrigger>
                     <SelectContent>
-                      {taxRatesLoading ? (
-                        <SelectItem value="loading" disabled>
-                          Loading tax rates...
+                      {taxRates.filter(rate => rate.is_active).map((rate) => (
+                        <SelectItem key={rate.id} value={rate.id.toString()}>
+                          {rate.name} ({rate.rate}%)
                         </SelectItem>
-                      ) : taxRates.length === 0 ? (
-                        <SelectItem value="none" disabled>
-                          No tax rates available
-                        </SelectItem>
-                      ) : (
-                        taxRates.filter(rate => rate.is_active).map((rate) => (
-                          <SelectItem key={rate.id} value={rate.id.toString()}>
-                            <div className="flex items-center justify-between w-full">
-                              <span>{rate.name}</span>
-                              <span className="text-xs text-muted-foreground ml-2">
-                                {rate.rate}%
-                              </span>
-                              {rate.is_default && (
-                                <Badge className="ml-2 text-xs">
-                                  Default
-                                </Badge>
-                              )}
-                            </div>
-                          </SelectItem>
-                        ))
-                      )}
+                      ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Current VAT rate: {VAT_RATE}%
-                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="status">Order Status</Label>
+                  <Label htmlFor="mobile_status">Order Status</Label>
                   <Select
                     value={formData.status}
                     onValueChange={(value) => setFormData({ ...formData, status: value })}
                     disabled={loading}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
+                      <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="DRAFT">Draft</SelectItem>
@@ -906,9 +1135,9 @@ export default function NewPurchasePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="terms">Payment Terms</Label>
+                  <Label htmlFor="mobile_terms">Payment Terms</Label>
                   <Input
-                    id="terms"
+                    id="mobile_terms"
                     value={formData.terms}
                     onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
                     placeholder="e.g., Net 30 days"
@@ -917,9 +1146,9 @@ export default function NewPurchasePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="shipping_address">Shipping Address</Label>
+                  <Label htmlFor="mobile_shipping_address">Shipping Address</Label>
                   <Textarea
-                    id="shipping_address"
+                    id="mobile_shipping_address"
                     value={formData.shipping_address}
                     onChange={(e) => setFormData({ ...formData, shipping_address: e.target.value })}
                     placeholder="Enter shipping address..."
@@ -929,9 +1158,9 @@ export default function NewPurchasePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="billing_address">Billing Address</Label>
+                  <Label htmlFor="mobile_billing_address">Billing Address</Label>
                   <Textarea
-                    id="billing_address"
+                    id="mobile_billing_address"
                     value={formData.billing_address}
                     onChange={(e) => setFormData({ ...formData, billing_address: e.target.value })}
                     placeholder="Enter billing address..."
@@ -941,528 +1170,326 @@ export default function NewPurchasePage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Notes</Label>
+                  <Label htmlFor="mobile_notes">Notes</Label>
                   <Textarea
-                    id="notes"
+                    id="mobile_notes"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Any special instructions or notes..."
+                    placeholder="Any special instructions..."
                     rows={3}
                     disabled={loading}
                   />
                 </div>
 
-                <div className="space-y-2 pt-4 border-t">
-                  <Label>Additional Charges</Label>
-                  <div className="space-y-2">
-                    <div className="space-y-1">
-                      <Label htmlFor="shipping_amount" className="text-sm">
-                        Shipping Amount ({currencySymbol})
-                      </Label>
-                      <Input
-                        id="shipping_amount"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={formData.shipping_amount || ""}
-                        onChange={(e) => setFormData({ ...formData, shipping_amount: parseFloat(e.target.value) || 0 })}
-                        placeholder="0.00"
-                        disabled={loading}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Shipping is added to the grand total
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-xs text-muted-foreground border-t pt-4">
-                  Created by: {user?.full_name || user?.username || "Unknown"}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Mobile Order Details Sheet */}
-            <Sheet open={isOrderDetailsSheetOpen} onOpenChange={setIsOrderDetailsSheetOpen}>
-              <SheetContent side="bottom" className="h-[90vh] rounded-t-xl overflow-y-auto">
-                <SheetHeader>
-                  <SheetTitle className="flex items-center gap-2">
-                    <FileText className="h-5 w-5" />
-                    Order Details
-                  </SheetTitle>
-                  <SheetDescription>
-                    Supplier and order information
-                  </SheetDescription>
-                </SheetHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_supplier_id">
-                      Supplier <span className="text-red-500">*</span>
-                    </Label>
-                    <Select
-                      value={formData.supplier_id}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, supplier_id: value })
-                      }
-                      required
-                      disabled={suppliersLoading || loading}
-                    >
-                      <SelectTrigger>
-                        {suppliersLoading ? (
-                          <SelectValue placeholder="Loading suppliers..." />
-                        ) : (
-                          <SelectValue placeholder="Select supplier" />
-                        )}
-                      </SelectTrigger>
-                      <SelectContent>
-                        {suppliersLoading ? (
-                          <SelectItem value="loading" disabled>
-                            Loading suppliers...
-                          </SelectItem>
-                        ) : suppliers.length === 0 ? (
-                          <SelectItem value="none" disabled>
-                            No suppliers available
-                          </SelectItem>
-                        ) : (
-                          suppliers.map((supplier) => (
-                            <SelectItem key={supplier.id} value={supplier.id.toString()}>
-                              <div className="flex flex-col">
-                                <span>{supplier.name}</span>
-                                <span className="text-xs text-muted-foreground">
-                                  {supplier.type}
-                                </span>
-                              </div>
-                            </SelectItem>
-                          ))
-                        )}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  {selectedSupplier && (
-                    <div className="rounded-lg bg-muted p-3 text-xs space-y-1">
-                      {selectedSupplier.contact_person && (
-                        <p><span className="font-medium">Contact:</span> {selectedSupplier.contact_person}</p>
-                      )}
-                      {selectedSupplier.phone && (
-                        <p><span className="font-medium">Phone:</span> {selectedSupplier.phone}</p>
-                      )}
-                      {selectedSupplier.email && (
-                        <p><span className="font-medium">Email:</span> {selectedSupplier.email}</p>
-                      )}
-                      {selectedSupplier.balance !== undefined && (
-                        <p><span className="font-medium">Balance:</span> {currencySymbol} {selectedSupplier.balance.toLocaleString()}</p>
-                      )}
-                      {selectedSupplier.payment_term_name && (
-                        <p><span className="font-medium">Payment Terms:</span> {selectedSupplier.payment_term_name}</p>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_po_date">
-                      Order Date <span className="text-red-500">*</span>
-                    </Label>
-                    <DatePicker
-                      date={formData.po_date}
-                      onSelect={(date) => date && setFormData({ ...formData, po_date: date })}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_expected_date">Expected Delivery Date</Label>
-                    <DatePicker
-                      date={formData.expected_delivery_date}
-                      onSelect={(date) => setFormData({ ...formData, expected_delivery_date: date })}
-                      className="w-full"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_tax_rate">Tax Rate</Label>
-                    <Select
-                      value={formData.tax_rate_id}
-                      onValueChange={(value) => setFormData({ ...formData, tax_rate_id: value })}
-                      disabled={taxRatesLoading || loading}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select tax rate" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {taxRates.filter(rate => rate.is_active).map((rate) => (
-                          <SelectItem key={rate.id} value={rate.id.toString()}>
-                            {rate.name} ({rate.rate}%)
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_status">Order Status</Label>
-                    <Select
-                      value={formData.status}
-                      onValueChange={(value) => setFormData({ ...formData, status: value })}
-                      disabled={loading}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="DRAFT">Draft</SelectItem>
-                        <SelectItem value="PENDING">Pending</SelectItem>
-                        <SelectItem value="APPROVED">Approved</SelectItem>
-                        <SelectItem value="ORDERED">Ordered</SelectItem>
-                        <SelectItem value="CANCELLED">Cancelled</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_terms">Payment Terms</Label>
-                    <Input
-                      id="mobile_terms"
-                      value={formData.terms}
-                      onChange={(e) => setFormData({ ...formData, terms: e.target.value })}
-                      placeholder="e.g., Net 30 days"
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_shipping_address">Shipping Address</Label>
-                    <Textarea
-                      id="mobile_shipping_address"
-                      value={formData.shipping_address}
-                      onChange={(e) => setFormData({ ...formData, shipping_address: e.target.value })}
-                      placeholder="Enter shipping address..."
-                      rows={2}
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_billing_address">Billing Address</Label>
-                    <Textarea
-                      id="mobile_billing_address"
-                      value={formData.billing_address}
-                      onChange={(e) => setFormData({ ...formData, billing_address: e.target.value })}
-                      placeholder="Enter billing address..."
-                      rows={2}
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="mobile_notes">Notes</Label>
-                    <Textarea
-                      id="mobile_notes"
-                      value={formData.notes}
-                      onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                      placeholder="Any special instructions..."
-                      rows={3}
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Shipping Amount ({currencySymbol})</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={formData.shipping_amount || ""}
-                      onChange={(e) => setFormData({ ...formData, shipping_amount: parseFloat(e.target.value) || 0 })}
-                      placeholder="0.00"
-                      disabled={loading}
-                    />
-                  </div>
-
-                  <div className="flex gap-2 pt-4">
-                    <Button 
-                      className="flex-1" 
-                      onClick={() => setIsOrderDetailsSheetOpen(false)}
-                    >
-                      Save & Close
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => setIsOrderDetailsSheetOpen(false)}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              </SheetContent>
-            </Sheet>
-
-            {/* Order Items & Summary */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Order Items */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <CardTitle className="text-lg">Order Items</CardTitle>
-                      <CardDescription>
-                        Add tires to this purchase order
-                      </CardDescription>
-                    </div>
-                    <div className="text-sm font-medium">
-                      {formData.items.length} item{formData.items.length !== 1 ? 's' : ''}
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {/* Desktop Items Table */}
-                  <div className="hidden md:block space-y-4">
-                    {formData.items.map((item, index) => (
-                      <div key={item.id} className="space-y-4 p-4 border rounded-lg relative group">
-                        {formData.items.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={() => removeItem(index)}
-                            disabled={loading}
-                            title="Remove item"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                        
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-medium">
-                            {index + 1}
-                          </div>
-                          <h3 className="font-medium">Item #{index + 1}</h3>
-                        </div>
-                        
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          <div className="space-y-2">
-                            <Label htmlFor={`size_${index}`}>
-                              Tire Size <span className="text-red-500">*</span>
-                            </Label>
-                            <Select
-                              value={item.size}
-                              onValueChange={(value) => handleItemChange(index, "size", value)}
-                              disabled={loading || sizesLoading}
-                            >
-                              <SelectTrigger>
-                                <SelectValue placeholder="Select size" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {sizesLoading ? (
-                                  <SelectItem value="loading" disabled>
-                                    Loading sizes...
-                                  </SelectItem>
-                                ) : sizes.length === 0 ? (
-                                  <SelectItem value="none" disabled>
-                                    No sizes available
-                                  </SelectItem>
-                                ) : (
-                                  sizes.map((size) => (
-                                    <SelectItem key={size.size} value={size.size}>
-                                      <div className="flex flex-col">
-                                        <span>{size.size}</span>
-                                        {size.description && (
-                                          <span className="text-xs text-muted-foreground">
-                                            {size.description}
-                                          </span>
-                                        )}
-                                      </div>
-                                    </SelectItem>
-                                  ))
-                                )}
-                              </SelectContent>
-                            </Select>
-                          </div>
-
-                          <div className="space-y-2">
-                            <Label htmlFor={`quantity_${index}`}>
-                              Quantity <span className="text-red-500">*</span>
-                            </Label>
-                            <Input
-                              id={`quantity_${index}`}
-                              type="number"
-                              min="1"
-                              step="1"
-                              value={item.quantity}
-                              onChange={(e) => handleItemChange(index, "quantity", parseInt(e.target.value) || 1)}
-                              placeholder="1"
-                              required
-                              disabled={loading}
-                            />
-                          </div>
-
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                              <Label htmlFor={`price_${index}`}>
-                                Price per Tire ({currencySymbol}) <span className="text-red-500">*</span>
-                              </Label>
-                            </div>
-                            <Input
-                              id={`price_${index}`}
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              value={item.vatInclusivePrice || ""}
-                              onChange={(e) => handleItemChange(index, "vatInclusivePrice", parseFloat(e.target.value) || 0)}
-                              placeholder="0.00"
-                              required
-                              disabled={loading}
-                            />
-                            <div className="flex items-center justify-between text-xs">
-                              <span className="text-muted-foreground">
-                                Includes {selectedTaxRate?.rate || VAT_RATE}% {selectedTaxRate?.name || 'VAT'}
-                              </span>
-                              <span className="font-medium">
-                                Total: {currencySymbol} {item.lineTotalIncludingVAT.toFixed(2)}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Mobile Items Cards */}
-                  <div className="md:hidden space-y-3">
-                    {formData.items.map((item, index) => (
-                      <MobileItemCard
-                        key={item.id}
-                        item={item}
-                        index={index}
-                        sizes={sizes}
-                        sizesLoading={sizesLoading}
-                        onUpdate={handleItemChange}
-                        onRemove={removeItem}
-                        loading={loading}
-                        currencySymbol={currencySymbol}
-                        selectedTaxRate={selectedTaxRate || undefined}
-                        VAT_RATE={VAT_RATE}
-                        formData={formData}
-                      />
-                    ))}
-                  </div>
-                </CardContent>
-                <CardFooter className="border-t px-6 py-4">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={addItem}
+                <div className="space-y-2">
+                  <Label>Shipping Amount ({currencySymbol})</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={formData.shipping_amount || ""}
+                    onChange={(e) => setFormData({ ...formData, shipping_amount: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
                     disabled={loading}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Another Item
-                  </Button>
-                </CardFooter>
-              </Card>
+                  />
+                </div>
 
-              {/* Order Summary */}
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg">Order Summary</CardTitle>
-                  <CardDescription>Total costs and amounts</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Items:</span>
-                      <span>{formData.items.length}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Total Quantity:</span>
-                      <span>{totalQuantity} tires</span>
-                    </div>
-                    
-                    <div className="pt-2 border-t">
-                      <div className="space-y-2">
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">Subtotal (Including VAT):</span>
-                          <span>{currencySymbol} {totals.subtotalIncludingVAT.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm text-muted-foreground">
-                            {selectedTaxRate?.name || 'VAT'} ({selectedTaxRate?.rate || VAT_RATE}%):
-                          </span>
-                          <span>{currencySymbol} {totals.totalVAT.toFixed(2)}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-sm font-medium">Subtotal (Excluding VAT):</span>
-                          <span className="text-sm font-medium">{currencySymbol} {totals.subtotalExcludingVAT.toFixed(2)}</span>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Shipping:</span>
-                      <span>{currencySymbol} {totals.shippingAmount.toFixed(2)}</span>
-                    </div>
-                    
-                    <div className="pt-3 border-t">
-                      <div className="flex justify-between items-center">
-                        <span className="font-semibold">Grand Total:</span>
-                        <span className="text-xl sm:text-2xl font-bold text-primary">
-                          {currencySymbol} {totals.correctFinalAmount.toFixed(2)}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Total includes {selectedTaxRate?.rate || VAT_RATE}% {selectedTaxRate?.name || 'VAT'} on items
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-                <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 border-t px-6 py-4">
+                <div className="flex gap-2 pt-4">
+                  <Button 
+                    className="flex-1" 
+                    onClick={() => setIsOrderDetailsSheetOpen(false)}
+                  >
+                    Save & Close
+                  </Button>
                   <Button 
                     variant="outline" 
-                    type="button" 
-                    asChild
-                    disabled={loading}
-                    className="w-full sm:w-auto order-2 sm:order-1"
+                    className="flex-1"
+                    onClick={() => setIsOrderDetailsSheetOpen(false)}
                   >
-                    <Link href="/purchases">Cancel</Link>
+                    Cancel
                   </Button>
-                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto order-1 sm:order-2">
-                    <Button 
-                      type="button"
-                      variant="outline"
-                      onClick={(e) => handleSubmit(e as any, true)}
-                      disabled={loading || suppliersLoading || formData.items.length === 0 || !formData.supplier_id}
-                      className="w-full sm:w-auto"
-                    >
-                      {loading ? "Saving..." : "Save Draft"}
-                    </Button>
-                    <Button 
-                      type="submit" 
-                      disabled={loading || suppliersLoading || formData.items.length === 0 || !formData.supplier_id}
-                      className="w-full sm:w-auto min-w-[180px]"
-                    >
-                      {loading ? (
-                        <>
-                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                          Creating...
-                        </>
-                      ) : (
-                        "Create Order"
-                      )}
-                    </Button>
-                  </div>
-                </CardFooter>
-              </Card>
-            </div>
-          </div>
-        </form>
+                </div>
+              </div>
+            </SheetContent>
+          </Sheet>
 
-        {/* Footer */}
-        <div className="text-xs text-muted-foreground border-t pt-4">
-          Logged in as: {user?.full_name || user?.username} • Role: {user?.role}
+          {/* Order Items & Summary */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Order Items */}
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <CardTitle className="text-lg">Order Items</CardTitle>
+                    <CardDescription>
+                      Add tires to this purchase order
+                    </CardDescription>
+                  </div>
+                  <div className="text-sm font-medium">
+                    {formData.items.length} item{formData.items.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Desktop Items Table */}
+                <div className="hidden md:block space-y-4">
+                  {formData.items.map((item, index) => (
+                    <div key={item.id} className="space-y-4 p-4 border rounded-lg relative group">
+                      {formData.items.length > 1 && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                          onClick={() => removeItem(index)}
+                          disabled={loading}
+                          title="Remove item"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                      
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary text-sm font-medium">
+                          {index + 1}
+                        </div>
+                        <h3 className="font-medium">Item #{index + 1}</h3>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor={`size_${index}`}>
+                            Tire Size <span className="text-red-500">*</span>
+                          </Label>
+                          <Select
+                            value={item.size}
+                            onValueChange={(value) => handleItemChange(index, "size", value)}
+                            disabled={loading || sizesLoading}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select size" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {sizesLoading ? (
+                                <SelectItem value="loading" disabled>
+                                  Loading sizes...
+                                </SelectItem>
+                              ) : sizes.length === 0 ? (
+                                <SelectItem value="none" disabled>
+                                  No sizes available
+                                </SelectItem>
+                              ) : (
+                                sizes.map((size) => (
+                                  <SelectItem key={size.size} value={size.size}>
+                                    <div className="flex flex-col">
+                                      <span>{size.size}</span>
+                                      {size.description && (
+                                        <span className="text-xs text-muted-foreground">
+                                          {size.description}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor={`quantity_${index}`}>
+                            Quantity <span className="text-red-500">*</span>
+                          </Label>
+                          <Input
+                            id={`quantity_${index}`}
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={item.quantity}
+                            onChange={(e) => handleItemChange(index, "quantity", parseInt(e.target.value) || 1)}
+                            placeholder="1"
+                            required
+                            disabled={loading}
+                          />
+                        </div>
+
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor={`price_${index}`}>
+                              Price per Tire ({currencySymbol}) <span className="text-red-500">*</span>
+                            </Label>
+                          </div>
+                          <Input
+                            id={`price_${index}`}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={item.vatInclusivePrice || ""}
+                            onChange={(e) => handleItemChange(index, "vatInclusivePrice", parseFloat(e.target.value) || 0)}
+                            placeholder="0.00"
+                            required
+                            disabled={loading}
+                          />
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-muted-foreground">
+                              Includes {selectedTaxRate?.rate || VAT_RATE}% {selectedTaxRate?.name || 'VAT'}
+                            </span>
+                            <span className="font-medium">
+                              Total: {currencySymbol} {item.lineTotalIncludingVAT.toFixed(2)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Mobile Items Cards */}
+                <div className="md:hidden space-y-3">
+                  {formData.items.map((item, index) => (
+                    <MobileItemCard
+                      key={item.id}
+                      item={item}
+                      index={index}
+                      sizes={sizes}
+                      sizesLoading={sizesLoading}
+                      onUpdate={handleItemChange}
+                      onRemove={removeItem}
+                      loading={loading}
+                      currencySymbol={currencySymbol}
+                      selectedTaxRate={selectedTaxRate || undefined}
+                      VAT_RATE={VAT_RATE}
+                      formData={formData}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+              <CardFooter className="border-t px-6 py-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full"
+                  onClick={addItem}
+                  disabled={loading}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add Another Item
+                </Button>
+              </CardFooter>
+            </Card>
+
+            {/* Order Summary */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg">Order Summary</CardTitle>
+                <CardDescription>Total costs and amounts</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Items:</span>
+                    <span>{formData.items.length}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Total Quantity:</span>
+                    <span>{totalQuantity} tires</span>
+                  </div>
+                  
+                  <div className="pt-2 border-t">
+                    <div className="space-y-2">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Subtotal (Including VAT):</span>
+                        <span>{currencySymbol} {totals.subtotalIncludingVAT.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">
+                          {selectedTaxRate?.name || 'VAT'} ({selectedTaxRate?.rate || VAT_RATE}%):
+                        </span>
+                        <span>{currencySymbol} {totals.totalVAT.toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm font-medium">Subtotal (Excluding VAT):</span>
+                        <span className="text-sm font-medium">{currencySymbol} {totals.subtotalExcludingVAT.toFixed(2)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Shipping:</span>
+                    <span>{currencySymbol} {totals.shippingAmount.toFixed(2)}</span>
+                  </div>
+                  
+                  <div className="pt-3 border-t">
+                    <div className="flex justify-between items-center">
+                      <span className="font-semibold">Grand Total:</span>
+                      <span className="text-xl sm:text-2xl font-bold text-primary">
+                        {currencySymbol} {totals.correctFinalAmount.toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Total includes {selectedTaxRate?.rate || VAT_RATE}% {selectedTaxRate?.name || 'VAT'} on items
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+              <CardFooter className="flex flex-col sm:flex-row justify-between gap-3 border-t px-6 py-4">
+                <Button 
+                  variant="outline" 
+                  type="button" 
+                  asChild
+                  disabled={loading}
+                  className="w-full sm:w-auto order-2 sm:order-1"
+                >
+                  <Link href="/purchases">Cancel</Link>
+                </Button>
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto order-1 sm:order-2">
+                  <Button 
+                    type="button"
+                    variant="outline"
+                    onClick={(e) => handleSubmit(e as any, true)}
+                    disabled={loading || suppliersLoading || formData.items.length === 0 || !formData.supplier_id}
+                    className="w-full sm:w-auto"
+                  >
+                    {loading ? "Saving..." : "Save Draft"}
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={loading || suppliersLoading || formData.items.length === 0 || !formData.supplier_id}
+                    className="w-full sm:w-auto min-w-[180px]"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : (
+                      "Create Order"
+                    )}
+                  </Button>
+                </div>
+              </CardFooter>
+            </Card>
+          </div>
+        </div>
+      </form>
+
+      {/* Footer */}
+      <div className="text-xs text-muted-foreground border-t pt-4 space-y-1">
+        <div className="truncate">
+          Logged in as: {user?.full_name || user?.username}
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <span>Role: {user?.role}</span>
+          {systemSettings?.company_name && (
+            <>
+              <span className="hidden sm:inline">•</span>
+              <span className="block sm:inline text-xs">
+                {systemSettings.company_name}
+              </span>
+            </>
+          )}
         </div>
       </div>
-    </PermissionGuard>
+    </div>
   );
 }
