@@ -57,6 +57,7 @@ import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent } from "./ui/card";
+import { useTheme } from "@/contexts/ThemeContext";
 
 interface TireInstallationHistory {
   id: number;
@@ -99,6 +100,9 @@ export default function TireHistoryModal({
   vehicleNumber,
   historyData,
 }: TireHistoryModalProps) {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  
   const [searchTerm, setSearchTerm] = useState("");
   const [filterPosition, setFilterPosition] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
@@ -115,6 +119,25 @@ export default function TireHistoryModal({
   const [detailViewOpen, setDetailViewOpen] = useState(false);
   const itemsPerPage = 10;
   const printRef = useRef<HTMLDivElement>(null);
+
+  // Theme-aware color classes
+  const themeClasses = {
+    headerGradient: isDark 
+      ? "bg-gradient-to-r from-gray-900 to-gray-800" 
+      : "bg-gradient-to-r from-slate-50 to-white",
+    statsGradient: isDark
+      ? "bg-gradient-to-r from-amber-950/50 to-amber-900/30"
+      : "bg-gradient-to-r from-amber-50 to-amber-25",
+    filtersBg: isDark ? "bg-gray-900" : "bg-muted/30",
+    tableHeaderBg: isDark ? "bg-gray-800" : "bg-background",
+    tableRowHover: isDark ? "hover:bg-gray-800/50" : "hover:bg-muted/30",
+    cardBg: isDark ? "bg-gray-900" : "bg-white",
+    cardHover: isDark ? "hover:bg-gray-800" : "hover:bg-accent/50",
+    border: isDark ? "border-gray-700" : "border-gray-200",
+    textMuted: isDark ? "text-gray-400" : "text-muted-foreground",
+    textPrimary: isDark ? "text-gray-100" : "text-gray-900",
+    textSecondary: isDark ? "text-gray-300" : "text-gray-700",
+  };
 
   // Format date
   const formatDate = (dateString: string) => {
@@ -394,255 +417,59 @@ export default function TireHistoryModal({
     window.URL.revokeObjectURL(url);
   };
 
-  // Handle print functionality
-  const handlePrint = () => {
-    const printContent = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Tire History Report - ${vehicleNumber}</title>
-        <style>
-          @media print {
-            @page {
-              margin: 0.5in;
-              size: landscape;
-            }
-            body {
-              font-family: Arial, sans-serif;
-              line-height: 1.4;
-              color: #333;
-              margin: 0;
-              padding: 0;
-            }
-            .print-header {
-              text-align: center;
-              border-bottom: 2px solid #333;
-              padding-bottom: 15px;
-              margin-bottom: 20px;
-            }
-            .print-header h1 {
-              margin: 0 0 5px 0;
-              color: #1a237e;
-            }
-            .print-header .subtitle {
-              color: #666;
-              margin: 0;
-            }
-            .stats-container {
-              display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-              gap: 15px;
-              margin-bottom: 25px;
-              padding: 15px;
-              background: #f8f9fa;
-              border-radius: 4px;
-            }
-            .stat-item {
-              text-align: center;
-            }
-            .stat-value {
-              font-size: 24px;
-              font-weight: bold;
-              color: #1a237e;
-            }
-            .stat-label {
-              font-size: 12px;
-              color: #666;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .history-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 15px;
-              font-size: 12px;
-            }
-            .history-table th {
-              background-color: #2c3e50;
-              color: white;
-              padding: 8px;
-              text-align: left;
-              border: 1px solid #34495e;
-              font-weight: bold;
-            }
-            .history-table td {
-              padding: 6px 8px;
-              border: 1px solid #ddd;
-            }
-            .history-table tr:nth-child(even) {
-              background-color: #f9f9f9;
-            }
-            .status-badge {
-              display: inline-block;
-              padding: 2px 8px;
-              border-radius: 12px;
-              font-size: 11px;
-              font-weight: bold;
-            }
-            .status-active {
-              background-color: #d4edda;
-              color: #155724;
-            }
-            .status-removed {
-              background-color: #f8f9fa;
-              color: #6c757d;
-            }
-            .tire-type-new {
-              background-color: #d4edda;
-              color: #155724;
-            }
-            .tire-type-retread {
-              background-color: #fff3cd;
-              color: #856404;
-            }
-            .tire-type-used {
-              background-color: #cce5ff;
-              color: #004085;
-            }
-            .print-footer {
-              margin-top: 40px;
-              padding-top: 15px;
-              border-top: 1px solid #ddd;
-              text-align: center;
-              color: #666;
-              font-size: 11px;
-            }
-            .date-range {
-              text-align: center;
-              color: #666;
-              font-size: 12px;
-              margin-bottom: 15px;
-            }
-            .print-summary {
-              background: #f1f8ff;
-              padding: 10px;
-              border-radius: 4px;
-              margin-bottom: 20px;
-              font-size: 12px;
-            }
-          }
-        </style>
-      </head>
-      <body>
-        <div class="print-header">
-          <h1>Tire Installation History Report</h1>
-          <p class="subtitle">Vehicle: ${vehicleNumber}</p>
-          <p class="subtitle">Generated on ${format(new Date(), 'MMMM dd, yyyy')} at ${format(new Date(), 'hh:mm a')}</p>
-        </div>
-        
-        <div class="date-range">
-          ${dateRange.startDate 
-            ? `Date Range: ${format(dateRange.startDate, 'MMM dd, yyyy')} to ${dateRange.endDate ? format(dateRange.endDate, 'MMM dd, yyyy') : 'Present'}`
-            : 'Showing all records'
-          }
-        </div>
-        
-        <div class="stats-container">
-          <div class="stat-item">
-            <div class="stat-value">${statistics.totalRecords}</div>
-            <div class="stat-label">Total Records</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${statistics.currentTires}</div>
-            <div class="stat-label">Current Tires</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${statistics.avgServiceDays}</div>
-            <div class="stat-label">Avg Days</div>
-          </div>
-          <div class="stat-item">
-            <div class="stat-value">${statistics.dateRangeCount}</div>
-            <div class="stat-label">Filtered Records</div>
-          </div>
-        </div>
-        
-        <div class="print-summary">
-          Showing ${sortedData.length} of ${historyData.length} records • 
-          Date range filtered: ${dateRange.startDate ? 'Yes' : 'No'} • 
-          Generated by: System
-        </div>
-        
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Serial No.</th>
-              <th>Position</th>
-              <th>Brand & Size</th>
-              <th>Install Date</th>
-              <th>Removal Date</th>
-              <th>Duration</th>
-              <th>Mileage</th>
-              <th>Reason</th>
-              <th>Installed By</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${sortedData.map(record => {
-              const isCurrent = !record.removal_date;
-              const tireType = getTireType(record);
-              return `
-                <tr>
-                  <td>${record.id}</td>
-                  <td><strong>${record.serial_number}</strong></td>
-                  <td>${record.position_code}<br><small>${record.position_name}</small></td>
-                  <td>${record.brand}<br><small>${record.size}</small></td>
-                  <td>${formatDate(record.install_date)}<br><small>${record.install_odometer.toLocaleString()} km</small></td>
-                  <td>${record.removal_date ? formatDate(record.removal_date) + '<br><small>' + (record.removal_odometer?.toLocaleString() || '') + ' km</small>' : 'Current'}</td>
-                  <td>${getServiceDuration(record.install_date, record.removal_date)}</td>
-                  <td>${getServiceMileage(record.install_odometer, record.removal_odometer)}</td>
-                  <td>${record.reason_for_change}</td>
-                  <td>${record.created_by}</td>
-                  <td>
-                    <span class="status-badge ${isCurrent ? 'status-active' : 'status-removed'}">
-                      ${isCurrent ? 'Active' : 'Removed'}
-                    </span>
-                    <br>
-                    <span class="status-badge tire-type-${tireType.toLowerCase()}">
-                      ${tireType}
-                    </span>
-                  </td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-        
-        <div class="print-footer">
-          <p>Report ID: TIRE-HIST-${vehicleNumber}-${Date.now().toString().slice(-6)}</p>
-          <p>Fleet Management System | Confidential Document</p>
-          <p>Page 1 of 1</p>
-        </div>
-      </body>
-      </html>
-    `;
-    
-    const printWindow = window.open('', '_blank');
-    if (printWindow) {
-      printWindow.document.write(printContent);
-      printWindow.document.close();
-      printWindow.focus();
-      
-      setTimeout(() => {
-        printWindow.print();
-        printWindow.close();
-      }, 250);
+  // Get tire type badge color (theme-aware)
+  const getTireTypeColor = (type: string) => {
+    const typeUpper = type.toUpperCase();
+    if (isDark) {
+      switch (typeUpper) {
+        case "NEW":
+          return "bg-green-900 text-green-100 border-green-700";
+        case "RETREAD":
+          return "bg-yellow-900 text-yellow-100 border-yellow-700";
+        case "USED":
+          return "bg-blue-900 text-blue-100 border-blue-700";
+        default:
+          return "bg-gray-800 text-gray-100 border-gray-700";
+      }
+    } else {
+      switch (typeUpper) {
+        case "NEW":
+          return "bg-green-50 text-green-700 border-green-200";
+        case "RETREAD":
+          return "bg-yellow-50 text-yellow-700 border-yellow-200";
+        case "USED":
+          return "bg-blue-50 text-blue-700 border-blue-200";
+        default:
+          return "bg-gray-50 text-gray-700 border-gray-200";
+      }
     }
   };
 
-  // Get tire type badge color
-  const getTireTypeColor = (type: string) => {
+  // Get status badge color (theme-aware)
+  const getStatusBadgeColor = (isCurrent: boolean) => {
+    if (isCurrent) {
+      return isDark
+        ? "bg-green-900 text-green-100 border-green-700"
+        : "bg-green-50 text-green-700 border-green-200";
+    } else {
+      return isDark
+        ? "bg-gray-800 text-gray-300 border-gray-700"
+        : "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
+  // Get tire type dot color
+  const getTireTypeDotColor = (type: string) => {
     const typeUpper = type.toUpperCase();
     switch (typeUpper) {
       case "NEW":
-        return "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
+        return "bg-green-500";
       case "RETREAD":
-        return "bg-yellow-50 text-yellow-700 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
+        return "bg-yellow-500";
       case "USED":
-        return "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800";
+        return "bg-blue-500";
       default:
-        return "bg-gray-50 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
+        return "bg-gray-500";
     }
   };
 
@@ -673,26 +500,30 @@ export default function TireHistoryModal({
     setDetailViewOpen(true);
   };
 
+  function handlePrint(event: React.MouseEvent<HTMLButtonElement>): void {
+    throw new Error("Function not implemented.");
+  }
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-4xl h-[95vh] max-h-[95vh] p-0 overflow-hidden flex flex-col">
         {/* Header - Fixed at top */}
-        <DialogHeader className="px-4 sm:px-6 py-3 sm:py-4 border-b bg-gradient-to-r from-slate-50 to-white shrink-0">
+        <DialogHeader className={`px-4 sm:px-6 py-3 sm:py-4 border-b ${themeClasses.headerGradient} shrink-0`}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="min-w-0 flex-1">
-              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <DialogTitle className={`flex items-center gap-2 text-base sm:text-lg ${isDark ? 'text-gray-100' : ''}`}>
                 <Package className="h-4 w-4 sm:h-5 sm:w-5 text-primary shrink-0" />
                 <span className="truncate">Tire Installation History</span>
               </DialogTitle>
-              <DialogDescription className="flex flex-wrap items-center gap-2 mt-1 text-xs sm:text-sm">
+              <DialogDescription className={`flex flex-wrap items-center gap-2 mt-1 text-xs sm:text-sm ${isDark ? 'text-gray-400' : ''}`}>
                 <span className="truncate">Complete tire service history for vehicle</span>
-                <Badge variant="secondary" className="font-mono text-xs">
+                <Badge variant="secondary" className={`font-mono text-xs ${isDark ? 'bg-gray-800 text-gray-300' : ''}`}>
                   {vehicleNumber}
                 </Badge>
                 {historyData.length > 0 && (
                   <>
                     <span className="hidden sm:inline text-muted-foreground">•</span>
-                    <Badge variant="outline" className="text-[10px] sm:text-xs">
+                    <Badge variant="outline" className={`text-[10px] sm:text-xs ${isDark ? 'border-gray-700 text-gray-300' : ''}`}>
                       {historyData.length} records
                     </Badge>
                   </>
@@ -706,7 +537,11 @@ export default function TireHistoryModal({
                 variant="outline"
                 size="sm"
                 onClick={handlePrint}
-                className="h-7 sm:h-8 gap-1 sm:gap-1.5 text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+                className={`h-7 sm:h-8 gap-1 sm:gap-1.5 text-xs ${
+                  isDark 
+                    ? 'bg-blue-900 hover:bg-blue-800 text-blue-100 border-blue-700' 
+                    : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200'
+                }`}
               >
                 <Printer className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
                 <span className="hidden sm:inline">Print</span>
@@ -715,7 +550,7 @@ export default function TireHistoryModal({
                 variant="outline"
                 size="sm"
                 onClick={handleExportCSV}
-                className="h-7 sm:h-8 gap-1 sm:gap-1.5 text-xs"
+                className={`h-7 sm:h-8 gap-1 sm:gap-1.5 text-xs ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}
                 disabled={sortedData.length === 0}
               >
                 <Download className="h-3 w-3 sm:h-3.5 sm:w-3.5" />
@@ -726,16 +561,16 @@ export default function TireHistoryModal({
         </DialogHeader>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto">
+        <div className={`flex-1 overflow-y-auto ${isDark ? 'bg-gray-950' : ''}`}>
           {/* Statistics Bar - Collapsible on mobile */}
           {historyData.length > 0 && (
             <Collapsible
               open={expandedSections.stats}
               onOpenChange={() => toggleSection('stats')}
-              className="border-b"
+              className={`border-b ${isDark ? 'border-gray-800' : ''}`}
             >
               <div className="flex items-center justify-between px-4 sm:px-6 py-2 sm:hidden">
-                <span className="text-xs font-medium">Statistics Overview</span>
+                <span className={`text-xs font-medium ${isDark ? 'text-gray-300' : ''}`}>Statistics Overview</span>
                 <CollapsibleTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                     {expandedSections.stats ? (
@@ -747,34 +582,34 @@ export default function TireHistoryModal({
                 </CollapsibleTrigger>
               </div>
               <CollapsibleContent className="sm:block">
-                <div className="px-4 sm:px-6 py-3 bg-gradient-to-r from-amber-50 to-amber-25">
+                <div className={`px-4 sm:px-6 py-3 ${themeClasses.statsGradient}`}>
                   <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                     <div className="flex items-center gap-2">
                       <FileText className="h-3 w-3 sm:h-4 sm:w-4 text-amber-600 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Total Records</div>
-                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.totalRecords}</div>
+                        <div className={`text-[10px] sm:text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>Total Records</div>
+                        <div className={`text-sm sm:text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{statistics.totalRecords}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Current Tires</div>
-                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.currentTires}</div>
+                        <div className={`text-[10px] sm:text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>Current Tires</div>
+                        <div className={`text-sm sm:text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{statistics.currentTires}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Clock className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Avg Days</div>
-                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.avgServiceDays}</div>
+                        <div className={`text-[10px] sm:text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>Avg Days</div>
+                        <div className={`text-sm sm:text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{statistics.avgServiceDays}</div>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Hash className="h-3 w-3 sm:h-4 sm:w-4 text-purple-600 shrink-0" />
                       <div className="min-w-0 col-span-2 sm:col-span-1">
-                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Most Used</div>
-                        <div className="text-xs sm:text-sm font-bold text-gray-900 truncate" title={statistics.mostCommonPosition}>
+                        <div className={`text-[10px] sm:text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>Most Used</div>
+                        <div className={`text-xs sm:text-sm font-bold ${isDark ? 'text-gray-100' : 'text-gray-900'} truncate`} title={statistics.mostCommonPosition}>
                           {statistics.mostCommonPosition}
                         </div>
                       </div>
@@ -782,8 +617,8 @@ export default function TireHistoryModal({
                     <div className="flex items-center gap-2">
                       <Filter className="h-3 w-3 sm:h-4 sm:w-4 text-indigo-600 shrink-0" />
                       <div className="min-w-0">
-                        <div className="text-[10px] sm:text-xs font-medium text-gray-600 truncate">Filtered</div>
-                        <div className="text-sm sm:text-lg font-bold text-gray-900">{statistics.dateRangeCount}</div>
+                        <div className={`text-[10px] sm:text-xs font-medium ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>Filtered</div>
+                        <div className={`text-sm sm:text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-900'}`}>{statistics.dateRangeCount}</div>
                       </div>
                     </div>
                   </div>
@@ -796,10 +631,10 @@ export default function TireHistoryModal({
           <Collapsible
             open={expandedSections.filters}
             onOpenChange={() => toggleSection('filters')}
-            className="border-b"
+            className={`border-b ${isDark ? 'border-gray-800' : ''}`}
           >
             <div className="flex items-center justify-between px-4 sm:px-6 py-2 sm:hidden">
-              <span className="text-xs font-medium">Filters & Search</span>
+              <span className={`text-xs font-medium ${isDark ? 'text-gray-300' : ''}`}>Filters & Search</span>
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                   {expandedSections.filters ? (
@@ -811,11 +646,11 @@ export default function TireHistoryModal({
               </CollapsibleTrigger>
             </div>
             <CollapsibleContent className="sm:block">
-              <div className="px-4 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4 bg-muted/30">
+              <div className={`px-4 sm:px-6 py-3 sm:py-4 space-y-3 sm:space-y-4 ${themeClasses.filtersBg}`}>
                 {/* Search Bar */}
                 <div className="grid grid-cols-1 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs font-medium flex items-center gap-1">
+                    <Label className={`text-xs font-medium flex items-center gap-1 ${isDark ? 'text-gray-300' : ''}`}>
                       <Search className="h-3 w-3" />
                       Search
                     </Label>
@@ -828,7 +663,7 @@ export default function TireHistoryModal({
                             setSearchTerm(e.target.value);
                             setCurrentPage(1);
                           }}
-                          className="pl-7 pr-7 h-8 text-xs"
+                          className={`pl-7 pr-7 h-8 text-xs ${isDark ? 'bg-gray-800 border-gray-700 text-gray-100' : ''}`}
                         />
                         <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-3 w-3 text-muted-foreground" />
                         {searchTerm && (
@@ -848,7 +683,7 @@ export default function TireHistoryModal({
                   {/* Compact Date Range Filter */}
                   <div className="space-y-1">
                     <div className="flex items-center justify-between">
-                      <Label className="text-xs font-medium flex items-center gap-1">
+                      <Label className={`text-xs font-medium flex items-center gap-1 ${isDark ? 'text-gray-300' : ''}`}>
                         <CalendarIcon className="h-3 w-3" />
                         Date Range
                       </Label>
@@ -858,7 +693,11 @@ export default function TireHistoryModal({
                             variant="ghost"
                             size="sm"
                             onClick={clearDateFilter}
-                            className="h-5 px-1.5 text-[10px] text-red-600 hover:text-red-700 hover:bg-red-50"
+                            className={`h-5 px-1.5 text-[10px] ${
+                              isDark 
+                                ? 'text-red-400 hover:text-red-300 hover:bg-red-950' 
+                                : 'text-red-600 hover:text-red-700 hover:bg-red-50'
+                            }`}
                           >
                             Clear
                           </Button>
@@ -868,13 +707,13 @@ export default function TireHistoryModal({
                             <Button
                               variant={dateRange.startDate ? "secondary" : "outline"}
                               size="sm"
-                              className="h-6 px-2 text-[10px]"
+                              className={`h-6 px-2 text-[10px] ${isDark ? 'border-gray-700' : ''}`}
                             >
                               <CalendarIcon className="h-2.5 w-2.5 mr-1" />
                               {dateRange.startDate ? 'Change' : 'Select'}
                             </Button>
                           </PopoverTrigger>
-                          <PopoverContent className="w-[280px] p-2" align="end">
+                          <PopoverContent className={`w-[280px] p-2 ${isDark ? 'bg-gray-900 border-gray-700' : ''}`} align="end">
                             <div className="space-y-2">
                               <div className="grid grid-cols-3 gap-1">
                                 {['week', 'month', '3months', 'year', 'today', 'all'].map((preset) => (
@@ -883,16 +722,16 @@ export default function TireHistoryModal({
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleDateRangePreset(preset)}
-                                    className="h-6 text-[10px]"
+                                    className={`h-6 text-[10px] ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}
                                   >
                                     {preset === '3months' ? '3M' : preset === 'today' ? 'Today' : preset === 'all' ? 'All' : preset}
                                   </Button>
                                 ))}
                               </div>
                               
-                              <Separator />
+                              <Separator className={isDark ? 'bg-gray-800' : ''} />
                               
-                              <div className="text-[10px] font-medium">Custom:</div>
+                              <div className={`text-[10px] font-medium ${isDark ? 'text-gray-300' : ''}`}>Custom:</div>
                               <CalendarComponent
                                 mode="range"
                                 selected={{
@@ -909,7 +748,7 @@ export default function TireHistoryModal({
                                   }
                                 }}
                                 numberOfMonths={1}
-                                className="rounded-md border p-1"
+                                className={`rounded-md border p-1 ${isDark ? 'border-gray-700' : ''}`}
                               />
                             </div>
                           </PopoverContent>
@@ -918,7 +757,7 @@ export default function TireHistoryModal({
                     </div>
                     
                     {dateRange.startDate && (
-                      <div className="text-[10px] text-blue-700 px-1 truncate">
+                      <div className={`text-[10px] ${isDark ? 'text-blue-400' : 'text-blue-700'} px-1 truncate`}>
                         {dateRange.endDate ? (
                           `${format(dateRange.startDate, "MMM d")} - ${format(dateRange.endDate, "MMM d")}`
                         ) : (
@@ -932,7 +771,7 @@ export default function TireHistoryModal({
                 {/* Additional Filters */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs font-medium mb-1 block">Position</Label>
+                    <Label className={`text-xs font-medium mb-1 block ${isDark ? 'text-gray-300' : ''}`}>Position</Label>
                     <Select 
                       value={filterPosition} 
                       onValueChange={(value) => {
@@ -940,10 +779,10 @@ export default function TireHistoryModal({
                         setCurrentPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className={`h-8 text-xs ${isDark ? 'bg-gray-800 border-gray-700 text-gray-300' : ''}`}>
                         <SelectValue placeholder="All Positions" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={isDark ? 'bg-gray-900 border-gray-700' : ''}>
                         <SelectItem value="all" className="text-xs">All Positions</SelectItem>
                         {uniquePositions.map((position) => (
                           <SelectItem key={position} value={position} className="text-xs">
@@ -955,7 +794,7 @@ export default function TireHistoryModal({
                   </div>
 
                   <div>
-                    <Label className="text-xs font-medium mb-1 block">Status</Label>
+                    <Label className={`text-xs font-medium mb-1 block ${isDark ? 'text-gray-300' : ''}`}>Status</Label>
                     <Select 
                       value={filterStatus} 
                       onValueChange={(value) => {
@@ -963,10 +802,10 @@ export default function TireHistoryModal({
                         setCurrentPage(1);
                       }}
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className={`h-8 text-xs ${isDark ? 'bg-gray-800 border-gray-700 text-gray-300' : ''}`}>
                         <SelectValue placeholder="All Status" />
                       </SelectTrigger>
-                      <SelectContent>
+                      <SelectContent className={isDark ? 'bg-gray-900 border-gray-700' : ''}>
                         <SelectItem value="all" className="text-xs">All Status</SelectItem>
                         <SelectItem value="current" className="text-xs">Current Tires</SelectItem>
                         <SelectItem value="removed" className="text-xs">Removed Tires</SelectItem>
@@ -981,12 +820,12 @@ export default function TireHistoryModal({
                     variant="outline"
                     size="sm"
                     onClick={handleResetFilters}
-                    className="h-7 text-xs"
+                    className={`h-7 text-xs ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}
                   >
                     <RefreshCw className="h-3 w-3 mr-1" />
                     Reset Filters
                   </Button>
-                  <div className="text-[10px] text-muted-foreground">
+                  <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>
                     Showing {sortedData.length} of {historyData.length} records
                   </div>
                 </div>
@@ -995,19 +834,19 @@ export default function TireHistoryModal({
           </Collapsible>
 
           {/* History Table/List */}
-          <div className="p-4 sm:p-6">
+          <div className={`p-4 sm:p-6 ${isDark ? 'bg-gray-950' : ''}`}>
             {historyData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-center">
+              <div className={`flex flex-col items-center justify-center py-8 sm:py-12 text-center ${isDark ? 'text-gray-400' : ''}`}>
                 <AlertCircle className="h-8 w-8 sm:h-12 sm:w-12 mb-2 sm:mb-3 text-muted-foreground opacity-50" />
-                <h3 className="font-semibold text-sm sm:text-base mb-1">No History Found</h3>
+                <h3 className={`font-semibold text-sm sm:text-base mb-1 ${isDark ? 'text-gray-300' : ''}`}>No History Found</h3>
                 <p className="text-xs sm:text-sm text-muted-foreground">
                   No tire installation history available for this vehicle.
                 </p>
               </div>
             ) : sortedData.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 sm:py-12 text-center">
+              <div className={`flex flex-col items-center justify-center py-8 sm:py-12 text-center ${isDark ? 'text-gray-400' : ''}`}>
                 <AlertCircle className="h-8 w-8 sm:h-12 sm:w-12 mb-2 sm:mb-3 text-muted-foreground opacity-50" />
-                <h3 className="font-semibold text-sm sm:text-base mb-1">No Matching Records</h3>
+                <h3 className={`font-semibold text-sm sm:text-base mb-1 ${isDark ? 'text-gray-300' : ''}`}>No Matching Records</h3>
                 <p className="text-xs sm:text-sm text-muted-foreground mb-3">
                   Try adjusting your search criteria.
                 </p>
@@ -1016,7 +855,7 @@ export default function TireHistoryModal({
                     variant="outline"
                     onClick={handleResetFilters}
                     size="sm"
-                    className="h-7 text-xs"
+                    className={`h-7 text-xs ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}
                   >
                     Clear All Filters
                   </Button>
@@ -1026,20 +865,20 @@ export default function TireHistoryModal({
               <>
                 {/* Desktop Table */}
                 <div className="hidden sm:block overflow-x-auto">
-                  <Table className="min-w-[1200px]">
-                    <TableHeader className="bg-background border-b">
-                      <TableRow className="hover:bg-transparent">
-                        <TableHead className="w-16 py-2 px-3 font-semibold text-[11px]">ID</TableHead>
-                        <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Serial</TableHead>
-                        <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Position</TableHead>
-                        <TableHead className="w-40 py-2 px-3 font-semibold text-[11px]">Tire Details</TableHead>
-                        <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Installation</TableHead>
-                        <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Removal</TableHead>
-                        <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Duration</TableHead>
-                        <TableHead className="w-28 py-2 px-3 font-semibold text-[11px]">Mileage</TableHead>
-                        <TableHead className="w-64 py-2 px-3 font-semibold text-[11px]">Reason & Created By</TableHead>
-                        <TableHead className="w-24 py-2 px-3 font-semibold text-[11px]">Status</TableHead>
-                        <TableHead className="w-36 py-2 px-3 font-semibold text-[11px]">Created Date</TableHead>
+                  <Table>
+                    <TableHeader className={themeClasses.tableHeaderBg}>
+                      <TableRow className={`hover:bg-transparent border-b ${isDark ? 'border-gray-800' : ''}`}>
+                        <TableHead className={`w-16 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>ID</TableHead>
+                        <TableHead className={`w-28 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Serial</TableHead>
+                        <TableHead className={`w-24 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Position</TableHead>
+                        <TableHead className={`w-40 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Tire Details</TableHead>
+                        <TableHead className={`w-36 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Installation</TableHead>
+                        <TableHead className={`w-36 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Removal</TableHead>
+                        <TableHead className={`w-28 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Duration</TableHead>
+                        <TableHead className={`w-28 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Mileage</TableHead>
+                        <TableHead className={`w-64 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Reason & Created By</TableHead>
+                        <TableHead className={`w-24 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Status</TableHead>
+                        <TableHead className={`w-36 py-2 px-3 font-semibold text-[11px] ${isDark ? 'text-gray-300' : ''}`}>Created Date</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1058,44 +897,38 @@ export default function TireHistoryModal({
                         return (
                           <TableRow 
                             key={record.id} 
-                            className="hover:bg-muted/30 border-b last:border-0 cursor-pointer"
+                            className={`${themeClasses.tableRowHover} border-b ${isDark ? 'border-gray-800' : ''} last:border-0 cursor-pointer`}
                             onClick={() => handleRowClick(record)}
                           >
-                            <TableCell className="py-2 px-3 align-top">
-                              <div className="font-mono text-[11px] font-medium text-muted-foreground">#{record.id}</div>
+                            <TableCell className={`py-2 px-3 align-top ${isDark ? 'text-gray-400' : ''}`}>
+                              <div className={`font-mono text-[11px] font-medium ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`}>#{record.id}</div>
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
                               <div className="flex items-center gap-1.5">
                                 <div
-                                  className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
-                                    tireType === "NEW"
-                                      ? "bg-green-500"
-                                      : tireType === "RETREAD"
-                                      ? "bg-yellow-500"
-                                      : "bg-blue-500"
-                                  }`}
+                                  className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${getTireTypeDotColor(tireType)}`}
                                 />
-                                <div className="font-mono text-xs font-medium truncate max-w-[100px]" title={record.serial_number}>
+                                <div className={`font-mono text-xs font-medium truncate max-w-[100px] ${isDark ? 'text-gray-300' : ''}`} title={record.serial_number}>
                                   {record.serial_number}
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
                               <div className="space-y-0.5">
-                                <Badge variant="outline" className="font-mono text-[10px] px-1.5 py-0.5">
+                                <Badge variant="outline" className={`font-mono text-[10px] px-1.5 py-0.5 ${isDark ? 'border-gray-700 text-gray-300' : ''}`}>
                                   {record.position_code}
                                 </Badge>
-                                <div className="text-[10px] text-muted-foreground truncate max-w-[80px]" title={record.position_name}>
+                                <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} truncate max-w-[80px]`} title={record.position_name}>
                                   {record.position_name}
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
                               <div className="space-y-1">
-                                <div className="text-xs font-medium truncate max-w-[100px]" title={record.brand}>
+                                <div className={`text-xs font-medium truncate max-w-[100px] ${isDark ? 'text-gray-300' : ''}`} title={record.brand}>
                                   {record.brand}
                                 </div>
-                                <div className="text-[11px] text-muted-foreground truncate max-w-[100px]" title={record.size}>
+                                <div className={`text-[11px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} truncate max-w-[100px]`} title={record.size}>
                                   {record.size}
                                 </div>
                                 <Badge
@@ -1109,12 +942,12 @@ export default function TireHistoryModal({
                             <TableCell className="py-2 px-3 align-top">
                               <div className="space-y-1">
                                 <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-                                  <span className="text-xs">
+                                  <Calendar className={`h-3 w-3 flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`} />
+                                  <span className={`text-xs ${isDark ? 'text-gray-300' : ''}`}>
                                     {formatDate(record.install_date)}
                                   </span>
                                 </div>
-                                <div className="text-[11px] text-muted-foreground pl-4">
+                                <div className={`text-[11px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} pl-4`}>
                                   {record.install_odometer.toLocaleString()} km
                                 </div>
                               </div>
@@ -1123,58 +956,56 @@ export default function TireHistoryModal({
                               {record.removal_date ? (
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-1">
-                                    <Calendar className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-                                    <span className="text-xs">
+                                    <Calendar className={`h-3 w-3 flex-shrink-0 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`} />
+                                    <span className={`text-xs ${isDark ? 'text-gray-300' : ''}`}>
                                       {formatDate(record.removal_date)}
                                     </span>
                                   </div>
-                                  <div className="text-[11px] text-muted-foreground pl-4">
+                                  <div className={`text-[11px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} pl-4`}>
                                     {record.removal_odometer?.toLocaleString()} km
                                   </div>
                                 </div>
                               ) : (
-                                <Badge
-                                  variant="outline"
-                                  className="bg-blue-50 text-blue-700 border-blue-200 text-[11px] px-2 py-0.5"
-                                >
+                                <Badge className={`px-2 py-0.5 ${getStatusBadgeColor(true)}`}>
+                                  <CheckCircle className="h-2.5 w-2.5 mr-1" />
                                   Current
                                 </Badge>
                               )}
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
-                              <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
+                              <div className={`text-[11px] font-medium px-1.5 py-0.5 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-muted/30'} rounded inline-block`}>
                                 {serviceDuration}
                               </div>
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
-                              <div className="text-[11px] font-medium px-1.5 py-0.5 bg-muted/30 rounded inline-block">
+                              <div className={`text-[11px] font-medium px-1.5 py-0.5 ${isDark ? 'bg-gray-800 text-gray-300' : 'bg-muted/30'} rounded inline-block`}>
                                 {serviceMileage}
                               </div>
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
                               <div className="space-y-1">
-                                <div className="text-[11px] line-clamp-2 max-h-8 overflow-hidden" title={record.reason_for_change}>
+                                <div className={`text-[11px] line-clamp-2 max-h-8 overflow-hidden ${isDark ? 'text-gray-300' : ''}`} title={record.reason_for_change}>
                                   {record.reason_for_change}
                                 </div>
-                                <div className="text-[10px] text-muted-foreground">
-                                  By: <span className="font-medium">{record.created_by}</span>
+                                <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>
+                                  By: <span className={`font-medium ${isDark ? 'text-gray-300' : ''}`}>{record.created_by}</span>
                                 </div>
                               </div>
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
                               {isCurrent ? (
-                                <Badge className="px-2 py-0.5 bg-green-50 text-green-700 border-green-200 text-xs">
+                                <Badge className={`px-2 py-0.5 ${getStatusBadgeColor(true)}`}>
                                   <CheckCircle className="h-2.5 w-2.5 mr-1" />
                                   Active
                                 </Badge>
                               ) : (
-                                <Badge variant="outline" className="px-2 py-0.5 bg-gray-100 text-gray-800 text-xs">
+                                <Badge variant="outline" className={`px-2 py-0.5 ${isDark ? 'border-gray-700 text-gray-400' : 'bg-gray-100 text-gray-800'}`}>
                                   Removed
                                 </Badge>
                               )}
                             </TableCell>
                             <TableCell className="py-2 px-3 align-top">
-                              <div className="text-[10px] text-muted-foreground truncate max-w-[100px]" title={formatDateTime(record.created_at)}>
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} truncate max-w-[100px]`} title={formatDateTime(record.created_at)}>
                                 {formatDateTime(record.created_at)}
                               </div>
                             </TableCell>
@@ -1202,7 +1033,7 @@ export default function TireHistoryModal({
                     return (
                       <Card 
                         key={record.id} 
-                        className="overflow-hidden cursor-pointer hover:bg-accent/50 transition-colors"
+                        className={`overflow-hidden cursor-pointer ${themeClasses.cardHover} transition-colors ${isDark ? 'bg-gray-900 border-gray-800' : ''}`}
                         onClick={() => handleRowClick(record)}
                       >
                         <CardContent className="p-3">
@@ -1210,38 +1041,32 @@ export default function TireHistoryModal({
                           <div className="flex items-start justify-between mb-2">
                             <div className="flex items-center gap-2">
                               <div
-                                className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${
-                                  tireType === "NEW"
-                                    ? "bg-green-500"
-                                    : tireType === "RETREAD"
-                                    ? "bg-yellow-500"
-                                    : "bg-blue-500"
-                                }`}
+                                className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${getTireTypeDotColor(tireType)}`}
                               />
-                              <span className="font-mono text-xs font-medium">{record.serial_number}</span>
+                              <span className={`font-mono text-xs font-medium ${isDark ? 'text-gray-300' : ''}`}>{record.serial_number}</span>
                             </div>
-                            <Badge variant="outline" className="font-mono text-[10px]">
+                            <Badge variant="outline" className={`font-mono text-[10px] ${isDark ? 'border-gray-700 text-gray-400' : ''}`}>
                               #{record.id}
                             </Badge>
                           </div>
 
                           {/* Position */}
                           <div className="flex items-center gap-2 mb-2">
-                            <Badge variant="outline" className="font-mono text-[10px]">
+                            <Badge variant="outline" className={`font-mono text-[10px] ${isDark ? 'border-gray-700 text-gray-300' : ''}`}>
                               {record.position_code}
                             </Badge>
-                            <span className="text-xs truncate">{record.position_name}</span>
+                            <span className={`text-xs truncate ${isDark ? 'text-gray-300' : ''}`}>{record.position_name}</span>
                           </div>
 
                           {/* Tire Details */}
                           <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                             <div>
-                              <div className="text-[10px] text-muted-foreground">Brand</div>
-                              <div className="truncate">{record.brand}</div>
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Brand</div>
+                              <div className={`truncate ${isDark ? 'text-gray-300' : ''}`}>{record.brand}</div>
                             </div>
                             <div>
-                              <div className="text-[10px] text-muted-foreground">Size</div>
-                              <div>{record.size}</div>
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Size</div>
+                              <div className={isDark ? 'text-gray-300' : ''}>{record.size}</div>
                             </div>
                           </div>
 
@@ -1249,20 +1074,20 @@ export default function TireHistoryModal({
                           <div className="space-y-1 text-xs mb-2">
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-[10px]">Install:</span>
+                                <Calendar className={`h-3 w-3 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`} />
+                                <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Install:</span>
                               </div>
-                              <span>{formatDate(record.install_date)}</span>
+                              <span className={isDark ? 'text-gray-300' : ''}>{formatDate(record.install_date)}</span>
                             </div>
                             <div className="flex items-center justify-between">
                               <div className="flex items-center gap-1">
-                                <Calendar className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-[10px]">Removal:</span>
+                                <Calendar className={`h-3 w-3 ${isDark ? 'text-gray-500' : 'text-muted-foreground'}`} />
+                                <span className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Removal:</span>
                               </div>
                               {record.removal_date ? (
-                                <span>{formatDate(record.removal_date)}</span>
+                                <span className={isDark ? 'text-gray-300' : ''}>{formatDate(record.removal_date)}</span>
                               ) : (
-                                <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200 text-[10px]">
+                                <Badge className={`text-[10px] ${getStatusBadgeColor(true)}`}>
                                   Current
                                 </Badge>
                               )}
@@ -1272,12 +1097,12 @@ export default function TireHistoryModal({
                           {/* Odometer */}
                           <div className="grid grid-cols-2 gap-2 text-xs mb-2">
                             <div>
-                              <div className="text-[10px] text-muted-foreground">Install Odo</div>
-                              <div className="font-mono text-xs">{record.install_odometer.toLocaleString()} km</div>
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Install Odo</div>
+                              <div className={`font-mono text-xs ${isDark ? 'text-gray-300' : ''}`}>{record.install_odometer.toLocaleString()} km</div>
                             </div>
                             <div>
-                              <div className="text-[10px] text-muted-foreground">Removal Odo</div>
-                              <div className="font-mono text-xs">
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Removal Odo</div>
+                              <div className={`font-mono text-xs ${isDark ? 'text-gray-300' : ''}`}>
                                 {record.removal_odometer?.toLocaleString() || 'N/A'} km
                               </div>
                             </div>
@@ -1285,24 +1110,24 @@ export default function TireHistoryModal({
 
                           {/* Service Info */}
                           <div className="grid grid-cols-2 gap-2 text-xs mb-2">
-                            <div className="bg-muted/30 rounded p-1.5">
-                              <div className="text-[10px] text-muted-foreground">Duration</div>
-                              <div className="font-medium">{serviceDuration}</div>
+                            <div className={`${isDark ? 'bg-gray-800' : 'bg-muted/30'} rounded p-1.5`}>
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Duration</div>
+                              <div className={`font-medium ${isDark ? 'text-gray-300' : ''}`}>{serviceDuration}</div>
                             </div>
-                            <div className="bg-muted/30 rounded p-1.5">
-                              <div className="text-[10px] text-muted-foreground">Mileage</div>
-                              <div className="font-medium">{serviceMileage}</div>
+                            <div className={`${isDark ? 'bg-gray-800' : 'bg-muted/30'} rounded p-1.5`}>
+                              <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Mileage</div>
+                              <div className={`font-medium ${isDark ? 'text-gray-300' : ''}`}>{serviceMileage}</div>
                             </div>
                           </div>
 
                           {/* Reason */}
                           <div className="text-xs mb-2">
-                            <div className="text-[10px] text-muted-foreground mb-1">Reason</div>
-                            <div className="text-xs line-clamp-2">{record.reason_for_change}</div>
+                            <div className={`text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} mb-1`}>Reason</div>
+                            <div className={`text-xs line-clamp-2 ${isDark ? 'text-gray-300' : ''}`}>{record.reason_for_change}</div>
                           </div>
 
                           {/* Footer */}
-                          <div className="flex items-center justify-between text-[10px] text-muted-foreground border-t pt-2">
+                          <div className={`flex items-center justify-between text-[10px] ${isDark ? 'text-gray-400' : 'text-muted-foreground'} border-t ${isDark ? 'border-gray-800' : ''} pt-2`}>
                             <span>By: {record.created_by}</span>
                             <span>{formatDateTime(record.created_at)}</span>
                           </div>
@@ -1318,8 +1143,8 @@ export default function TireHistoryModal({
 
         {/* Pagination - Fixed at bottom */}
         {totalPages > 1 && sortedData.length > 0 && (
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t px-4 sm:px-6 py-3 bg-background shrink-0">
-            <div className="text-[10px] sm:text-xs text-muted-foreground order-2 sm:order-1">
+          <div className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t ${isDark ? 'border-gray-800' : ''} px-4 sm:px-6 py-3 bg-background shrink-0`}>
+            <div className={`text-[10px] sm:text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'} order-2 sm:order-1`}>
               Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, sortedData.length)} of {sortedData.length}
             </div>
             <div className="flex items-center justify-center gap-2 order-1 sm:order-2">
@@ -1328,7 +1153,7 @@ export default function TireHistoryModal({
                 size="sm"
                 onClick={() => handlePageChange(currentPage - 1)}
                 disabled={currentPage === 1}
-                className="h-7 sm:h-8 px-2 sm:px-3 text-xs"
+                className={`h-7 sm:h-8 px-2 sm:px-3 text-xs ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}
               >
                 <ChevronLeft className="h-3 w-3 mr-1" />
                 <span className="hidden sm:inline">Prev</span>
@@ -1352,7 +1177,11 @@ export default function TireHistoryModal({
                       key={pageNum}
                       variant={currentPage === pageNum ? "default" : "outline"}
                       size="sm"
-                      className="h-7 w-7 min-w-7 sm:h-8 sm:w-8 text-xs"
+                      className={`h-7 w-7 min-w-7 sm:h-8 sm:w-8 text-xs ${
+                        currentPage === pageNum 
+                          ? '' 
+                          : isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''
+                      }`}
                       onClick={() => handlePageChange(pageNum)}
                     >
                       {pageNum}
@@ -1361,7 +1190,7 @@ export default function TireHistoryModal({
                 })}
               </div>
               
-              <span className="text-xs text-muted-foreground px-1 hidden sm:inline">
+              <span className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'} px-1 hidden sm:inline`}>
                 of {totalPages}
               </span>
               
@@ -1370,7 +1199,7 @@ export default function TireHistoryModal({
                 size="sm"
                 onClick={() => handlePageChange(currentPage + 1)}
                 disabled={currentPage === totalPages}
-                className="h-7 sm:h-8 px-2 sm:px-3 text-xs"
+                className={`h-7 sm:h-8 px-2 sm:px-3 text-xs ${isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}`}
               >
                 <span className="hidden sm:inline">Next</span>
                 <ChevronRight className="h-3 w-3 ml-1" />
@@ -1381,105 +1210,110 @@ export default function TireHistoryModal({
 
         {/* Detail View Dialog */}
         <Dialog open={detailViewOpen} onOpenChange={setDetailViewOpen}>
-          <DialogContent className="max-w-[95vw] sm:max-w-lg rounded-lg p-4 sm:p-6">
+          <DialogContent className={`max-w-[95vw] sm:max-w-lg rounded-lg p-4 sm:p-6 ${isDark ? 'bg-gray-900 border-gray-800' : ''}`}>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <DialogTitle className={`flex items-center gap-2 text-base sm:text-lg ${isDark ? 'text-gray-100' : ''}`}>
                 <Package className="h-4 w-4 sm:h-5 sm:w-5" />
                 Tire Installation Details
               </DialogTitle>
             </DialogHeader>
             
             {selectedRecord && (
-              <div className="space-y-3 sm:space-y-4 max-h-[60vh] overflow-y-auto">
+              <div className={`space-y-3 sm:space-y-4 max-h-[60vh] overflow-y-auto ${isDark ? 'text-gray-300' : ''}`}>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <div className="text-xs text-muted-foreground">Serial Number</div>
-                    <div className="font-mono font-medium">{selectedRecord.serial_number}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Serial Number</div>
+                    <div className={`font-mono font-medium ${isDark ? 'text-gray-100' : ''}`}>{selectedRecord.serial_number}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Position</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Position</div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono text-xs">
+                      <Badge variant="outline" className={`font-mono text-xs ${isDark ? 'border-gray-700 text-gray-300' : ''}`}>
                         {selectedRecord.position_code}
                       </Badge>
-                      <span className="text-sm truncate">{selectedRecord.position_name}</span>
+                      <span className={`text-sm truncate ${isDark ? 'text-gray-300' : ''}`}>{selectedRecord.position_name}</span>
                     </div>
                   </div>
                 </div>
 
-                <Separator />
+                <Separator className={isDark ? 'bg-gray-800' : ''} />
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs text-muted-foreground">Brand</div>
-                    <div>{selectedRecord.brand}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Brand</div>
+                    <div className={isDark ? 'text-gray-300' : ''}>{selectedRecord.brand}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Size</div>
-                    <div>{selectedRecord.size}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Size</div>
+                    <div className={isDark ? 'text-gray-300' : ''}>{selectedRecord.size}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Type</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Type</div>
                     <Badge variant="outline" className={getTireTypeColor(getTireType(selectedRecord))}>
                       {getTireType(selectedRecord)}
                     </Badge>
                   </div>
                 </div>
 
-                <Separator />
+                <Separator className={isDark ? 'bg-gray-800' : ''} />
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs text-muted-foreground">Install Date</div>
-                    <div>{formatDate(selectedRecord.install_date)}</div>
-                    <div className="text-xs text-muted-foreground mt-1">
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Install Date</div>
+                    <div className={isDark ? 'text-gray-300' : ''}>{formatDate(selectedRecord.install_date)}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'} mt-1`}>
                       {selectedRecord.install_odometer.toLocaleString()} km
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Removal Date</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Removal Date</div>
                     {selectedRecord.removal_date ? (
                       <>
-                        <div>{formatDate(selectedRecord.removal_date)}</div>
-                        <div className="text-xs text-muted-foreground mt-1">
+                        <div className={isDark ? 'text-gray-300' : ''}>{formatDate(selectedRecord.removal_date)}</div>
+                        <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'} mt-1`}>
                           {selectedRecord.removal_odometer?.toLocaleString()} km
                         </div>
                       </>
                     ) : (
-                      <Badge className="bg-blue-50 text-blue-700 border-blue-200">Current</Badge>
+                      <Badge className={getStatusBadgeColor(true)}>Current</Badge>
                     )}
                   </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs text-muted-foreground">Service Duration</div>
-                    <div className="font-medium">{getServiceDuration(selectedRecord.install_date, selectedRecord.removal_date)}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Service Duration</div>
+                    <div className={`font-medium ${isDark ? 'text-gray-300' : ''}`}>{getServiceDuration(selectedRecord.install_date, selectedRecord.removal_date)}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Service Mileage</div>
-                    <div className="font-medium">{getServiceMileage(selectedRecord.install_odometer, selectedRecord.removal_odometer)}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Service Mileage</div>
+                    <div className={`font-medium ${isDark ? 'text-gray-300' : ''}`}>{getServiceMileage(selectedRecord.install_odometer, selectedRecord.removal_odometer)}</div>
                   </div>
                 </div>
 
                 <div>
-                  <div className="text-xs text-muted-foreground">Reason for Change</div>
-                  <div className="text-sm">{selectedRecord.reason_for_change}</div>
+                  <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Reason for Change</div>
+                  <div className={`text-sm ${isDark ? 'text-gray-300' : ''}`}>{selectedRecord.reason_for_change}</div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="text-xs text-muted-foreground">Installed By</div>
-                    <div>{selectedRecord.created_by}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Installed By</div>
+                    <div className={isDark ? 'text-gray-300' : ''}>{selectedRecord.created_by}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-muted-foreground">Created Date</div>
-                    <div>{formatDateTime(selectedRecord.created_at)}</div>
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-muted-foreground'}`}>Created Date</div>
+                    <div className={isDark ? 'text-gray-300' : ''}>{formatDateTime(selectedRecord.created_at)}</div>
                   </div>
                 </div>
 
                 <div className="flex justify-end pt-3">
-                  <Button variant="outline" size="sm" onClick={() => setDetailViewOpen(false)}>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={() => setDetailViewOpen(false)}
+                    className={isDark ? 'border-gray-700 text-gray-300 hover:bg-gray-800' : ''}
+                  >
                     Close
                   </Button>
                 </div>
@@ -1492,9 +1326,17 @@ export default function TireHistoryModal({
   );
 }
 
-// Import the Label component
-const Label = ({ className, children, ...props }: any) => (
-  <label className={`text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${className}`} {...props}>
-    {children}
-  </label>
-);
+// Import the Label component (theme-aware)
+const Label = ({ className, children, ...props }: any) => {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  
+  return (
+    <label 
+      className={`text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 ${isDark ? 'text-gray-300' : ''} ${className}`} 
+      {...props}
+    >
+      {children}
+    </label>
+  );
+};

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useTheme } from "@/contexts/ThemeContext"; // Add theme import
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -110,7 +111,7 @@ type ViewMode = "active" | "retired";
 
 // Skeleton Components
 const VehicleCardSkeleton = () => (
-  <Card className="overflow-hidden">
+  <Card className="overflow-hidden border-gray-200 dark:border-gray-800">
     <CardContent className="p-4">
       <div className="flex items-start justify-between mb-3">
         <div className="space-y-2 flex-1">
@@ -135,12 +136,15 @@ const VehicleCardSkeleton = () => (
 );
 
 const StatCardSkeleton = () => (
-  <div className="h-20 bg-muted animate-pulse rounded-lg" />
+  <div className="h-20 bg-gray-100 dark:bg-gray-800 animate-pulse rounded-lg" />
 );
 
 export default function VehiclesPage() {
   const router = useRouter();
   const { user, hasPermission, authFetch, isLoading: authLoading } = useAuth();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -160,6 +164,32 @@ export default function VehiclesPage() {
   const [retirementLoading, setRetirementLoading] = useState(false);
   const [restoreLoading, setRestoreLoading] = useState(false);
   
+  // Theme-aware classes
+  const themeClasses = {
+    card: isDark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200",
+    mutedBg: isDark ? "bg-gray-800" : "bg-muted/30",
+    text: isDark ? "text-gray-100" : "text-gray-900",
+    textMuted: isDark ? "text-gray-400" : "text-muted-foreground",
+    border: isDark ? "border-gray-800" : "border-gray-200",
+    hover: isDark ? "hover:bg-gray-800" : "hover:bg-accent/50",
+    tableHeader: isDark ? "bg-gray-800" : "bg-background",
+    tableRow: isDark ? "border-gray-800" : "border-gray-200",
+    statCard: {
+      blue: isDark ? "bg-blue-950/30" : "bg-blue-50",
+      green: isDark ? "bg-green-950/30" : "bg-green-50",
+      yellow: isDark ? "bg-yellow-950/30" : "bg-yellow-50",
+      gray: isDark ? "bg-gray-800/30" : "bg-gray-50",
+      purple: isDark ? "bg-purple-950/30" : "bg-purple-50",
+    },
+    statText: {
+      blue: isDark ? "text-blue-300" : "text-blue-600",
+      green: isDark ? "text-green-300" : "text-green-600",
+      yellow: isDark ? "text-yellow-300" : "text-yellow-600",
+      gray: isDark ? "text-gray-300" : "text-gray-600",
+      purple: isDark ? "text-purple-300" : "text-purple-600",
+    },
+  };
+
   // Check if user has permission to view vehicles
   useEffect(() => {
     if (!authLoading) {
@@ -246,7 +276,6 @@ export default function VehiclesPage() {
   const handleRetireVehicle = async () => {
     if (!selectedVehicle || !retirementData.reason.trim() || !user) return;
     
-    // Check if user has permission to retire vehicles
     if (!hasPermission('vehicle.edit')) {
       toast.error("You don't have permission to retire vehicles");
       return;
@@ -281,7 +310,6 @@ export default function VehiclesPage() {
   const handleRestoreVehicle = async () => {
     if (!selectedVehicle || !user) return;
     
-    // Check if user has permission to restore vehicles
     if (!hasPermission('vehicle.edit')) {
       toast.error("You don't have permission to restore vehicles");
       return;
@@ -346,7 +374,6 @@ export default function VehiclesPage() {
   };
 
   const handleOpenRetirementDialog = (vehicle: Vehicle) => {
-    // Check permission before opening dialog
     if (!hasPermission('vehicle.edit')) {
       toast.error("You don't have permission to retire vehicles");
       return;
@@ -361,7 +388,6 @@ export default function VehiclesPage() {
   };
 
   const handleOpenReactivationDialog = (vehicle: Vehicle) => {
-    // Check permission before opening dialog
     if (!hasPermission('vehicle.edit')) {
       toast.error("You don't have permission to restore vehicles");
       return;
@@ -408,39 +434,71 @@ export default function VehiclesPage() {
   };
 
   const getStatusColor = (status: string) => {
-    const colors = {
-      ACTIVE: "bg-green-500 hover:bg-green-600",
-      INACTIVE: "bg-gray-500 hover:bg-gray-600",
-      MAINTENANCE: "bg-yellow-500 hover:bg-yellow-600",
-      RETIRED: "bg-red-500 hover:bg-red-600"
-    };
-    return colors[status as keyof typeof colors] || "bg-gray-500 hover:bg-gray-600";
-  };
-
-  const getStatusBadgeColor = (status: string) => {
-    switch (status) {
-      case "ACTIVE":
-        return "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800";
-      case "INACTIVE":
-        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
-      case "MAINTENANCE":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-950 dark:text-yellow-300 dark:border-yellow-800";
-      case "RETIRED":
-        return "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
+    if (isDark) {
+      switch (status) {
+        case "ACTIVE":
+          return "bg-green-900 text-green-100 border-green-700";
+        case "INACTIVE":
+          return "bg-gray-800 text-gray-300 border-gray-700";
+        case "MAINTENANCE":
+          return "bg-yellow-900 text-yellow-100 border-yellow-700";
+        case "RETIRED":
+          return "bg-red-900 text-red-100 border-red-700";
+        default:
+          return "bg-gray-800 text-gray-300 border-gray-700";
+      }
+    } else {
+      switch (status) {
+        case "ACTIVE":
+          return "bg-green-100 text-green-800 border-green-200";
+        case "INACTIVE":
+          return "bg-gray-100 text-gray-800 border-gray-200";
+        case "MAINTENANCE":
+          return "bg-yellow-100 text-yellow-800 border-yellow-200";
+        case "RETIRED":
+          return "bg-red-100 text-red-800 border-red-200";
+        default:
+          return "bg-gray-100 text-gray-800 border-gray-200";
+      }
     }
   };
 
   const getConfigColor = (config: string) => {
-    const colors = {
-      "4x2": "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",
-      "6x4": "bg-green-100 text-green-800 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800",
-      "8x4": "bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-950 dark:text-purple-300 dark:border-purple-800",
-      "6x2": "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-950 dark:text-amber-300 dark:border-amber-800",
-      "4x4": "bg-red-100 text-red-800 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800"
-    };
-    return colors[config as keyof typeof colors] || "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700";
+    if (isDark) {
+      switch (config) {
+        case "4x2":
+          return "bg-blue-900 text-blue-100 border-blue-700";
+        case "6x4":
+          return "bg-green-900 text-green-100 border-green-700";
+        case "8x4":
+          return "bg-purple-900 text-purple-100 border-purple-700";
+        case "6x2":
+          return "bg-amber-900 text-amber-100 border-amber-700";
+        case "4x4":
+          return "bg-red-900 text-red-100 border-red-700";
+        default:
+          return "bg-gray-800 text-gray-300 border-gray-700";
+      }
+    } else {
+      switch (config) {
+        case "4x2":
+          return "bg-blue-100 text-blue-800 border-blue-200";
+        case "6x4":
+          return "bg-green-100 text-green-800 border-green-200";
+        case "8x4":
+          return "bg-purple-100 text-purple-800 border-purple-200";
+        case "6x2":
+          return "bg-amber-100 text-amber-800 border-amber-200";
+        case "4x4":
+          return "bg-red-100 text-red-800 border-red-200";
+        default:
+          return "bg-gray-100 text-gray-800 border-gray-200";
+      }
+    }
+  };
+
+  const getStatusBadgeClass = (status: string) => {
+    return getStatusColor(status);
   };
 
   const getFilterDescription = () => {
@@ -465,7 +523,7 @@ export default function VehiclesPage() {
     }));
   };
 
-  // Handle print functionality
+  // Handle print functionality (keeping existing but with theme-aware styles in the print CSS)
   const handlePrint = () => {
     const printContent = `
       <!DOCTYPE html>
@@ -816,20 +874,20 @@ export default function VehiclesPage() {
 
   // If user doesn't have permission, don't render the page content
   if (!canViewVehicles) {
-    return null; // The useEffect will handle redirect
+    return null;
   }
 
   return (
     <div className="container mx-auto px-4 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
       {/* Dialogs */}
       <Dialog open={retirementDialogOpen} onOpenChange={setRetirementDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] max-w-[95vw] rounded-lg p-4 sm:p-6">
+        <DialogContent className={cn("sm:max-w-[500px] max-w-[95vw] rounded-lg p-4 sm:p-6", isDark && "bg-gray-900 border-gray-800")}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <DialogTitle className={cn("flex items-center gap-2 text-base sm:text-lg", isDark && "text-gray-100")}>
               <AlertCircle className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500" />
               Retire Vehicle
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
+            <DialogDescription className={cn("text-xs sm:text-sm", isDark && "text-gray-400")}>
               Are you sure you want to retire {selectedVehicle?.vehicle_number}? 
               This will remove all tires from the vehicle and move it to the retired list.
             </DialogDescription>
@@ -837,11 +895,11 @@ export default function VehiclesPage() {
           
           <div className="space-y-3 sm:space-y-4 py-2 sm:py-4">
             <div className="grid grid-cols-4 items-center gap-2 sm:gap-4">
-              <Label htmlFor="retirement_date" className="text-right text-xs sm:text-sm">Date*</Label>
+              <Label htmlFor="retirement_date" className={cn("text-right text-xs sm:text-sm", isDark && "text-gray-300")}>Date*</Label>
               <Input
                 id="retirement_date"
                 type="date"
-                className="col-span-3 h-8 sm:h-9 text-xs sm:text-sm"
+                className={cn("col-span-3 h-8 sm:h-9 text-xs sm:text-sm", isDark && "bg-gray-800 border-gray-700 text-gray-100")}
                 value={retirementData.retirement_date}
                 onChange={(e) => setRetirementData({...retirementData, retirement_date: e.target.value})}
                 required
@@ -849,15 +907,15 @@ export default function VehiclesPage() {
             </div>
             
             <div className="grid grid-cols-4 items-center gap-2 sm:gap-4">
-              <Label htmlFor="reason" className="text-right text-xs sm:text-sm">Reason*</Label>
+              <Label htmlFor="reason" className={cn("text-right text-xs sm:text-sm", isDark && "text-gray-300")}>Reason*</Label>
               <Select
                 value={retirementData.reason}
                 onValueChange={(value) => setRetirementData({...retirementData, reason: value})}
               >
-                <SelectTrigger className="col-span-3 h-8 sm:h-9">
+                <SelectTrigger className={cn("col-span-3 h-8 sm:h-9", isDark && "bg-gray-800 border-gray-700 text-gray-100")}>
                   <SelectValue placeholder="Select reason" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className={isDark ? "bg-gray-900 border-gray-700" : ""}>
                   {retirementReasons.map((reason) => (
                     <SelectItem key={reason} value={reason}>{reason}</SelectItem>
                   ))}
@@ -866,23 +924,23 @@ export default function VehiclesPage() {
             </div>
             
             <div className="grid grid-cols-4 items-start gap-2 sm:gap-4">
-              <Label htmlFor="notes" className="text-right text-xs sm:text-sm pt-1">Notes</Label>
+              <Label htmlFor="notes" className={cn("text-right text-xs sm:text-sm pt-1", isDark && "text-gray-300")}>Notes</Label>
               <Textarea
                 id="notes"
                 placeholder="Additional notes..."
-                className="col-span-3 min-h-[60px] sm:min-h-[80px] text-xs sm:text-sm"
+                className={cn("col-span-3 min-h-[60px] sm:min-h-[80px] text-xs sm:text-sm", isDark && "bg-gray-800 border-gray-700 text-gray-100")}
                 value={retirementData.notes}
                 onChange={(e) => setRetirementData({...retirementData, notes: e.target.value})}
               />
             </div>
             
             {(selectedVehicle?.active_tires_count ?? 0) > 0 && (
-              <div className="rounded-lg border border-yellow-200 bg-yellow-50 p-3 sm:p-4">
-                <div className="flex items-center gap-2 text-yellow-800">
+              <div className={cn("rounded-lg border p-3 sm:p-4", isDark ? "border-yellow-800 bg-yellow-950/30" : "border-yellow-200 bg-yellow-50")}>
+                <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-300">
                   <AlertCircle className="h-3 w-3 sm:h-4 sm:w-4" />
                   <span className="text-xs sm:text-sm font-medium">Important Note</span>
                 </div>
-                <p className="mt-1 text-xs sm:text-sm text-yellow-700">
+                <p className={cn("mt-1 text-xs sm:text-sm", isDark ? "text-yellow-300" : "text-yellow-700")}>
                   This vehicle has{" "}
                   <span className="font-semibold">
                     {selectedVehicle?.active_tires_count ?? 0} tires
@@ -894,7 +952,7 @@ export default function VehiclesPage() {
           </div>
           
           <DialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:gap-0">
-            <Button variant="outline" onClick={handleCloseRetirementDialog} disabled={retirementLoading} size="sm" className="w-full sm:w-auto">
+            <Button variant="outline" onClick={handleCloseRetirementDialog} disabled={retirementLoading} size="sm" className={cn("w-full sm:w-auto", isDark && "border-gray-700 text-gray-300 hover:bg-gray-800")}>
               Cancel
             </Button>
             <Button
@@ -921,31 +979,31 @@ export default function VehiclesPage() {
       </Dialog>
 
       <Dialog open={reactivationDialogOpen} onOpenChange={setReactivationDialogOpen}>
-        <DialogContent className="sm:max-w-[500px] max-w-[95vw] rounded-lg p-4 sm:p-6">
+        <DialogContent className={cn("sm:max-w-[500px] max-w-[95vw] rounded-lg p-4 sm:p-6", isDark && "bg-gray-900 border-gray-800")}>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <DialogTitle className={cn("flex items-center gap-2 text-base sm:text-lg", isDark && "text-gray-100")}>
               <RotateCcw className="h-4 w-4 sm:h-5 sm:w-5 text-green-500" />
               Reactivate Vehicle
             </DialogTitle>
-            <DialogDescription className="text-xs sm:text-sm">
+            <DialogDescription className={cn("text-xs sm:text-sm", isDark && "text-gray-400")}>
               Are you sure you want to restore {selectedVehicle?.vehicle_number} to active status?
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-3 sm:space-y-4 py-2 sm:py-4">
-            <div className="rounded-lg border border-green-200 bg-green-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2 text-green-800">
+            <div className={cn("rounded-lg border p-3 sm:p-4", isDark ? "border-green-800 bg-green-950/30" : "border-green-200 bg-green-50")}>
+              <div className="flex items-center gap-2 text-green-800 dark:text-green-300">
                 <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span className="text-xs sm:text-sm font-medium">Vehicle will be restored</span>
               </div>
-              <p className="mt-1 text-xs sm:text-sm text-green-700">
+              <p className={cn("mt-1 text-xs sm:text-sm", isDark ? "text-green-300" : "text-green-700")}>
                 This vehicle will be moved back to the active fleet.
               </p>
             </div>
           </div>
           
           <DialogFooter className="flex-col-reverse sm:flex-row gap-2 sm:gap-0">
-            <Button variant="outline" onClick={handleCloseReactivationDialog} disabled={restoreLoading} size="sm" className="w-full sm:w-auto">
+            <Button variant="outline" onClick={handleCloseReactivationDialog} disabled={restoreLoading} size="sm" className={cn("w-full sm:w-auto", isDark && "border-gray-700 text-gray-300 hover:bg-gray-800")}>
               Cancel
             </Button>
             <Button variant="default" onClick={handleRestoreVehicle} disabled={restoreLoading} size="sm" className="w-full sm:w-auto">
@@ -968,18 +1026,18 @@ export default function VehiclesPage() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight truncate">Vehicles</h1>
-          <p className="text-sm sm:text-base text-muted-foreground truncate">{getFilterDescription()}</p>
+          <h1 className={cn("text-2xl sm:text-3xl font-bold tracking-tight truncate", isDark && "text-gray-100")}>Vehicles</h1>
+          <p className={cn("text-sm sm:text-base", isDark ? "text-gray-400" : "text-muted-foreground", "truncate")}>{getFilterDescription()}</p>
         </div>
         
-        {/* Action Buttons - Horizontal scroll on mobile */}
+        {/* Action Buttons */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
           {/* View Toggle Buttons */}
           <div className="flex rounded-md border border-input overflow-hidden shrink-0">
             <Button
               variant={viewMode === "active" ? "default" : "ghost"}
               size="sm"
-              className="rounded-none border-r border-input px-2 sm:px-3"
+              className={cn("rounded-none border-r border-input px-2 sm:px-3", isDark && viewMode !== "active" && "text-gray-300")}
               onClick={() => { setViewMode("active"); setCurrentPage(1); }}
             >
               <CheckCircle className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
@@ -989,7 +1047,7 @@ export default function VehiclesPage() {
             <Button
               variant={viewMode === "retired" ? "default" : "ghost"}
               size="sm"
-              className="rounded-none px-2 sm:px-3"
+              className={cn("rounded-none px-2 sm:px-3", isDark && viewMode !== "retired" && "text-gray-300")}
               onClick={() => { setViewMode("retired"); setCurrentPage(1); }}
             >
               <Archive className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
@@ -1003,7 +1061,7 @@ export default function VehiclesPage() {
             size="sm"
             onClick={handleExportCSV}
             disabled={vehicles.length === 0 || loading}
-            className="whitespace-nowrap"
+            className={cn("whitespace-nowrap", isDark && "border-gray-700 text-gray-300 hover:bg-gray-800")}
           >
             <Download className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
             <span className="hidden sm:inline">Export</span>
@@ -1014,7 +1072,12 @@ export default function VehiclesPage() {
             size="sm"
             onClick={handlePrint}
             disabled={vehicles.length === 0 || loading}
-            className="whitespace-nowrap bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+            className={cn(
+              "whitespace-nowrap",
+              isDark 
+                ? "bg-blue-950 hover:bg-blue-900 text-blue-300 border-blue-800" 
+                : "bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
+            )}
           >
             <Printer className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
             <span className="hidden sm:inline">Print</span>
@@ -1033,15 +1096,15 @@ export default function VehiclesPage() {
       </div>
 
       {/* Main Content */}
-      <Card>
+      <Card className={cn(isDark && "bg-gray-900 border-gray-800")}>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <CardTitle className="text-base sm:text-lg">
+                <CardTitle className={cn("text-base sm:text-lg", isDark && "text-gray-100")}>
                   {viewMode === "active" ? "Active Vehicles" : "Retired Vehicles"}
                 </CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
+                <CardDescription className={cn("text-xs sm:text-sm", isDark && "text-gray-400")}>
                   {viewMode === "active" 
                     ? "View and manage all active vehicles in your fleet"
                     : "View retired vehicles from your fleet"
@@ -1056,7 +1119,7 @@ export default function VehiclesPage() {
                   onOpenChange={() => toggleSection('filters')}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Filters & Search</span>
+                    <span className={cn("text-xs", isDark ? "text-gray-400" : "text-muted-foreground")}>Filters & Search</span>
                     <CollapsibleTrigger asChild>
                       <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                         {expandedSections.filters ? (
@@ -1071,17 +1134,20 @@ export default function VehiclesPage() {
                     <div className="flex gap-2">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="outline" size="sm" className="flex-1">
+                          <Button variant="outline" size="sm" className={cn("flex-1", isDark && "border-gray-700 text-gray-300")}>
                             <Filter className="mr-2 h-3 w-3" />
                             {selectedConfig === "All" ? "Config" : selectedConfig}
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
+                        <DropdownMenuContent align="start" className={isDark ? "bg-gray-900 border-gray-700" : ""}>
                           {WHEEL_CONFIGS.map((config) => (
                             <DropdownMenuItem
                               key={config}
                               onClick={() => handleConfigFilter(config)}
-                              className={selectedConfig === config ? "bg-accent" : ""}
+                              className={cn(
+                                selectedConfig === config && "bg-accent",
+                                isDark && "text-gray-300"
+                              )}
                             >
                               {config}
                             </DropdownMenuItem>
@@ -1094,7 +1160,7 @@ export default function VehiclesPage() {
                         <Input
                           type="search"
                           placeholder="Search..."
-                          className="pl-7 h-8 text-xs"
+                          className={cn("pl-7 h-8 text-xs", isDark && "bg-gray-800 border-gray-700 text-gray-100")}
                           value={search}
                           onChange={handleSearch}
                         />
@@ -1108,21 +1174,24 @@ export default function VehiclesPage() {
               <div className="hidden sm:flex gap-4">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="outline">
+                    <Button variant="outline" className={cn(isDark && "border-gray-700 text-gray-300")}>
                       <Filter className="mr-2 h-4 w-4" />
                       {selectedConfig === "All" ? "Filter by Config" : selectedConfig}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  <DropdownMenuContent align="end" className={isDark ? "bg-gray-900 border-gray-700" : ""}>
                     {WHEEL_CONFIGS.map((config) => (
                       <DropdownMenuItem
                         key={config}
                         onClick={() => handleConfigFilter(config)}
-                        className={selectedConfig === config ? "bg-accent" : ""}
+                        className={cn(
+                          selectedConfig === config && "bg-accent",
+                          isDark && "text-gray-300"
+                        )}
                       >
                         {config}
                         {config !== "All" && (
-                          <Badge variant="outline" className={`ml-2 ${getConfigColor(config)}`}>
+                          <Badge variant="outline" className={cn("ml-2", getConfigColor(config))}>
                             {config}
                           </Badge>
                         )}
@@ -1136,7 +1205,7 @@ export default function VehiclesPage() {
                   <Input
                     type="search"
                     placeholder={viewMode === "active" ? "Search active vehicles..." : "Search retired vehicles..."}
-                    className="pl-8"
+                    className={cn("pl-8", isDark && "bg-gray-800 border-gray-700 text-gray-100")}
                     value={search}
                     onChange={handleSearch}
                   />
@@ -1148,7 +1217,7 @@ export default function VehiclesPage() {
             {(selectedConfig !== "All" || search) && (
               <div className="flex flex-wrap gap-2">
                 {selectedConfig !== "All" && (
-                  <Badge variant="secondary" className="flex items-center gap-1 text-xs">
+                  <Badge variant="secondary" className={cn("flex items-center gap-1 text-xs", isDark && "bg-gray-800 text-gray-300")}>
                     Config: {selectedConfig}
                     <button onClick={() => setSelectedConfig("All")} className="ml-1 text-muted-foreground hover:text-foreground">
                       ×
@@ -1156,7 +1225,7 @@ export default function VehiclesPage() {
                   </Badge>
                 )}
                 {search && (
-                  <Badge variant="secondary" className="flex items-center gap-1 text-xs">
+                  <Badge variant="secondary" className={cn("flex items-center gap-1 text-xs", isDark && "bg-gray-800 text-gray-300")}>
                     Search: "{search}"
                     <button onClick={() => setSearch("")} className="ml-1 text-muted-foreground hover:text-foreground">
                       ×
@@ -1173,25 +1242,25 @@ export default function VehiclesPage() {
         
         <CardContent>
           {viewMode === "retired" && (
-            <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 sm:p-4">
-              <div className="flex items-center gap-2 text-amber-800">
+            <div className={cn("mb-4 rounded-lg border p-3 sm:p-4", isDark ? "border-amber-800 bg-amber-950/30" : "border-amber-200 bg-amber-50")}>
+              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300">
                 <Archive className="h-3 w-3 sm:h-4 sm:w-4" />
                 <span className="text-xs sm:text-sm font-medium">Retired Vehicles</span>
               </div>
-              <p className="mt-1 text-xs sm:text-sm text-amber-700">
+              <p className={cn("mt-1 text-xs sm:text-sm", isDark ? "text-amber-300" : "text-amber-700")}>
                 These vehicles are no longer active. You can restore them to active status.
               </p>
             </div>
           )}
 
-          {/* Stats Cards - Collapsible on mobile */}
+          {/* Stats Cards */}
           <Collapsible
             open={expandedSections.stats}
             onOpenChange={() => toggleSection('stats')}
             className="mb-4"
           >
             <div className="flex items-center justify-between sm:hidden">
-              <h3 className="text-xs font-medium text-muted-foreground">Quick Stats</h3>
+              <h3 className={cn("text-xs font-medium", isDark ? "text-gray-400" : "text-muted-foreground")}>Quick Stats</h3>
               <CollapsibleTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
                   {expandedSections.stats ? (
@@ -1206,43 +1275,43 @@ export default function VehiclesPage() {
             <CollapsibleContent className="sm:block">
               {vehicles.length > 0 && (
                 <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 mt-2 sm:mt-0">
-                  <div className="text-center p-2 bg-blue-50 dark:bg-blue-950/30 rounded">
-                    <div className="text-base sm:text-lg font-bold text-blue-700 dark:text-blue-300">
+                  <div className={cn("text-center p-2 rounded", themeClasses.statCard.blue)}>
+                    <div className={cn("text-base sm:text-lg font-bold", themeClasses.statText.blue)}>
                       {vehicles.length}
                     </div>
-                    <div className="text-[10px] sm:text-xs text-blue-600 dark:text-blue-400 truncate">
+                    <div className={cn("text-[10px] sm:text-xs", themeClasses.statText.blue, "truncate")}>
                       Displayed
                     </div>
                   </div>
-                  <div className="text-center p-2 bg-green-50 dark:bg-green-950/30 rounded">
-                    <div className="text-base sm:text-lg font-bold text-green-700 dark:text-green-300">
+                  <div className={cn("text-center p-2 rounded", themeClasses.statCard.green)}>
+                    <div className={cn("text-base sm:text-lg font-bold", themeClasses.statText.green)}>
                       {vehicles.filter(v => v.status === "ACTIVE").length}
                     </div>
-                    <div className="text-[10px] sm:text-xs text-green-600 dark:text-green-400 truncate">
+                    <div className={cn("text-[10px] sm:text-xs", themeClasses.statText.green, "truncate")}>
                       Active
                     </div>
                   </div>
-                  <div className="text-center p-2 bg-yellow-50 dark:bg-yellow-950/30 rounded">
-                    <div className="text-base sm:text-lg font-bold text-yellow-700 dark:text-yellow-300">
+                  <div className={cn("text-center p-2 rounded", themeClasses.statCard.yellow)}>
+                    <div className={cn("text-base sm:text-lg font-bold", themeClasses.statText.yellow)}>
                       {vehicles.filter(v => v.status === "MAINTENANCE").length}
                     </div>
-                    <div className="text-[10px] sm:text-xs text-yellow-600 dark:text-yellow-400 truncate">
+                    <div className={cn("text-[10px] sm:text-xs", themeClasses.statText.yellow, "truncate")}>
                       Maintenance
                     </div>
                   </div>
-                  <div className="text-center p-2 bg-gray-50 dark:bg-gray-800/30 rounded">
-                    <div className="text-base sm:text-lg font-bold text-gray-700 dark:text-gray-300">
+                  <div className={cn("text-center p-2 rounded", themeClasses.statCard.gray)}>
+                    <div className={cn("text-base sm:text-lg font-bold", themeClasses.statText.gray)}>
                       {vehicles.filter(v => v.status === "INACTIVE").length}
                     </div>
-                    <div className="text-[10px] sm:text-xs text-gray-600 dark:text-gray-400 truncate">
+                    <div className={cn("text-[10px] sm:text-xs", themeClasses.statText.gray, "truncate")}>
                       Inactive
                     </div>
                   </div>
-                  <div className="text-center p-2 bg-purple-50 dark:bg-purple-950/30 rounded col-span-2 sm:col-span-1">
-                    <div className="text-base sm:text-lg font-bold text-purple-700 dark:text-purple-300">
+                  <div className={cn("text-center p-2 rounded col-span-2 sm:col-span-1", themeClasses.statCard.purple)}>
+                    <div className={cn("text-base sm:text-lg font-bold", themeClasses.statText.purple)}>
                       {vehicles.reduce((sum, v) => sum + (v.active_tires_count || 0), 0)}
                     </div>
-                    <div className="text-[10px] sm:text-xs text-purple-600 dark:text-purple-400 truncate">
+                    <div className={cn("text-[10px] sm:text-xs", themeClasses.statText.purple, "truncate")}>
                       Total Tires
                     </div>
                   </div>
@@ -1258,12 +1327,12 @@ export default function VehiclesPage() {
               ))}
             </div>
           ) : vehicles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-8 sm:py-12 px-4 text-center">
+            <div className={cn("flex flex-col items-center justify-center py-8 sm:py-12 px-4 text-center", isDark && "text-gray-400")}>
               <Car className="h-10 w-10 sm:h-12 sm:w-12 text-muted-foreground mb-3 sm:mb-4" />
-              <h3 className="text-base sm:text-lg font-medium">
+              <h3 className={cn("text-base sm:text-lg font-medium", isDark && "text-gray-300")}>
                 {viewMode === "active" ? "No active vehicles found" : "No retired vehicles found"}
               </h3>
-              <p className="text-xs sm:text-sm text-muted-foreground mt-1 max-w-md">
+              <p className={cn("text-xs sm:text-sm", isDark ? "text-gray-400" : "text-muted-foreground", "mt-1 max-w-md")}>
                 {search || selectedConfig !== "All" 
                   ? "Try changing your search or filter criteria" 
                   : viewMode === "active" 
@@ -1272,7 +1341,7 @@ export default function VehiclesPage() {
                 }
               </p>
               {(search || selectedConfig !== "All") && (
-                <Button variant="outline" size="sm" className="mt-4" onClick={() => { setSelectedConfig("All"); setSearch(""); }}>
+                <Button variant="outline" size="sm" className={cn("mt-4", isDark && "border-gray-700 text-gray-300 hover:bg-gray-800")} onClick={() => { setSelectedConfig("All"); setSearch(""); }}>
                   Clear filters
                 </Button>
               )}
@@ -1282,38 +1351,38 @@ export default function VehiclesPage() {
               {/* Desktop Table */}
               <div className="hidden sm:block rounded-md border">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Vehicle Number</TableHead>
-                      <TableHead>Make & Model</TableHead>
-                      <TableHead>Wheel Config</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Tires</TableHead>
+                  <TableHeader className={isDark ? "bg-gray-800" : ""}>
+                    <TableRow className={cn(isDark && "border-gray-700 hover:bg-gray-800")}>
+                      <TableHead className={isDark ? "text-gray-300" : ""}>Vehicle Number</TableHead>
+                      <TableHead className={isDark ? "text-gray-300" : ""}>Make & Model</TableHead>
+                      <TableHead className={isDark ? "text-gray-300" : ""}>Wheel Config</TableHead>
+                      <TableHead className={isDark ? "text-gray-300" : ""}>Status</TableHead>
+                      <TableHead className={isDark ? "text-gray-300" : ""}>Tires</TableHead>
                       {viewMode === "retired" && (
                         <>
-                          <TableHead>Retired On</TableHead>
-                          <TableHead>Reason</TableHead>
+                          <TableHead className={isDark ? "text-gray-300" : ""}>Retired On</TableHead>
+                          <TableHead className={isDark ? "text-gray-300" : ""}>Reason</TableHead>
                         </>
                       )}
-                      <TableHead>Added On</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className={isDark ? "text-gray-300" : ""}>Added On</TableHead>
+                      <TableHead className={cn("text-right", isDark ? "text-gray-300" : "")}>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {vehicles.map((vehicle) => (
-                      <TableRow key={vehicle.id}>
+                      <TableRow key={vehicle.id} className={cn(isDark && "border-gray-700 hover:bg-gray-800")}>
                         <TableCell className="font-medium">
                           <div className="flex items-center gap-2">
                             <Car className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <Link href={`/vehicles/${vehicle.id}`} className="hover:text-primary hover:underline truncate max-w-[150px]">
+                            <Link href={`/vehicles/${vehicle.id}`} className={cn("hover:text-primary hover:underline truncate max-w-[150px]", isDark && "text-gray-300")}>
                               {vehicle.vehicle_number}
                             </Link>
                           </div>
                         </TableCell>
                         <TableCell>
                           <div className="truncate max-w-[150px]" title={`${vehicle.make} ${vehicle.model}`}>
-                            <div className="font-medium">{vehicle.make}</div>
-                            <div className="text-xs text-muted-foreground">{vehicle.model}</div>
+                            <div className={cn("font-medium", isDark && "text-gray-300")}>{vehicle.make}</div>
+                            <div className={cn("text-xs", isDark ? "text-gray-400" : "text-muted-foreground")}>{vehicle.model}</div>
                           </div>
                         </TableCell>
                         <TableCell>
@@ -1322,38 +1391,38 @@ export default function VehiclesPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge className={cn("text-xs whitespace-nowrap", getStatusColor(vehicle.status).replace('bg-', 'bg-opacity-20 text-').replace('hover:', ''))}>
+                          <Badge className={cn("text-xs whitespace-nowrap", getStatusColor(vehicle.status))}>
                             {vehicle.status}
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="secondary" className="text-xs">
+                          <Badge variant="secondary" className={cn("text-xs", isDark && "bg-gray-800 text-gray-300")}>
                             {vehicle.active_tires_count} tires
                           </Badge>
                         </TableCell>
                         {viewMode === "retired" && (
                           <>
-                            <TableCell className="text-xs whitespace-nowrap">
+                            <TableCell className={cn("text-xs whitespace-nowrap", isDark && "text-gray-300")}>
                               {vehicle.retired_date ? formatDate(vehicle.retired_date) : "N/A"}
                             </TableCell>
                             <TableCell className="max-w-[150px]">
-                              <div className="truncate text-xs" title={vehicle.retirement_reason || "N/A"}>
+                              <div className={cn("truncate text-xs", isDark && "text-gray-300")} title={vehicle.retirement_reason || "N/A"}>
                                 {vehicle.retirement_reason || "N/A"}
                               </div>
                             </TableCell>
                           </>
                         )}
-                        <TableCell className="text-xs whitespace-nowrap">{formatDate(vehicle.created_at)}</TableCell>
+                        <TableCell className={cn("text-xs whitespace-nowrap", isDark && "text-gray-300")}>{formatDate(vehicle.created_at)}</TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" className="h-8 w-8 p-0">
+                              <Button variant="ghost" className={cn("h-8 w-8 p-0", isDark && "text-gray-300 hover:bg-gray-800")}>
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                              <DropdownMenuItem asChild>
+                            <DropdownMenuContent align="end" className={isDark ? "bg-gray-900 border-gray-700" : ""}>
+                              <DropdownMenuLabel className={isDark ? "text-gray-300" : ""}>Actions</DropdownMenuLabel>
+                              <DropdownMenuItem asChild className={isDark ? "text-gray-300" : ""}>
                                 <Link href={`/vehicles/${vehicle.id}`}>
                                   <Eye className="mr-2 h-4 w-4" />
                                   View Details
@@ -1364,7 +1433,7 @@ export default function VehiclesPage() {
                                 <>
                                   {/* Only show Edit if user has edit permission */}
                                   {hasPermission('vehicle.edit') && (
-                                    <DropdownMenuItem asChild>
+                                    <DropdownMenuItem asChild className={isDark ? "text-gray-300" : ""}>
                                       <Link href={`/vehicles/${vehicle.id}/edit`}>
                                         <Edit className="mr-2 h-4 w-4" />
                                         Edit Vehicle
@@ -1374,13 +1443,13 @@ export default function VehiclesPage() {
                                   
                                   {/* Only show separator if there are items after view and before retire */}
                                   {(hasPermission('vehicle.edit')) && (
-                                    <DropdownMenuSeparator />
+                                    <DropdownMenuSeparator className={isDark ? "bg-gray-800" : ""} />
                                   )}
                                   
                                   {/* Only show Retire if user has edit permission */}
                                   {hasPermission('vehicle.edit') && (
                                     <DropdownMenuItem 
-                                      className="text-amber-600"
+                                      className={isDark ? "text-amber-400" : "text-amber-600"}
                                       onClick={() => handleOpenRetirementDialog(vehicle)}
                                     >
                                       <Archive className="mr-2 h-4 w-4" />
@@ -1393,7 +1462,7 @@ export default function VehiclesPage() {
                                   {/* Only show Restore if user has edit permission */}
                                   {hasPermission('vehicle.edit') && (
                                     <DropdownMenuItem 
-                                      className="text-green-600"
+                                      className={isDark ? "text-green-400" : "text-green-600"}
                                       onClick={() => handleOpenReactivationDialog(vehicle)}
                                     >
                                       <RotateCcw className="mr-2 h-4 w-4" />
@@ -1404,9 +1473,9 @@ export default function VehiclesPage() {
                                   {/* Only show Delete if user has delete permission */}
                                   {hasPermission('vehicle.delete') && (
                                     <>
-                                      <DropdownMenuSeparator />
+                                      <DropdownMenuSeparator className={isDark ? "bg-gray-800" : ""} />
                                       <DropdownMenuItem 
-                                        className="text-red-600"
+                                        className={isDark ? "text-red-400" : "text-red-600"}
                                         onClick={() => handlePermanentDelete(vehicle.id)}
                                       >
                                         <Trash2 className="mr-2 h-4 w-4" />
@@ -1428,30 +1497,30 @@ export default function VehiclesPage() {
               {/* Mobile Cards */}
               <div className="sm:hidden space-y-3">
                 {vehicles.map((vehicle) => (
-                  <Card key={vehicle.id} className="overflow-hidden">
+                  <Card key={vehicle.id} className={cn("overflow-hidden", isDark && "bg-gray-900 border-gray-800")}>
                     <CardContent className="p-4">
                       {/* Header */}
                       <div className="flex items-start justify-between mb-3">
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <Car className="h-4 w-4 text-muted-foreground shrink-0" />
-                            <Link href={`/vehicles/${vehicle.id}`} className="font-medium text-sm hover:text-primary truncate">
+                            <Link href={`/vehicles/${vehicle.id}`} className={cn("font-medium text-sm hover:text-primary truncate", isDark && "text-gray-300")}>
                               {vehicle.vehicle_number}
                             </Link>
                           </div>
-                          <p className="text-xs text-muted-foreground truncate">
+                          <p className={cn("text-xs", isDark ? "text-gray-400" : "text-muted-foreground", "truncate")}>
                             {vehicle.make} {vehicle.model} {vehicle.year ? `(${vehicle.year})` : ''}
                           </p>
                         </div>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" className="h-8 w-8 p-0 shrink-0 ml-2">
+                            <Button variant="ghost" className={cn("h-8 w-8 p-0 shrink-0 ml-2", isDark && "text-gray-300 hover:bg-gray-800")}>
                               <MoreHorizontal className="h-4 w-4" />
                             </Button>
                           </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuLabel>Actions</DropdownMenuLabel>
-                            <DropdownMenuItem asChild>
+                          <DropdownMenuContent align="end" className={isDark ? "bg-gray-900 border-gray-700" : ""}>
+                            <DropdownMenuLabel className={isDark ? "text-gray-300" : ""}>Actions</DropdownMenuLabel>
+                            <DropdownMenuItem asChild className={isDark ? "text-gray-300" : ""}>
                               <Link href={`/vehicles/${vehicle.id}`}>
                                 <Eye className="mr-2 h-4 w-4" />
                                 View Details
@@ -1462,7 +1531,7 @@ export default function VehiclesPage() {
                               <>
                                 {/* Only show Edit if user has edit permission */}
                                 {hasPermission('vehicle.edit') && (
-                                  <DropdownMenuItem asChild>
+                                  <DropdownMenuItem asChild className={isDark ? "text-gray-300" : ""}>
                                     <Link href={`/vehicles/${vehicle.id}/edit`}>
                                       <Edit className="mr-2 h-4 w-4" />
                                       Edit
@@ -1473,7 +1542,7 @@ export default function VehiclesPage() {
                                 {/* Only show Retire if user has edit permission */}
                                 {hasPermission('vehicle.edit') && (
                                   <DropdownMenuItem 
-                                    className="text-amber-600"
+                                    className={isDark ? "text-amber-400" : "text-amber-600"}
                                     onClick={() => handleOpenRetirementDialog(vehicle)}
                                   >
                                     <Archive className="mr-2 h-4 w-4" />
@@ -1486,7 +1555,7 @@ export default function VehiclesPage() {
                                 {/* Only show Restore if user has edit permission */}
                                 {hasPermission('vehicle.edit') && (
                                   <DropdownMenuItem 
-                                    className="text-green-600"
+                                    className={isDark ? "text-green-400" : "text-green-600"}
                                     onClick={() => handleOpenReactivationDialog(vehicle)}
                                   >
                                     <RotateCcw className="mr-2 h-4 w-4" />
@@ -1497,7 +1566,7 @@ export default function VehiclesPage() {
                                 {/* Only show Delete if user has delete permission */}
                                 {hasPermission('vehicle.delete') && (
                                   <DropdownMenuItem 
-                                    className="text-red-600"
+                                    className={isDark ? "text-red-400" : "text-red-600"}
                                     onClick={() => handlePermanentDelete(vehicle.id)}
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -1512,8 +1581,8 @@ export default function VehiclesPage() {
 
                       {/* Quick Info Grid */}
                       <div className="grid grid-cols-2 gap-2 mb-3">
-                        <div className="bg-muted/30 rounded p-2">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                        <div className={cn("rounded p-2", isDark ? "bg-gray-800" : "bg-muted/30")}>
+                          <div className={cn("flex items-center gap-1 text-xs mb-1", isDark ? "text-gray-400" : "text-muted-foreground")}>
                             <Settings className="h-3 w-3" />
                             Config
                           </div>
@@ -1521,12 +1590,12 @@ export default function VehiclesPage() {
                             {vehicle.wheel_config}
                           </Badge>
                         </div>
-                        <div className="bg-muted/30 rounded p-2">
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1">
+                        <div className={cn("rounded p-2", isDark ? "bg-gray-800" : "bg-muted/30")}>
+                          <div className={cn("flex items-center gap-1 text-xs mb-1", isDark ? "text-gray-400" : "text-muted-foreground")}>
                             <Gauge className="h-3 w-3" />
                             Status
                           </div>
-                          <Badge className={cn("text-xs", getStatusColor(vehicle.status).replace('bg-', 'bg-opacity-20 text-'))}>
+                          <Badge className={cn("text-xs", getStatusColor(vehicle.status))}>
                             {vehicle.status}
                           </Badge>
                         </div>
@@ -1537,20 +1606,20 @@ export default function VehiclesPage() {
                         <div className="flex items-center gap-2">
                           <div className="flex items-center gap-1">
                             <div className="h-2 w-2 rounded-full bg-green-500" />
-                            <span className="text-xs text-muted-foreground">
+                            <span className={cn("text-xs", isDark ? "text-gray-300" : "text-muted-foreground")}>
                               {vehicle.active_tires_count} tires
                             </span>
                           </div>
                           {vehicle.current_odometer && (
                             <div className="flex items-center gap-1">
                               <Fuel className="h-3 w-3 text-muted-foreground" />
-                              <span className="text-xs text-muted-foreground">
+                              <span className={cn("text-xs", isDark ? "text-gray-300" : "text-muted-foreground")}>
                                 {vehicle.current_odometer.toLocaleString()} km
                               </span>
                             </div>
                           )}
                         </div>
-                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <div className={cn("flex items-center gap-1 text-xs", isDark ? "text-gray-400" : "text-muted-foreground")}>
                           <Calendar className="h-3 w-3" />
                           {formatDate(vehicle.created_at)}
                         </div>
@@ -1558,8 +1627,8 @@ export default function VehiclesPage() {
 
                       {/* Retired Info (if applicable) */}
                       {viewMode === "retired" && vehicle.retired_date && (
-                        <div className="bg-red-50 dark:bg-red-950/30 rounded p-2 text-xs">
-                          <div className="flex items-center justify-between text-red-700 dark:text-red-300">
+                        <div className={cn("rounded p-2 text-xs", isDark ? "bg-red-950/30" : "bg-red-50")}>
+                          <div className={cn("flex items-center justify-between", isDark ? "text-red-300" : "text-red-700")}>
                             <span>Retired: {formatDate(vehicle.retired_date)}</span>
                             <span className="truncate max-w-[150px]" title={vehicle.retirement_reason}>
                               {vehicle.retirement_reason}
@@ -1583,7 +1652,8 @@ export default function VehiclesPage() {
                           onClick={(e) => { e.preventDefault(); if (currentPage > 1) setCurrentPage(currentPage - 1); }}
                           className={cn(
                             "text-xs sm:text-sm",
-                            currentPage === 1 ? "pointer-events-none opacity-50" : ""
+                            currentPage === 1 ? "pointer-events-none opacity-50" : "",
+                            isDark && "text-gray-300 hover:bg-gray-800"
                           )}
                         />
                       </PaginationItem>
@@ -1606,7 +1676,10 @@ export default function VehiclesPage() {
                               href="#"
                               onClick={(e) => { e.preventDefault(); setCurrentPage(pageNum); }}
                               isActive={currentPage === pageNum}
-                              className="text-xs sm:text-sm h-8 w-8"
+                              className={cn(
+                                "text-xs sm:text-sm h-8 w-8",
+                                isDark && currentPage !== pageNum && "text-gray-300 hover:bg-gray-800"
+                              )}
                             >
                               {pageNum}
                             </PaginationLink>
@@ -1620,13 +1693,14 @@ export default function VehiclesPage() {
                           onClick={(e) => { e.preventDefault(); if (currentPage < totalPages) setCurrentPage(currentPage + 1); }}
                           className={cn(
                             "text-xs sm:text-sm",
-                            currentPage === totalPages ? "pointer-events-none opacity-50" : ""
+                            currentPage === totalPages ? "pointer-events-none opacity-50" : "",
+                            isDark && "text-gray-300 hover:bg-gray-800"
                           )}
                         />
                       </PaginationItem>
                     </PaginationContent>
                   </Pagination>
-                  <p className="text-xs text-center text-muted-foreground mt-2">
+                  <p className={cn("text-xs text-center mt-2", isDark ? "text-gray-400" : "text-muted-foreground")}>
                     Page {currentPage} of {totalPages} • {vehicles.length} vehicles shown
                   </p>
                 </div>
