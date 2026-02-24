@@ -1,5 +1,6 @@
 import React from "react";
 import Wheel from "./Wheel";
+import { useTheme } from "@/contexts/ThemeContext";
 
 export interface Position {
   position_code: string;
@@ -17,7 +18,7 @@ interface WheelConfig {
 
 interface AxleRowProps {
   axleNumber: number;
-  y: number; // vertical position of this axle
+  y: number;
   diagramWidth: number;
   wheelSelections: Record<string, boolean>;
   wheelStatuses: Record<string, string>;
@@ -40,10 +41,18 @@ const AxleRow: React.FC<AxleRowProps> = ({
   selectable,
   showAxleNumbers,
 }) => {
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === "dark";
+  
   const centerX = diagramWidth / 2;
-  const offset = 60; // Reduced from 80 for tighter spacing
+  const offset = 60;
 
-  // Create wheel configurations based on axle number
+  // Theme-aware colors
+  const colors = {
+    axleLine: isDark ? "#6b7280" : "#333", // gray-500 : gray-800
+    axleNumber: isDark ? "#9ca3af" : "#333", // gray-400 : gray-800
+  };
+
   const getWheelsForAxle = (): WheelConfig[] => {
     const leftPositions = positions.filter(p => 
       p.position_name.toLowerCase().includes("left")
@@ -56,16 +65,14 @@ const AxleRow: React.FC<AxleRowProps> = ({
 
     // Left side wheels
     if (leftPositions.length === 1) {
-      // Single wheel on left (front axle)
       wheels.push({
         id: `A${axleNumber}-L`,
         x: centerX - offset,
-        side: "left" as const,
-        position: "single" as const,
+        side: "left",
+        position: "single",
         position_code: leftPositions[0].position_code
       });
     } else if (leftPositions.length === 2) {
-      // Dual wheels on left (rear axles)
       const innerPos = leftPositions.find(p => p.position_name.toLowerCase().includes("inner"));
       const outerPos = leftPositions.find(p => p.position_name.toLowerCase().includes("outer"));
       
@@ -73,8 +80,8 @@ const AxleRow: React.FC<AxleRowProps> = ({
         wheels.push({
           id: `A${axleNumber}-L-Outer`,
           x: centerX - offset,
-          side: "left" as const,
-          position: "outer" as const,
+          side: "left",
+          position: "outer",
           position_code: outerPos.position_code
         });
       }
@@ -82,8 +89,8 @@ const AxleRow: React.FC<AxleRowProps> = ({
         wheels.push({
           id: `A${axleNumber}-L-Inner`,
           x: centerX - offset / 2,
-          side: "left" as const,
-          position: "inner" as const,
+          side: "left",
+          position: "inner",
           position_code: innerPos.position_code
         });
       }
@@ -91,16 +98,14 @@ const AxleRow: React.FC<AxleRowProps> = ({
 
     // Right side wheels
     if (rightPositions.length === 1) {
-      // Single wheel on right (front axle)
       wheels.push({
         id: `A${axleNumber}-R`,
         x: centerX + offset,
-        side: "right" as const,
-        position: "single" as const,
+        side: "right",
+        position: "single",
         position_code: rightPositions[0].position_code
       });
     } else if (rightPositions.length === 2) {
-      // Dual wheels on right (rear axles)
       const innerPos = rightPositions.find(p => p.position_name.toLowerCase().includes("inner"));
       const outerPos = rightPositions.find(p => p.position_name.toLowerCase().includes("outer"));
       
@@ -108,8 +113,8 @@ const AxleRow: React.FC<AxleRowProps> = ({
         wheels.push({
           id: `A${axleNumber}-R-Inner`,
           x: centerX + offset / 2,
-          side: "right" as const,
-          position: "inner" as const,
+          side: "right",
+          position: "inner",
           position_code: innerPos.position_code
         });
       }
@@ -117,8 +122,8 @@ const AxleRow: React.FC<AxleRowProps> = ({
         wheels.push({
           id: `A${axleNumber}-R-Outer`,
           x: centerX + offset,
-          side: "right" as const,
-          position: "outer" as const,
+          side: "right",
+          position: "outer",
           position_code: outerPos.position_code
         });
       }
@@ -138,7 +143,7 @@ const AxleRow: React.FC<AxleRowProps> = ({
         x2={centerX + axleLineLength}
         y1={y}
         y2={y}
-        stroke="#333"
+        stroke={colors.axleLine}
         strokeWidth="1.5"
       />
       
@@ -150,6 +155,7 @@ const AxleRow: React.FC<AxleRowProps> = ({
           textAnchor="middle" 
           fontSize="10"
           fontWeight="bold"
+          fill={colors.axleNumber}
         >
           Axle {axleNumber}
         </text>
@@ -161,13 +167,13 @@ const AxleRow: React.FC<AxleRowProps> = ({
           key={wheel.id}
           id={wheel.id}
           x={wheel.x}
-          y={y}  // Pass the y prop from AxleRow, not from wheel object
+          y={y}
           side={wheel.side}
           position={wheel.position}
           axleNumber={axleNumber}
           isSelected={wheelSelections[wheel.id]}
           status={wheelStatuses[wheel.position_code]}
-          onClick={(id) => onWheelClick(id, wheel.x, y)}  // Pass both x and y coordinates
+          onClick={(id) => onWheelClick(id, wheel.x, y)}
           showLabels={showLabels}
           selectable={selectable}
         />
