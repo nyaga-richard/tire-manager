@@ -55,6 +55,7 @@ import {
   Undo2,
   FileSpreadsheet,
   Printer,
+  Upload,
 } from "lucide-react";
 import Link from "next/link";
 import {
@@ -100,6 +101,7 @@ import { useSettings } from "@/hooks/useSettings";
 import { cn } from "@/lib/utils";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { format, formatDistanceToNow, parseISO, isValid, subMonths } from "date-fns";
+import { CSVUploadModal } from "@/components/csv-upload-modal";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
@@ -1009,6 +1011,9 @@ export default function InventoryPage() {
   const [certificateModalOpen, setCertificateModalOpen] = useState(false);
   const [selectedTire, setSelectedTire] = useState<Tire | null>(null);
   const [selectedDisposedTire, setSelectedDisposedTire] = useState<DisposedTire | null>(null);
+
+  const [isTireUploadModalOpen, setIsTireUploadModalOpen] = useState(false);
+  const [isVehicleUploadModalOpen, setIsVehicleUploadModalOpen] = useState(false);
   
   // Date range for disposal
   const [disposalDateRange, setDisposalDateRange] = useState<{
@@ -1661,7 +1666,29 @@ export default function InventoryPage() {
             <RefreshCw className={`h-4 w-4 sm:mr-2 ${loading ? "animate-spin" : ""}`} />
             <span className="hidden sm:inline">Refresh</span>
           </Button>
-          
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="whitespace-nowrap">
+                  <Upload className="h-4 w-4 sm:mr-2" />
+                  <span className="hidden sm:inline">Upload CSV</span>
+                  <ChevronDown className="ml-1 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Upload Options</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setIsTireUploadModalOpen(true)}>
+                  <Package className="mr-2 h-4 w-4" />
+                  Upload Tires
+                </DropdownMenuItem>
+                {/* <DropdownMenuItem onSelect={() => setIsVehicleUploadModalOpen(true)}>
+                  <Truck className="mr-2 h-4 w-4" />
+                  Upload Vehicles
+                </DropdownMenuItem> */}
+              </DropdownMenuContent>
+            </DropdownMenu>
+                    
           {hasPermission("grn.view") && (
             <Button variant="outline" size="sm" asChild className="whitespace-nowrap">
               <Link href="/grns">
@@ -2866,6 +2893,21 @@ export default function InventoryPage() {
           )}
         </div>
       </div>
+
+        {/* CSV Upload Modals */}
+        <CSVUploadModal
+          isOpen={isTireUploadModalOpen}
+          onClose={() => setIsTireUploadModalOpen(false)}
+          type="tires"
+          onSuccess={refreshAll}
+        />
+
+        <CSVUploadModal
+          isOpen={isVehicleUploadModalOpen}
+          onClose={() => setIsVehicleUploadModalOpen(false)}
+          type="vehicles"
+          onSuccess={refreshAll}
+        />
     </div>
   );
 }
