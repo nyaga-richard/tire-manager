@@ -306,7 +306,7 @@ const DisposeTireModal = ({ isOpen, onClose, tire, onSuccess }: DisposeTireModal
 
     setLoading(true);
     try {
-      const response = await authFetch(`${API_BASE_URL}/api/tire/${tire.id}/dispose`, {
+      const response = await authFetch(`${API_BASE_URL}/api/tires/${tire.id}/dispose`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -518,7 +518,7 @@ const BulkDisposeModal = ({ isOpen, onClose, tires, onSuccess }: BulkDisposeModa
 
     setLoading(true);
     try {
-      const response = await authFetch(`${API_BASE_URL}/api/tire/bulk-dispose`, {
+      const response = await authFetch(`${API_BASE_URL}/api/tires/bulk-dispose`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -702,7 +702,7 @@ const ReverseDisposalModal = ({ isOpen, onClose, tire, onSuccess }: ReverseDispo
 
     setLoading(true);
     try {
-      const response = await authFetch(`${API_BASE_URL}/api/tire/${tire.id}/reverse-disposal`, {
+      const response = await authFetch(`${API_BASE_URL}/api/tires/${tire.id}/reverse-disposal`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1290,7 +1290,7 @@ export default function InventoryPage() {
         params.append("method", disposalFilter.method);
       }
 
-      const response = await authFetch(`${API_BASE_URL}/api/tire/disposed/export?${params.toString()}`);
+      const response = await authFetch(`${API_BASE_URL}/api/tires/disposed/export?${params.toString()}`);
       const result = await response.json();
       
       if (result.success && result.data) {
